@@ -16,7 +16,7 @@ export function AppLayout() {
             Cloudflare Demo
           </span>
         </header>
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto min-h-0">
           <Outlet />
         </div>
       </SidebarInset>

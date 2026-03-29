@@ -355,7 +355,7 @@ export function LogExplorerPage() {
       : lines;
 
     return (
-      <div className="space-y-3">
+      <div className="flex flex-col gap-3 h-full min-h-0">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -371,7 +371,7 @@ export function LogExplorerPage() {
           </Badge>
         </div>
 
-        <div className="space-y-1.5 max-h-[calc(100svh-300px)] overflow-y-auto">
+        <div className="space-y-1.5 flex-1 overflow-y-auto">
           {filteredLines.map((line, i) => {
             if (isJson) {
               try {
@@ -445,7 +445,7 @@ export function LogExplorerPage() {
   };
 
   return (
-    <div className="flex h-[calc(100svh-3.5rem)] flex-col md:flex-row">
+    <div className="flex h-full flex-col md:flex-row">
       {/* Left panel: Tree navigation */}
       <div className="w-full md:w-96 border-b md:border-b-0 md:border-r flex flex-col shrink-0">
         <div className="flex items-center justify-between p-3 border-b">
@@ -504,7 +504,7 @@ export function LogExplorerPage() {
       </div>
 
       {/* Right panel: Log content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
         <div className="flex items-center gap-2 p-3 border-b">
           <FileText className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium truncate">
