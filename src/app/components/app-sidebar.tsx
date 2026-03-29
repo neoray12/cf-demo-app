@@ -1,5 +1,23 @@
 import { useLocation, useNavigate } from "react-router";
-import { Bot, Globe, FileText, LogOut, Moon, Sun, ChevronUp } from "lucide-react";
+import {
+  Bot,
+  Globe,
+  FileText,
+  LogOut,
+  Moon,
+  Sun,
+  ChevronUp,
+  ChevronRight,
+  Camera,
+  FileDown,
+  ScanText,
+  Image,
+  Search,
+  Braces,
+  Link2,
+  Globe2,
+  Code,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -15,6 +33,11 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -23,10 +46,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "@/hooks/use-theme";
 
-const menuItems = [
-  { title: "AI Agent", url: "/", icon: Bot },
-  { title: "網站爬蟲", url: "/crawler", icon: Globe },
-  { title: "Log 瀏覽器", url: "/logs", icon: FileText },
+const crawlerSubItems = [
+  { title: "截圖", url: "/crawler/screenshot", icon: Camera },
+  { title: "PDF 轉換", url: "/crawler/pdf", icon: FileDown },
+  { title: "Markdown 擷取", url: "/crawler/markdown", icon: ScanText },
+  { title: "HTML 內容", url: "/crawler/content", icon: Code },
+  { title: "快照", url: "/crawler/snapshot", icon: Image },
+  { title: "元素提取", url: "/crawler/scrape", icon: Search },
+  { title: "JSON 結構化", url: "/crawler/json", icon: Braces },
+  { title: "連結抓取", url: "/crawler/links", icon: Link2 },
+  { title: "整站爬取", url: "/crawler/crawl", icon: Globe2 },
 ];
 
 export function AppSidebar() {
@@ -34,6 +63,8 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const { setOpenMobile, isMobile } = useSidebar();
   const { theme, toggleTheme } = useTheme();
+
+  const isCrawlerActive = location.pathname.startsWith("/crawler");
 
   const handleNavClick = (url: string) => {
     navigate(url);
@@ -70,26 +101,80 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
+        {/* AI Agent */}
         <SidebarGroup>
           <SidebarGroupLabel>功能</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton
-                    isActive={
-                      item.url === "/"
-                        ? location.pathname === "/"
-                        : location.pathname.startsWith(item.url)
-                    }
-                    onClick={() => handleNavClick(item.url)}
-                    tooltip={item.title}
-                  >
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location.pathname === "/"}
+                  onClick={() => handleNavClick("/")}
+                  tooltip="AI Agent"
+                >
+                  <Bot />
+                  <span>AI Agent</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* 網站爬蟲 with sub-items */}
+        <SidebarGroup>
+          <SidebarGroupLabel>網站爬蟲</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <Collapsible defaultOpen={isCrawlerActive} className="group/collapsible">
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      isActive={location.pathname === "/crawler"}
+                      tooltip="網站爬蟲"
+                    >
+                      <Globe />
+                      <span>總覽</span>
+                      <ChevronRight className="ml-auto size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenu className="ml-4 border-l pl-2">
+                      {crawlerSubItems.map((item) => (
+                        <SidebarMenuItem key={item.url}>
+                          <SidebarMenuButton
+                            isActive={location.pathname === item.url}
+                            onClick={() => handleNavClick(item.url)}
+                            tooltip={item.title}
+                            size="sm"
+                          >
+                            <item.icon className="size-3.5" />
+                            <span>{item.title}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </CollapsibleContent>
                 </SidebarMenuItem>
-              ))}
+              </Collapsible>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Log 瀏覽器 */}
+        <SidebarGroup>
+          <SidebarGroupLabel>工具</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location.pathname === "/logs"}
+                  onClick={() => handleNavClick("/logs")}
+                  tooltip="Log 瀏覽器"
+                >
+                  <FileText />
+                  <span>Log 瀏覽器</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -123,20 +208,11 @@ export function AppSidebar() {
                 sideOffset={4}
               >
                 <DropdownMenuItem onClick={toggleTheme}>
-                  {theme === "dark" ? (
-                    <Sun className="size-4" />
-                  ) : (
-                    <Moon className="size-4" />
-                  )}
-                  <span>
-                    {theme === "dark" ? "淺色模式" : "深色模式"}
-                  </span>
+                  {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                  <span>{theme === "dark" ? "淺色模式" : "深色模式"}</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={handleLogout}
-                  className="text-red-600"
-                >
+                <DropdownMenuItem onClick={handleLogout} className="text-red-600">
                   <LogOut className="size-4" />
                   <span>登出</span>
                 </DropdownMenuItem>

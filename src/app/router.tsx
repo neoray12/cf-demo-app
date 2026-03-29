@@ -3,6 +3,7 @@ import { AppLayout } from "./layout";
 import { LoginPage } from "./pages/login";
 import { ChatPage } from "./pages/chat";
 import { CrawlerPage } from "./pages/crawler";
+import { CrawlerEndpointPage } from "./pages/crawler-endpoint";
 import { LogExplorerPage } from "./pages/log-explorer";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <ChatPage /> },
       { path: "crawler", element: <CrawlerPage /> },
+      { path: "crawler/:endpoint", element: <CrawlerEndpointPage /> },
       { path: "logs", element: <LogExplorerPage /> },
     ],
   },
