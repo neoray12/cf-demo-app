@@ -1,0 +1,39 @@
+name = "cf-demo-app"
+account_id = "5efa272dc28e4e3933324c44165b6dbe"
+compatibility_date = "2025-12-01"
+compatibility_flags = ["nodejs_compat"]
+main = "src/server.ts"
+
+[assets]
+not_found_handling = "single-page-application"
+
+[observability]
+enabled = true
+
+# Workers AI + AI Gateway
+[ai]
+binding = "AI"
+
+# R2 - Crawler data storage (for AI Search / AutoRAG indexing)
+[[r2_buckets]]
+binding = "CRAWLER_BUCKET"
+bucket_name = "cf-demo-crawler"
+
+# KV Namespace - Sessions
+[[kv_namespaces]]
+binding = "KV"
+id = "cd03af00eb9340a180014760028fbebd"
+
+# Durable Objects (required by Agents SDK)
+[[durable_objects.bindings]]
+name = "ChatAgent"
+class_name = "ChatAgent"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ChatAgent"]
+
+[vars]
+CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
+AI_GATEWAY_ID = "cf-demo"
+AUTORAG_NAME = "cf-demo-rag"
