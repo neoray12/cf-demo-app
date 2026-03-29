@@ -285,7 +285,7 @@ export function LogExplorerPage() {
               <FileText className="size-4 shrink-0 text-muted-foreground" />
             )}
 
-            <span className="truncate flex-1 text-left">{node.name}</span>
+            <span className="flex-1 text-left break-all leading-tight" title={node.name}>{node.name}</span>
 
             {node.size !== undefined && (
               <span className="text-xs text-muted-foreground shrink-0">
@@ -447,7 +447,7 @@ export function LogExplorerPage() {
   return (
     <div className="flex h-[calc(100svh-3.5rem)] flex-col md:flex-row">
       {/* Left panel: Tree navigation */}
-      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r flex flex-col shrink-0">
+      <div className="w-full md:w-96 border-b md:border-b-0 md:border-r flex flex-col shrink-0">
         <div className="flex items-center justify-between p-3 border-b">
           <h2 className="text-sm font-semibold">R2 Buckets</h2>
           <Button
@@ -463,7 +463,7 @@ export function LogExplorerPage() {
           </Button>
         </div>
 
-        <ScrollArea className="flex-1 max-h-[200px] md:max-h-none">
+        <ScrollArea className="flex-1">
           <div className="p-2">
             {loading && buckets.length === 0 ? (
               <div className="flex items-center justify-center py-8">

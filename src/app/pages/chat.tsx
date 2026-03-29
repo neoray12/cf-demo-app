@@ -1,156 +1,57 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect } from "react";
 import { useAgent } from "agents/react";
+import { useAgentChat } from "agents/ai-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { MarkdownRenderer } from "../components/chat/markdown-renderer";
 import { ModelSelector } from "../components/chat/model-selector";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
+import { useState } from "react";
 import {
   Send,
   Square,
   Bot,
   User,
-  Loader2,
   Sparkles,
   Copy,
   Check,
-  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  createdAt?: Date;
-}
-
 export function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
-  const scrollToBottom = useCallback(() => {
+  const agent = useAgent({ agent: "chat-agent" });
+
+  const { messages, input, handleInputChange, handleSubmit, isLoading, stop, clearHistory, append } =
+    useAgentChat({
+      agent,
+      onError: (err) => {
+        toast.error(`發送失敗: ${err.message}`);
+      },
+    });
+
+  // Sync model selection to agent state
+  const handleModelChange = (modelId: string) => {
+    setSelectedModel(modelId);
+    const model = AI_MODELS.find((m) => m.id === modelId);
+    agent.setState({ model: model?.workersAiModel || "@cf/meta/llama-3.3-70b-instruct-fp8-fast" });
+  };
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, []);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
-
-  const handleSend = async () => {
-    const trimmed = input.trim();
-    if (!trimmed || isLoading) return;
-
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: trimmed,
-      createdAt: new Date(),
-    };
-
-    const assistantMessage: Message = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: "",
-      createdAt: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage, assistantMessage]);
-    setInput("");
-    setIsLoading(true);
-
-    const model = AI_MODELS.find((m) => m.id === selectedModel);
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-
-    try {
-      const response = await fetch("/agents/chat-agent/default", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [
-            ...messages.map((m) => ({ role: m.role, content: m.content })),
-            { role: "user", content: trimmed },
-          ],
-          model: model?.workersAiModel || "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-        }),
-        signal: abortController.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          accumulated += chunk;
-
-          // Parse streaming data
-          const lines = chunk.split("\n");
-          for (const line of lines) {
-            if (line.startsWith("0:")) {
-              // Text delta
-              try {
-                const text = JSON.parse(line.slice(2));
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  const last = updated[updated.length - 1];
-                  if (last && last.role === "assistant") {
-                    last.content += text;
-                  }
-                  return updated;
-                });
-              } catch {
-                // skip parse errors
-              }
-            }
-          }
-        }
-      }
-    } catch (err) {
-      if ((err as Error).name === "AbortError") return;
-      setMessages((prev) => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last && last.role === "assistant" && !last.content) {
-          last.content = `Error: ${(err as Error).message}`;
-        }
-        return updated;
-      });
-      toast.error("發送失敗，請重試");
-    } finally {
-      setIsLoading(false);
-      abortRef.current = null;
-    }
-  };
-
-  const handleStop = () => {
-    abortRef.current?.abort();
-    setIsLoading(false);
-  };
+  }, [messages]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      handleSubmit(e as any);
     }
   };
 
@@ -160,8 +61,16 @@ export function ChatPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleClear = () => {
-    setMessages([]);
+  const getMessageText = (msg: (typeof messages)[0]): string => {
+    if (typeof msg.content === "string") return msg.content;
+    // Handle parts array from UIMessage
+    if (msg.parts) {
+      return msg.parts
+        .filter((p) => p.type === "text")
+        .map((p) => (p as { type: "text"; text: string }).text)
+        .join("");
+    }
+    return "";
   };
 
   const suggestions = [
@@ -199,8 +108,7 @@ export function ChatPage() {
                     key={s.title}
                     className="rounded-xl border bg-card p-4 text-left transition-colors hover:bg-accent"
                     onClick={() => {
-                      setInput(s.prompt);
-                      textareaRef.current?.focus();
+                      append({ role: "user", content: s.prompt });
                     }}
                   >
                     <div className="mb-1 text-sm font-medium">{s.title}</div>
@@ -213,64 +121,65 @@ export function ChatPage() {
             </div>
           ) : (
             <div className="space-y-6">
-              {messages.map((msg) => (
-                <div key={msg.id} className="group">
-                  <div
-                    className={`flex gap-3 ${
-                      msg.role === "user" ? "justify-end" : ""
-                    }`}
-                  >
-                    {msg.role === "assistant" && (
-                      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                        <Bot className="h-4 w-4 text-primary" />
-                      </div>
-                    )}
+              {messages.map((msg) => {
+                const text = getMessageText(msg);
+                if (!text && msg.role !== "assistant") return null;
+                return (
+                  <div key={msg.id} className="group">
                     <div
-                      className={`max-w-[85%] ${
-                        msg.role === "user"
-                          ? "rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground"
-                          : "flex-1"
+                      className={`flex gap-3 ${
+                        msg.role === "user" ? "justify-end" : ""
                       }`}
                     >
-                      {msg.role === "user" ? (
-                        <p className="whitespace-pre-wrap text-sm">
-                          {msg.content}
-                        </p>
-                      ) : msg.content ? (
-                        <MarkdownRenderer content={msg.content} />
-                      ) : isLoading ? (
-                        <div className="flex items-center gap-1 py-2">
-                          <div className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]" />
-                          <div className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]" />
-                          <div className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50" />
+                      {msg.role === "assistant" && (
+                        <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                          <Bot className="h-4 w-4 text-primary" />
                         </div>
-                      ) : null}
+                      )}
+                      <div
+                        className={`max-w-[85%] ${
+                          msg.role === "user"
+                            ? "rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground"
+                            : "flex-1"
+                        }`}
+                      >
+                        {msg.role === "user" ? (
+                          <p className="whitespace-pre-wrap text-sm">{text}</p>
+                        ) : text ? (
+                          <MarkdownRenderer content={text} />
+                        ) : isLoading ? (
+                          <div className="flex items-center gap-1 py-2">
+                            <div className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]" />
+                            <div className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]" />
+                            <div className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50" />
+                          </div>
+                        ) : null}
+                      </div>
+                      {msg.role === "user" && (
+                        <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted">
+                          <User className="h-4 w-4" />
+                        </div>
+                      )}
                     </div>
-                    {msg.role === "user" && (
-                      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted">
-                        <User className="h-4 w-4" />
+                    {msg.role === "assistant" && text && (
+                      <div className="ml-10 mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => handleCopy(text, msg.id)}
+                        >
+                          {copiedId === msg.id ? (
+                            <Check className="h-3.5 w-3.5 text-green-500" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
                       </div>
                     )}
                   </div>
-                  {/* Message actions */}
-                  {msg.role === "assistant" && msg.content && (
-                    <div className="ml-10 mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleCopy(msg.content, msg.id)}
-                      >
-                        {copiedId === msg.id ? (
-                          <Check className="h-3.5 w-3.5 text-green-500" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -282,14 +191,14 @@ export function ChatPage() {
           <div className="flex items-center gap-2 mb-2">
             <ModelSelector
               selectedModel={selectedModel}
-              onModelChange={setSelectedModel}
+              onModelChange={handleModelChange}
             />
             {messages.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-xs text-muted-foreground"
-                onClick={handleClear}
+                onClick={clearHistory}
               >
                 <Trash2 className="size-3.5 mr-1" />
                 清除對話
@@ -300,7 +209,7 @@ export function ChatPage() {
             <Textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder="輸入訊息... (Shift+Enter 換行)"
               className="min-h-[44px] max-h-[200px] resize-none pr-12"
@@ -309,14 +218,14 @@ export function ChatPage() {
             />
             <div className="absolute bottom-2 right-2">
               {isLoading ? (
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleStop}>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={stop}>
                   <Square className="h-4 w-4" />
                 </Button>
               ) : (
                 <Button
                   size="icon"
                   className="h-8 w-8"
-                  onClick={handleSend}
+                  onClick={(e) => handleSubmit(e as any)}
                   disabled={!input.trim()}
                 >
                   <Send className="h-4 w-4" />
