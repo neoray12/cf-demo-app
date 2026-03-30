@@ -113,9 +113,47 @@ export function ChatPage() {
 
       if (!res.ok) {
         const errText = await res.text();
+        const isFirewallHtml =
+          errText.includes("Sorry, you have been blocked") ||
+          errText.includes("Cloudflare Ray ID") ||
+          errText.includes("Firewall for AI") ||
+          errText.includes("security service");
+
+        const extractRayId = (html: string): string | null => {
+          const m =
+            html.match(/Cloudflare Ray ID[:\s]*<[^>]+>([a-f0-9]{16,})<\/[^>]+>/i) ||
+            html.match(/Cloudflare Ray ID[:\s]*([a-f0-9]{16,})/i) ||
+            html.match(/Ray ID[:\s]*([a-f0-9]{16,})/i);
+          return m?.[1] ?? null;
+        };
+
+        const extractIp = (html: string): string | null => {
+          const m =
+            html.match(/id=["']cf-footer-ip["'][^>]*>([\d.:a-fA-F]+)<\/span>/i) ||
+            html.match(/Your IP[:\s]*([\d.:a-fA-F]+)/i);
+          return m?.[1] ?? null;
+        };
+
+        const errState: ChatErrorState = {
+          errorType: isFirewallHtml ? "firewall" : "general",
+          message: isFirewallHtml
+            ? "您的請求被 Cloudflare Firewall for AI 安全防護攔截"
+            : `HTTP ${res.status} 錯誤`,
+          rayId: extractRayId(errText),
+          gatewayLogId: null,
+          statusCode: res.status,
+          gatewayCode: null,
+          userIp: extractIp(errText),
+        };
+
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content: `❌ Error ${res.status}: ${errText}` } : m)
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? { ...m, content: isFirewallHtml ? "此訊息被 Cloudflare AI Gateway 安全政策攔截。" : "發生錯誤，請稍後再試。" }
+              : m
+          )
         );
+        setErrorDialog({ open: true, error: errState });
         return;
       }
 
