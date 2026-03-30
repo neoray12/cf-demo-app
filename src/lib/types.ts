@@ -12,6 +12,24 @@ export interface AIModel {
 export const AI_MODELS: AIModel[] = [
   // Cloudflare Workers AI
   {
+    id: "llama-3.2-3b",
+    name: "Llama 3.2 3B (極速)",
+    provider: "workers-ai",
+    workersAiModel: "@cf/meta/llama-3.2-3b-instruct",
+  },
+  {
+    id: "llama-3.1-8b",
+    name: "Llama 3.1 8B (快速)",
+    provider: "workers-ai",
+    workersAiModel: "@cf/meta/llama-3.1-8b-instruct",
+  },
+  {
+    id: "llama-3.3-70b-fp8",
+    name: "Llama 3.3 70B FP8",
+    provider: "workers-ai",
+    workersAiModel: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  },
+  {
     id: "gpt-oss-120b",
     name: "GPT OSS 120B",
     provider: "workers-ai",
@@ -64,7 +82,7 @@ export const AI_MODELS: AIModel[] = [
   },
 ];
 
-export const DEFAULT_MODEL_ID = "gpt-oss-20b";
+export const DEFAULT_MODEL_ID = "llama-3.1-8b";
 
 export interface BrowserRenderingEndpoint {
   id: string;

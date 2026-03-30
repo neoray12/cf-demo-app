@@ -503,7 +503,7 @@ async function orchestrateStream(
   tools: Record<string, any> | undefined,
 ): Promise<void> {
   const parseThink = needsThinkParsing(modelId);
-  const maxTokens = isReasoningModel(modelId) ? 8192 : 4096;
+  const maxTokens = isReasoningModel(modelId) ? 8192 : 1024;
   const state: StreamState = { insideThink: false, thinkBuffer: "" };
 
   const createStreamResult = (attempt: number) => streamText({
@@ -567,7 +567,7 @@ function handleWorkersAI(
   const createModel = () => {
     const workersai = createWorkersAI({
       binding: env.AI,
-      gateway: { id: gatewayId },
+      gateway: { id: gatewayId, cacheTtl: 3600 },
     });
     return workersai(modelId);
   };
@@ -652,9 +652,9 @@ export async function handleChat(
     openai: "gpt-3.5-turbo",
     anthropic: "claude-sonnet-4-20250514",
     perplexity: "sonar",
-    "workers-ai": "@cf/openai/gpt-oss-120b",
+    "workers-ai": "@cf/meta/llama-3.1-8b-instruct",
   };
-  const modelId = model || defaultModels[provider || "workers-ai"] || "@cf/openai/gpt-oss-120b";
+  const modelId = model || defaultModels[provider || "workers-ai"] || "@cf/meta/llama-3.1-8b-instruct";
 
   console.log("[Chat API] provider:", provider, "model:", modelId, "messages:", messages.length, "toolsEnabled:", toolsEnabled);
 
