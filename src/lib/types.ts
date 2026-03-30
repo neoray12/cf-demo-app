@@ -82,7 +82,7 @@ export const AI_MODELS: AIModel[] = [
   },
 ];
 
-export const DEFAULT_MODEL_ID = "llama-3.1-8b";
+export const DEFAULT_MODEL_ID = "openai-gpt35";
 
 export interface BrowserRenderingEndpoint {
   id: string;
