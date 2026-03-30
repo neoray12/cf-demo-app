@@ -116,18 +116,22 @@ export function ChatPage() {
     if (errorShownRef.current) return;
     errorShownRef.current = true;
     console.error("[Chat] Agent error:", err);
-    setErrorDialog({
-      open: true,
-      error: {
-        errorType: "general",
-        message: err.message || "發生未知錯誤",
-        rayId: null,
-        gatewayLogId: null,
-        statusCode: null,
-        gatewayCode: null,
-        userIp: null,
-      },
-    });
+    // Defer setState to break synchronous re-render cycle that causes
+    // "Maximum update depth exceeded" when useAgentChat fires rapid updates
+    setTimeout(() => {
+      setErrorDialog({
+        open: true,
+        error: {
+          errorType: "general",
+          message: err.message || "發生未知錯誤",
+          rayId: null,
+          gatewayLogId: null,
+          statusCode: null,
+          gatewayCode: null,
+          userIp: null,
+        },
+      });
+    }, 0);
   }, []);
 
   const getBody = useCallback(() => {
@@ -141,6 +145,7 @@ export function ChatPage() {
     agent,
     body: getBody,
     onError: handleError,
+    experimental_throttle: 50,
   });
 
   const isLoading = status === "streaming" || status === "submitted";
@@ -346,6 +351,14 @@ export function ChatPage() {
                     </div>
                   );
                 })}
+                {/* Loading indicator when waiting for first assistant response */}
+                {isLoading && (!lastAssistantMsg || visibleMessages[visibleMessages.length - 1]?.role === "user") && (
+                  <div className="flex items-center gap-1.5 py-1">
+                    <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                    <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                    <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
             )}

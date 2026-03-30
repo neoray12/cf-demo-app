@@ -123,8 +123,24 @@ export class ChatAgent extends AIChatAgent<Env> {
 
     const env = this.env;
 
-    // Convert UIMessage[] to model messages for streamText
-    const chatMessages = await convertToModelMessages(this.messages);
+    // Convert messages to the format expected by streamText.
+    // For Workers AI models, use simplified CoreMessage[] to avoid format issues
+    // (gpt-oss models are strict about input format).
+    // For external providers, use full UIMessage conversion to preserve tool call context.
+    let chatMessages;
+    if (provider === "workers-ai") {
+      chatMessages = this.messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.parts
+            .filter((p) => p.type === "text")
+            .map((p) => (p as { type: "text"; text: string }).text)
+            .join(""),
+        }));
+    } else {
+      chatMessages = await convertToModelMessages(this.messages);
+    }
 
     console.log("[ChatAgent] Converted messages:", chatMessages.length);
 
