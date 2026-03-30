@@ -373,6 +373,7 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={location.pathname === "/crawler"}
                       tooltip={t("sidebar.crawler")}
+                      onClick={() => handleNavClick("/crawler")}
                     >
                       <Globe />
                       <span>{t("sidebar.overview")}</span>

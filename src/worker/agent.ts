@@ -1,6 +1,6 @@
 import { AIChatAgent } from "agents/ai-chat-agent";
 import { createWorkersAI } from "workers-ai-provider";
-import { streamText, convertToModelMessages } from "ai";
+import { streamText, convertToModelMessages, stepCountIs } from "ai";
 import { z } from "zod";
 import type { Env } from "./types";
 
@@ -116,6 +116,7 @@ export class ChatAgent extends AIChatAgent<Env> {
         system: SYSTEM_PROMPT,
         messages: chatMessages,
         maxOutputTokens: 4096,
+        stopWhen: stepCountIs(5),
         tools: {
           searchKnowledge: {
             description:

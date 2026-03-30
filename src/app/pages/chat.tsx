@@ -6,9 +6,9 @@ import { ModelSelector } from "../components/chat/model-selector";
 import { ErrorDialog, type ChatErrorState } from "../components/chat/error-dialog";
 import { McpConnectionsPanel } from "../components/chat/mcp-panel";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Plug } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Plug, Search as SearchIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { UIMessage, ReasoningUIPart, TextUIPart } from "ai";
+import type { UIMessage, ReasoningUIPart, TextUIPart, UIMessagePart } from "ai";
 import type { ChatAgent } from "@/worker/agent";
 
 function CopyButton({ text }: { text: string }) {
@@ -41,6 +41,45 @@ function extractText(msg: UIMessage): string {
     .filter((p): p is TextUIPart => p.type === "text")
     .map((p) => p.text)
     .join("");
+}
+
+interface ToolCallInfo {
+  toolCallId: string;
+  toolName: string;
+  state: string;
+}
+
+function extractToolCalls(msg: UIMessage): ToolCallInfo[] {
+  return msg.parts
+    .filter((p: UIMessagePart<any, any>) =>
+      p.type.startsWith("tool-") || p.type === "dynamic-tool"
+    )
+    .map((p: any) => ({
+      toolCallId: p.toolCallId as string,
+      toolName: p.type === "dynamic-tool" ? (p.toolName as string) : (p.type as string).slice(5),
+      state: (p.state as string) ?? "input",
+    }));
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  searchKnowledge: "搜尋知識庫",
+};
+
+function ToolBadge({ toolName, state }: { toolName: string; state: string }) {
+  const label = TOOL_LABELS[toolName] ?? toolName;
+  const isDone = state === "output" || state === "output-error";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-opacity ${
+        isDone
+          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 opacity-70"
+          : "bg-amber-200 text-amber-800 dark:bg-amber-800/60 dark:text-amber-200 animate-pulse"
+      }`}
+    >
+      <SearchIcon className="size-3 shrink-0" />
+      {label}
+    </span>
+  );
 }
 
 export function ChatPage() {
@@ -255,6 +294,16 @@ export function ChatPage() {
                         </div>
                       ) : (
                         <div className="group/msg">
+                          {(() => {
+                            const toolCalls = extractToolCalls(msg);
+                            return toolCalls.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5 mb-2">
+                                {toolCalls.map((tc) => (
+                                  <ToolBadge key={tc.toolCallId} toolName={tc.toolName} state={tc.state} />
+                                ))}
+                              </div>
+                            ) : null;
+                          })()}
                           {textContent || reasoning ? (
                             <>
                               <MarkdownRenderer

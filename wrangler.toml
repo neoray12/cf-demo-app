@@ -36,4 +36,4 @@ new_sqlite_classes = ["ChatAgent"]
 [vars]
 CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
 AI_GATEWAY_ID = "nkcf-gateway-01"
-AUTORAG_NAME = "cf-demo-rag"
+AUTORAG_NAME = "cf-demo-ai-search"
