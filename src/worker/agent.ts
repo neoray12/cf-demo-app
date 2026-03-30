@@ -143,8 +143,18 @@ export class ChatAgent extends AIChatAgent<Env> {
       maxResults: z.number().optional().default(5).describe("最大結果數量 (1-10)"),
     });
 
-    const mcpTools = this.mcp.getAITools();
-    console.log("[ChatAgent] MCP tools available:", Object.keys(mcpTools).length);
+    // Only include MCP tools if there are actual active connections
+    const mcpState = this.getMcpServers();
+    const serverEntries = Object.values(mcpState.servers || {});
+    const hasActiveMcp = serverEntries.some(
+      (s) => s.state === "ready"
+    );
+    const mcpTools = hasActiveMcp ? this.mcp.getAITools() : {};
+    console.log(
+      "[ChatAgent] MCP servers:", serverEntries.length,
+      "active:", hasActiveMcp,
+      "tools:", Object.keys(mcpTools)
+    );
 
     try {
       const result = streamText({

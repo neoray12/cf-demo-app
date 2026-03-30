@@ -9,7 +9,6 @@ import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
 import { Square, SquarePen, Copy, Check, Plug, Search as SearchIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { UIMessage, ReasoningUIPart, TextUIPart, UIMessagePart } from "ai";
-import type { ChatAgent } from "@/worker/agent";
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -65,8 +64,16 @@ const TOOL_LABELS: Record<string, string> = {
   searchKnowledge: "搜尋知識庫",
 };
 
+function friendlyToolName(rawName: string): string {
+  if (TOOL_LABELS[rawName]) return TOOL_LABELS[rawName];
+  // MCP tools often have format like "tool_abc123_actual_name"
+  const mcpMatch = rawName.match(/^tool_[a-zA-Z0-9]+_(.+)$/);
+  if (mcpMatch?.[1]) return mcpMatch[1].replace(/_/g, " ");
+  return rawName.replace(/_/g, " ");
+}
+
 function ToolBadge({ toolName, state }: { toolName: string; state: string }) {
-  const label = TOOL_LABELS[toolName] ?? toolName;
+  const label = friendlyToolName(toolName);
   const isDone = state === "output" || state === "output-error";
   return (
     <span
@@ -97,34 +104,43 @@ export function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
 
-  const agent = useAgent<ChatAgent>({ agent: "chat-agent", name: "default" });
+  const agent = useAgent({ agent: "chat-agent", name: "default" });
 
   const currentModelRef = useRef(selectedModel);
   currentModelRef.current = selectedModel;
 
+  const errorShownRef = useRef(false);
+
+  const handleError = useCallback((err: Error) => {
+    // Guard against repeated calls triggering infinite re-renders
+    if (errorShownRef.current) return;
+    errorShownRef.current = true;
+    console.error("[Chat] Agent error:", err);
+    setErrorDialog({
+      open: true,
+      error: {
+        errorType: "general",
+        message: err.message || "發生未知錯誤",
+        rayId: null,
+        gatewayLogId: null,
+        statusCode: null,
+        gatewayCode: null,
+        userIp: null,
+      },
+    });
+  }, []);
+
+  const getBody = useCallback(() => {
+    const model = AI_MODELS.find((m) => m.id === currentModelRef.current);
+    const modelId =
+      model?.workersAiModel ?? model?.providerModelId ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+    return { model: modelId, provider: model?.provider ?? "workers-ai" };
+  }, []);
+
   const { messages, sendMessage: agentSendMessage, status, stop, clearHistory } = useAgentChat({
     agent,
-    body: () => {
-      const model = AI_MODELS.find((m) => m.id === currentModelRef.current);
-      const modelId =
-        model?.workersAiModel ?? model?.providerModelId ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-      return { model: modelId, provider: model?.provider ?? "workers-ai" };
-    },
-    onError: (err) => {
-      console.error("[Chat] Agent error:", err);
-      setErrorDialog({
-        open: true,
-        error: {
-          errorType: "general",
-          message: err.message || "發生未知錯誤",
-          rayId: null,
-          gatewayLogId: null,
-          statusCode: null,
-          gatewayCode: null,
-          userIp: null,
-        },
-      });
-    },
+    body: getBody,
+    onError: handleError,
   });
 
   const isLoading = status === "streaming" || status === "submitted";
@@ -385,7 +401,10 @@ export function ChatPage() {
 
       <ErrorDialog
         open={errorDialog.open}
-        onClose={() => setErrorDialog({ open: false, error: null })}
+        onClose={() => {
+          setErrorDialog({ open: false, error: null });
+          errorShownRef.current = false;
+        }}
         error={errorDialog.error}
       />
     </div>
