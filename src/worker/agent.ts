@@ -1,8 +1,13 @@
 import { AIChatAgent } from "agents/ai-chat-agent";
 import { createWorkersAI } from "workers-ai-provider";
+import { createAiGateway } from "ai-gateway-provider";
+import { createOpenAI } from "ai-gateway-provider/providers/openai";
+import { createAnthropic } from "ai-gateway-provider/providers/anthropic";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { streamText, convertToModelMessages, stepCountIs } from "ai";
 import { z } from "zod";
 import type { Env } from "./types";
+import type { ModelProvider } from "../lib/types";
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare Workers AI 驅動的智慧助理。你可以：
 1. 回答一般性問題
@@ -78,21 +83,16 @@ export class ChatAgent extends AIChatAgent<Env> {
   }
 
   async onChatMessage(
-    onFinish: Parameters<AIChatAgent<Env>["onChatMessage"]>[0]
+    onFinish: Parameters<AIChatAgent<Env>["onChatMessage"]>[0],
+    options?: Parameters<AIChatAgent<Env>["onChatMessage"]>[1]
   ) {
     const gatewayId = this.env.AI_GATEWAY_ID || "nkcf-gateway-01";
-    console.log("[ChatAgent] Creating WorkersAI provider with gateway:", gatewayId);
 
-    const workersai = createWorkersAI({
-      binding: this.env.AI,
-      gateway: { id: gatewayId },
-    });
+    const body = options?.body as { model?: string; provider?: ModelProvider } | undefined;
+    const provider: ModelProvider = body?.provider || "workers-ai";
+    const modelId = body?.model || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
-    const agentState = this.state as { model?: string } | undefined;
-    const modelId =
-      agentState?.model || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-
-    console.log("[ChatAgent] Using model:", modelId);
+    console.log("[ChatAgent] Using provider:", provider, "model:", modelId);
     console.log("[ChatAgent] Message count:", this.messages.length);
 
     const env = this.env;
@@ -101,6 +101,42 @@ export class ChatAgent extends AIChatAgent<Env> {
     const chatMessages = await convertToModelMessages(this.messages);
 
     console.log("[ChatAgent] Converted messages:", chatMessages.length);
+
+    // Resolve the AI model based on provider
+    let aiModel;
+    if (provider === "workers-ai") {
+      const workersai = createWorkersAI({
+        binding: env.AI,
+        gateway: { id: gatewayId },
+      });
+      aiModel = workersai(modelId);
+    } else {
+      const aigateway = createAiGateway({
+        accountId: env.CF_ACCOUNT_ID || "5efa272dc28e4e3933324c44165b6dbe",
+        gateway: gatewayId,
+        apiKey: env.CF_AIG_TOKEN,
+      });
+      if (provider === "openai") {
+        const openai = createOpenAI();
+        aiModel = aigateway(openai.chat(modelId));
+      } else if (provider === "anthropic") {
+        const anthropic = createAnthropic();
+        aiModel = aigateway(anthropic(modelId));
+      } else if (provider === "perplexity") {
+        const perplexity = createOpenAICompatible({
+          baseURL: "https://api.perplexity.ai/",
+          name: "Perplexity",
+          apiKey: "CF_TEMP_TOKEN",
+        });
+        aiModel = aigateway(perplexity.chatModel(modelId));
+      } else {
+        const workersai = createWorkersAI({
+          binding: env.AI,
+          gateway: { id: gatewayId },
+        });
+        aiModel = workersai(modelId);
+      }
+    }
 
     const searchKnowledgeParams = z.object({
       query: z.string().describe("搜尋查詢，使用與使用者問題相同的語言"),
@@ -112,7 +148,7 @@ export class ChatAgent extends AIChatAgent<Env> {
 
     try {
       const result = streamText({
-        model: workersai(modelId),
+        model: aiModel,
         system: SYSTEM_PROMPT,
         messages: chatMessages,
         maxOutputTokens: 4096,

@@ -99,8 +99,17 @@ export function ChatPage() {
 
   const agent = useAgent<ChatAgent>({ agent: "chat-agent", name: "default" });
 
+  const currentModelRef = useRef(selectedModel);
+  currentModelRef.current = selectedModel;
+
   const { messages, sendMessage: agentSendMessage, status, stop, clearHistory } = useAgentChat({
     agent,
+    body: () => {
+      const model = AI_MODELS.find((m) => m.id === currentModelRef.current);
+      const modelId =
+        model?.workersAiModel ?? model?.providerModelId ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+      return { model: modelId, provider: model?.provider ?? "workers-ai" };
+    },
     onError: (err) => {
       console.error("[Chat] Agent error:", err);
       setErrorDialog({
@@ -119,14 +128,6 @@ export function ChatPage() {
   });
 
   const isLoading = status === "streaming" || status === "submitted";
-
-  // Sync model selection to agent state
-  useEffect(() => {
-    const model = AI_MODELS.find((m) => m.id === selectedModel);
-    const workersModel =
-      model?.workersAiModel ?? model?.providerModelId ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-    agent.setState({ model: workersModel } as any);
-  }, [selectedModel]);
 
   // Smart auto-scroll
   useEffect(() => {
