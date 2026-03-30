@@ -14,12 +14,12 @@
 ## 功能需求
 
 ### 1. AI Agent (聊天機器人)
-- 使用 Cloudflare **Agents SDK** (`AIChatAgent`)，不使用 Vercel AI SDK
-- 透過 **AI Gateway** (`nkcf-gateway-01`) 路由所有 AI 請求
-- 使用 **Workers AI** 模型（Llama 3.3 70B, DeepSeek R1, QwQ, GPT OSS 等）
+- 使用 **Vercel AI SDK**（`streamText` from `"ai"`）+ HTTP `/api/chat` 端點，**不使用** Cloudflare Agents SDK / WebSocket
+- 透過 **AI Gateway** (`nkcf-gateway-01`) 路由所有 AI 請求（`cacheTtl: 3600`）
+- 支援多個模型提供商：Workers AI、OpenAI、Anthropic、Perplexity
 - 整合 **AI Search (AutoRAG)** 進行 RAG，查詢 R2 中已爬取的資料
 - 聊天 UI 仿 ChatGPT 風格：串流回覆、Markdown 渲染、模型選擇器、建議卡片
-- 參考 `/Users/neokung/Documents/tce-app` 的 UI 設計與邏輯
+- 預設模型：GPT-3.5 Turbo（`openai-gpt35`）
 
 ### 2. 網站爬蟲 (Browser Rendering)
 - **Sidebar 子功能導航**：每個功能是獨立的子頁面，不使用 Tab
@@ -53,8 +53,8 @@
 ## 技術棧
 
 - **前端**: React 19 + Vite + Tailwind CSS 4 + shadcn (new-york style)
-- **後端**: Cloudflare Workers + Agents SDK (Durable Objects)
-- **AI**: Workers AI via `workers-ai-provider` + AI SDK v6 + AI Gateway
+- **後端**: Cloudflare Workers
+- **AI**: Workers AI via `workers-ai-provider` + Vercel AI SDK (`ai`) + AI Gateway
 - **RAG**: AI Search (AutoRAG) 索引 R2 爬蟲資料
 - **路由**: React Router v7
 - **部署**: `wrangler deploy`

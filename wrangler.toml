@@ -24,14 +24,6 @@ bucket_name = "cf-demo-crawler"
 binding = "KV"
 id = "cd03af00eb9340a180014760028fbebd"
 
-# Durable Objects (required by Agents SDK)
-[[durable_objects.bindings]]
-name = "ChatAgent"
-class_name = "ChatAgent"
-
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["ChatAgent"]
 
 [vars]
 CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
