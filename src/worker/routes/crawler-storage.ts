@@ -125,9 +125,7 @@ export async function handleCrawlerStorage(
         ? filename.replace(/\.[^.]+$/, `.${sanitized.ext}`)
         : filename;
 
-    const date = new Date().toISOString().split("T")[0];
-    const slug = new URL(sourceUrl).hostname.replace(/\./g, "_");
-    const key = `crawled/${date}/${slug}_${finalFilename}`;
+    const key = finalFilename;
 
     await env.CRAWLER_BUCKET.put(key, sanitized.content, {
       httpMetadata: { contentType: sanitized.contentType },
