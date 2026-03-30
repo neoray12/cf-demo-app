@@ -156,6 +156,7 @@ export function ChatPage() {
                 gatewayLogId: (event.gatewayLogId as string | null) ?? null,
                 statusCode: (event.statusCode as number | null) ?? null,
                 gatewayCode: (event.gatewayCode as string | null) ?? null,
+                userIp: (event.userIp as string | null) ?? null,
               };
               const blockedMsg = errState.errorType !== "general"
                 ? "此訊息被 Cloudflare AI Gateway 安全政策攔截。"

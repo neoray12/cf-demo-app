@@ -52,6 +52,7 @@
       "rayId": "Ray ID",
       "gatewayLogId": "AIG Log ID",
       "errorCode": "Gateway Code",
+      "userIp": "Your IP",
       "reason": "Reason",
       "detailsLabel": "Details:",
       "solutionLabel": "Solutions:",

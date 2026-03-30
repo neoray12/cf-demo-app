@@ -42,6 +42,7 @@ interface StreamErrorEvent {
   gatewayLogId: string | null;
   statusCode: number | null;
   gatewayCode: string | null;
+  userIp: string | null;
 }
 
 function parseStreamError(err: unknown): StreamErrorEvent {
@@ -53,6 +54,7 @@ function parseStreamError(err: unknown): StreamErrorEvent {
     gatewayLogId: null,
     statusCode: null,
     gatewayCode: null,
+    userIp: null,
   };
 
   // Duck-type check: ai-gateway-provider may use a different AICallError class
@@ -125,6 +127,7 @@ function parseStreamError(err: unknown): StreamErrorEvent {
     base.errorType = "firewall";
     base.message = "您的請求被 Cloudflare Firewall for AI 安全防護攔截";
     base.rayId = extractRayIdFromHtml(body) || rayId;
+    base.userIp = extractIpFromHtml(body);
     return base;
   }
 
@@ -156,9 +159,18 @@ function parseStreamError(err: unknown): StreamErrorEvent {
 
 function extractRayIdFromHtml(html: string): string | null {
   const m =
+    html.match(/Cloudflare Ray ID[:\s]*<[^>]+>([a-f0-9]{16,})<\/[^>]+>/i) ||
     html.match(/Cloudflare Ray ID[:\s]*([a-f0-9]{16,})/i) ||
     html.match(/Ray ID[:\s]*([a-f0-9]{16,})/i) ||
     html.match(/ray[_\-\s]*id[:\s]*([a-f0-9]{16,})/i);
+  return m?.[1] ?? null;
+}
+
+function extractIpFromHtml(html: string): string | null {
+  // <span class="hidden" id="cf-footer-ip">1.162.151.201</span>
+  const m =
+    html.match(/id=["']cf-footer-ip["'][^>]*>([\d.:a-fA-F]+)<\/span>/i) ||
+    html.match(/Your IP[:\s]*([\d.:a-fA-F]+)/i);
   return m?.[1] ?? null;
 }
 

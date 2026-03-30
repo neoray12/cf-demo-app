@@ -15,6 +15,7 @@ export interface ChatErrorState {
   gatewayLogId: string | null;
   statusCode: number | null;
   gatewayCode: string | null;
+  userIp: string | null;
 }
 
 interface ErrorDialogProps {
@@ -54,6 +55,7 @@ export function ErrorDialog({ open, onClose, error }: ErrorDialogProps) {
   if (error.rayId) details.push({ label: t("chat.error.rayId"), value: error.rayId });
   if (error.gatewayLogId) details.push({ label: t("chat.error.gatewayLogId"), value: error.gatewayLogId });
   if (error.gatewayCode) details.push({ label: t("chat.error.errorCode"), value: error.gatewayCode });
+  if (error.userIp) details.push({ label: t("chat.error.userIp"), value: error.userIp });
   if (error.message) details.push({ label: t("chat.error.reason"), value: error.message });
 
   const badge = BADGE_MAP[error.errorType];
