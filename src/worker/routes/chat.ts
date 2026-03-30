@@ -268,31 +268,29 @@ const STREAMING_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
 };
 
-type NdjsonSender = (data: Record<string, unknown>) => Promise<void>;
+type NdjsonSender = (data: Record<string, unknown>) => void;
 
 function makeNdjsonStream(
   fn: (send: NdjsonSender) => Promise<void>,
 ): Response {
   const encoder = new TextEncoder();
-  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
-  const writer = writable.getWriter();
 
-  const send: NdjsonSender = async (data) => {
-    try { await writer.write(encoder.encode(JSON.stringify(data) + "\n")); } catch { /* closed */ }
-  };
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send: NdjsonSender = (data) => {
+        try { controller.enqueue(encoder.encode(JSON.stringify(data) + "\n")); } catch { /* closed */ }
+      };
+      try {
+        await fn(send);
+      } catch (err) {
+        try { send(parseStreamError(err) as unknown as Record<string, unknown>); } catch { /* closed */ }
+      } finally {
+        try { controller.close(); } catch { /* closed */ }
+      }
+    },
+  });
 
-  // Fire-and-forget: Workers runtime keeps the response alive while the writer is open
-  (async () => {
-    try {
-      await fn(send);
-    } catch (err) {
-      try { await send(parseStreamError(err) as unknown as Record<string, unknown>); } catch { /* closed */ }
-    } finally {
-      try { await writer.close(); } catch { /* closed */ }
-    }
-  })();
-
-  return new Response(readable, { headers: STREAMING_HEADERS });
+  return new Response(stream, { headers: STREAMING_HEADERS });
 }
 
 // Only parse <think> tags for reasoning models that embed reasoning in text
@@ -315,14 +313,14 @@ interface StreamState {
 }
 
 // Process text-delta: split on <think>/<​/think> boundaries when needed
-async function processTextDelta(
+function processTextDelta(
   send: NdjsonSender,
   raw: string,
   state: StreamState,
   parseThink: boolean,
-): Promise<void> {
+): void {
   if (!parseThink) {
-    await send({ type: "text-delta", text: raw });
+    send({ type: "text-delta", text: raw });
     return;
   }
 
@@ -342,22 +340,22 @@ async function processTextDelta(
       const closeIdx = remaining.indexOf("</think>");
       if (closeIdx !== -1) {
         const reasoningText = remaining.slice(0, closeIdx);
-        if (reasoningText) await send({ type: "reasoning-delta", text: reasoningText });
+        if (reasoningText) send({ type: "reasoning-delta", text: reasoningText });
         state.insideThink = false;
         remaining = remaining.slice(closeIdx + "</think>".length);
       } else {
-        if (remaining) await send({ type: "reasoning-delta", text: remaining });
+        if (remaining) send({ type: "reasoning-delta", text: remaining });
         remaining = "";
       }
     } else {
       const openIdx = remaining.indexOf("<think>");
       if (openIdx !== -1) {
         const normalText = remaining.slice(0, openIdx);
-        if (normalText) await send({ type: "text-delta", text: normalText });
+        if (normalText) send({ type: "text-delta", text: normalText });
         state.insideThink = true;
         remaining = remaining.slice(openIdx + "<think>".length);
       } else {
-        if (remaining) await send({ type: "text-delta", text: remaining });
+        if (remaining) send({ type: "text-delta", text: remaining });
         remaining = "";
       }
     }
@@ -381,38 +379,38 @@ async function processStream(
     switch (part.type) {
       case "text-delta":
         hasTextContent = true;
-        await processTextDelta(send, part.text, state, parseThink);
+        processTextDelta(send, part.text, state, parseThink);
         break;
       case "reasoning-delta":
         hasTextContent = true;
-        await send({ type: "reasoning-delta", text: part.text });
+        send({ type: "reasoning-delta", text: part.text });
         break;
       case "tool-input-start":
         hasToolCalls = true;
-        await send({ type: "tool-call-start", toolCallId: part.id, toolName: part.toolName });
+        send({ type: "tool-call-start", toolCallId: part.id, toolName: part.toolName });
         break;
       case "tool-call":
-        await send({ type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: part.input });
+        send({ type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: part.input });
         break;
       case "tool-result":
-        await send({ type: "tool-result", toolCallId: part.toolCallId, toolName: part.toolName, result: part.output });
+        send({ type: "tool-result", toolCallId: part.toolCallId, toolName: part.toolName, result: part.output });
         toolResults.push({ toolName: part.toolName, result: part.output });
         break;
       case "finish":
         // Flush any remaining thinkBuffer
         if (state.thinkBuffer) {
           const eventType = state.insideThink ? "reasoning-delta" : "text-delta";
-          await send({ type: eventType, text: state.thinkBuffer });
+          send({ type: eventType, text: state.thinkBuffer });
           state.thinkBuffer = "";
         }
         if (part.finishReason === "length") {
-          await send({ type: "text-delta", text: "\n\n⚠️ *回覆因長度限制被截斷，請嘗試縮小問題範圍。*" });
+          send({ type: "text-delta", text: "\n\n⚠️ *回覆因長度限制被截斷，請嘗試縮小問題範圍。*" });
         }
         console.log(`[Chat API] Stream finished (attempt ${attempt}): ${part.finishReason}, text=${hasTextContent}, tools=${hasToolCalls}`);
         break;
       case "error":
         console.error(`[Chat API] Stream error (attempt ${attempt}):`, part.error);
-        await send(parseStreamError(part.error) as unknown as Record<string, unknown>);
+        send(parseStreamError(part.error) as unknown as Record<string, unknown>);
         hasError = true;
         break;
       // Known informational events — ignore silently
@@ -470,16 +468,16 @@ async function processSmartRetry(
     switch (part.type) {
       case "text-delta":
         hasText = true;
-        await processTextDelta(send, part.text, state, parseThink);
+        processTextDelta(send, part.text, state, parseThink);
         break;
       case "reasoning-delta":
         hasText = true;
-        await send({ type: "reasoning-delta", text: part.text });
+        send({ type: "reasoning-delta", text: part.text });
         break;
       case "finish":
         if (state.thinkBuffer) {
           const eventType = state.insideThink ? "reasoning-delta" : "text-delta";
-          await send({ type: eventType, text: state.thinkBuffer });
+          send({ type: eventType, text: state.thinkBuffer });
           state.thinkBuffer = "";
         }
         console.log(`[Chat API] Smart retry finished: ${part.finishReason}, text=${hasText}`);
@@ -503,7 +501,7 @@ async function orchestrateStream(
   tools: Record<string, any> | undefined,
 ): Promise<void> {
   const parseThink = needsThinkParsing(modelId);
-  const maxTokens = isReasoningModel(modelId) ? 16384 : 8192;
+  const maxTokens = isReasoningModel(modelId) ? 16384 : 4096;
   const state: StreamState = { insideThink: false, thinkBuffer: "" };
 
   const createStreamResult = (attempt: number) => streamText({
@@ -549,11 +547,11 @@ async function orchestrateStream(
   // Final fallback
   if (!resolved) {
     console.error("[Chat API] All attempts failed, sending fallback");
-    await send({ type: "text-delta", text: "抱歉，我無法產生回覆。請再試一次或換一種方式提問。" });
+    send({ type: "text-delta", text: "抱歉，我無法產生回覆。請再試一次或換一種方式提問。" });
   }
 
-  await send({ type: "finish", finishReason: "stop" });
-  await send({ type: "done" });
+  send({ type: "finish", finishReason: "stop" });
+  send({ type: "done" });
 }
 
 // Workers AI: use binding + gateway option
