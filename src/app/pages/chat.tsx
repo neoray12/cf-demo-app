@@ -1,240 +1,367 @@
-import { useRef, useEffect } from "react";
-import { useAgent } from "agents/react";
-import { useAgentChat } from "agents/ai-react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { MarkdownRenderer } from "../components/chat/markdown-renderer";
 import { ModelSelector } from "../components/chat/model-selector";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { useState } from "react";
-import {
-  Send,
-  Square,
-  Bot,
-  User,
-  Sparkles,
-  Copy,
-  Check,
-  Trash2,
-} from "lucide-react";
-import { toast } from "sonner";
+import { Square, SquarePen, Copy, Check } from "lucide-react";
+import { useTranslation } from "react-i18next";
+
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
+let msgCounter = 0;
+function genId() {
+  return `msg-${Date.now()}-${++msgCounter}`;
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className="p-1 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/60 transition-colors"
+      title="複製"
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+    </button>
+  );
+}
 
 export function ChatPage() {
+  const { t } = useTranslation();
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const messagesRef = useRef(messages);
+  const streamingMsgIdRef = useRef<string | null>(null);
+  const isNearBottomRef = useRef(true);
+  messagesRef.current = messages;
 
-  const agent = useAgent({ agent: "chat-agent" });
-
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop, clearHistory, append } =
-    useAgentChat({
-      agent,
-      onError: (err) => {
-        toast.error(`發送失敗: ${err.message}`);
-      },
-    });
-
-  // Sync model selection to agent state
-  const handleModelChange = (modelId: string) => {
-    setSelectedModel(modelId);
-    const model = AI_MODELS.find((m) => m.id === modelId);
-    agent.setState({ model: model?.workersAiModel || "@cf/meta/llama-3.3-70b-instruct-fp8-fast" });
-  };
-
+  // Smart auto-scroll
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim() || isLoading) return;
+
+    const userMsg: ChatMessage = { id: genId(), role: "user", content: text.trim() };
+    const assistantMsgId = genId();
+    const assistantMsg: ChatMessage = { id: assistantMsgId, role: "assistant", content: "" };
+
+    // Snapshot BEFORE setState to prevent messagesRef.current from being
+    // updated with userMsg before apiMessages is built (avoids duplicate user messages).
+    const apiMessages = [...messagesRef.current, userMsg]
+      .filter((m) => !(m.role === "assistant" && (!m.content || m.content.startsWith("❌"))))
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    streamingMsgIdRef.current = assistantMsgId;
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setInput("");
+    setIsLoading(true);
+    isNearBottomRef.current = true;
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const fetchTimeout = setTimeout(() => controller.abort(), 60_000);
+
+    try {
+      const model = AI_MODELS.find((m) => m.id === selectedModel);
+
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: apiMessages,
+          provider: model?.provider || "workers-ai",
+          model: model?.workersAiModel ?? model?.providerModelId ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(fetchTimeout);
+
+      if (!res.ok) {
+        const errText = await res.text();
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content: `❌ Error ${res.status}: ${errText}` } : m)
+        );
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accContent = "";
+      let gotContent = false;
+
+      const processLine = (line: string) => {
+        if (!line.trim()) return;
+        try {
+          const event = JSON.parse(line);
+          switch (event.type) {
+            case "text-delta":
+            case "reasoning-delta":
+              gotContent = true;
+              accContent += event.text as string;
+              setMessages((prev) =>
+                prev.map((m) => m.id === assistantMsgId ? { ...m, content: accContent } : m)
+              );
+              break;
+            case "error":
+              console.error("[Chat] Stream error:", event.message);
+              setMessages((prev) =>
+                prev.map((m) => m.id === assistantMsgId
+                  ? { ...m, content: m.content || `❌ ${(event.message as string) || "Unknown error"}` }
+                  : m)
+              );
+              break;
+          }
+        } catch {
+          // skip malformed lines
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) processLine(line);
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) processLine(buffer);
+
+      setMessages((prev) =>
+        prev.map((m) => m.id === assistantMsgId ? { ...m, content: accContent } : m)
+      );
+
+      if (!gotContent) {
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantMsgId && !m.content
+            ? { ...m, content: "❌ 無法取得回應，請再試一次。" }
+            : m)
+        );
+      }
+    } catch (err) {
+      clearTimeout(fetchTimeout);
+      if ((err as Error).name === "AbortError") {
+        setMessages((prev) => {
+          const msg = prev.find((m) => m.id === assistantMsgId);
+          if (msg && !msg.content) return prev.filter((m) => m.id !== assistantMsgId);
+          return prev;
+        });
+      } else {
+        console.error("[Chat] Fetch error:", err);
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantMsgId
+            ? { ...m, content: m.content || `❌ ${(err as Error).message || "發生錯誤"}` }
+            : m)
+        );
+      }
+    } finally {
+      setIsLoading(false);
+      streamingMsgIdRef.current = null;
+      abortRef.current = null;
+    }
+  }, [isLoading, selectedModel]);
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const handleNewChat = useCallback(() => {
+    if (isLoading) abortRef.current?.abort();
+    setMessages([]);
+    setIsLoading(false);
+    streamingMsgIdRef.current = null;
+    abortRef.current = null;
+    textareaRef.current?.focus();
+  }, [isLoading]);
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    e.target.style.height = "auto";
+    e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      handleSubmit(e as any);
+      if (input.trim()) sendMessage(input);
     }
   };
 
-  const handleCopy = (content: string, id: string) => {
-    navigator.clipboard.writeText(content);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const getMessageText = (msg: (typeof messages)[0]): string => {
-    if (typeof msg.content === "string") return msg.content;
-    // Handle parts array from UIMessage
-    if (msg.parts) {
-      return msg.parts
-        .filter((p) => p.type === "text")
-        .map((p) => (p as { type: "text"; text: string }).text)
-        .join("");
-    }
-    return "";
-  };
+  const hasMessages = messages.length > 0;
 
   const suggestions = [
     {
-      title: "Cloudflare Workers",
-      prompt: "介紹一下 Cloudflare Workers 的主要功能和優勢",
+      title: t("chat.suggestions.workers.title"),
+      desc: t("chat.suggestions.workers.prompt"),
     },
     {
-      title: "AI Gateway",
-      prompt: "Cloudflare AI Gateway 是什麼？有什麼用途？",
+      title: t("chat.suggestions.aiGateway.title"),
+      desc: t("chat.suggestions.aiGateway.prompt"),
     },
     {
-      title: "R2 儲存",
-      prompt: "Cloudflare R2 和 AWS S3 有什麼差異？",
+      title: t("chat.suggestions.r2.title"),
+      desc: t("chat.suggestions.r2.prompt"),
     },
   ];
 
   return (
-    <div className="flex h-[calc(100svh-3.5rem)] flex-col">
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 py-6">
-          {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
-                <Sparkles className="h-8 w-8 text-primary" />
-              </div>
-              <h2 className="mb-2 text-xl font-semibold">AI Agent</h2>
-              <p className="mb-8 text-center text-sm text-muted-foreground max-w-md">
-                由 Cloudflare Workers AI 驅動，支援知識庫搜尋（RAG）
-              </p>
-              <div className="grid w-full gap-3 sm:grid-cols-3">
-                {suggestions.map((s) => (
-                  <button
-                    key={s.title}
-                    className="rounded-xl border bg-card p-4 text-left transition-colors hover:bg-accent"
-                    onClick={() => {
-                      append({ role: "user", content: s.prompt });
-                    }}
-                  >
-                    <div className="mb-1 text-sm font-medium">{s.title}</div>
-                    <div className="text-xs text-muted-foreground line-clamp-2">
-                      {s.prompt}
-                    </div>
-                  </button>
-                ))}
+    <div className="flex flex-col h-full">
+      {/* ── Header: model selector + new chat ── */}
+      <div className="flex shrink-0 py-2.5 px-3 md:px-4">
+        <div className="max-w-3xl mx-auto w-full flex items-center justify-center gap-1 relative">
+          {hasMessages && (
+            <button
+              onClick={handleNewChat}
+              className="inline-flex items-center gap-1.5 h-8 px-2 text-muted-foreground rounded-lg hover:bg-muted/60 transition-colors"
+              title={t("chat.clearHistory")}
+            >
+              <SquarePen className="size-4" />
+            </button>
+          )}
+          <ModelSelector selectedModel={selectedModel} onModelChange={setSelectedModel} />
+        </div>
+      </div>
+
+      {/* ── Messages ── */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-3 md:px-4">
+          {!hasMessages ? (
+            <div className="flex flex-col justify-center min-h-[calc(100vh-16rem)]">
+              <div className="space-y-6">
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{t("chat.title")}</h1>
+                  <p className="text-base text-muted-foreground mt-1">{t("chat.description")}</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.title}
+                      onClick={() => sendMessage(s.desc)}
+                      className="text-left rounded-2xl border border-border/60 px-4 py-3.5 hover:bg-muted/50 active:bg-muted/70 transition-colors"
+                    >
+                      <div className="text-sm font-medium">{s.title}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="py-6 space-y-6">
               {messages.map((msg) => {
-                const text = getMessageText(msg);
-                if (!text && msg.role !== "assistant") return null;
+                const isStreamingThis = streamingMsgIdRef.current === msg.id && isLoading;
                 return (
-                  <div key={msg.id} className="group">
-                    <div
-                      className={`flex gap-3 ${
-                        msg.role === "user" ? "justify-end" : ""
-                      }`}
-                    >
-                      {msg.role === "assistant" && (
-                        <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                          <Bot className="h-4 w-4 text-primary" />
+                  <div key={msg.id}>
+                    {msg.role === "user" ? (
+                      <div className="flex justify-end gap-1 items-start group">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1.5">
+                          <CopyButton text={msg.content} />
                         </div>
-                      )}
-                      <div
-                        className={`max-w-[85%] ${
-                          msg.role === "user"
-                            ? "rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground"
-                            : "flex-1"
-                        }`}
-                      >
-                        {msg.role === "user" ? (
-                          <p className="whitespace-pre-wrap text-sm">{text}</p>
-                        ) : text ? (
-                          <MarkdownRenderer content={text} />
+                        <div className="bg-muted rounded-3xl px-4 py-2.5 md:px-5 md:py-3 max-w-[85%]">
+                          <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="group/msg">
+                        {msg.content ? (
+                          <>
+                            <MarkdownRenderer content={msg.content} isStreaming={isStreamingThis} />
+                            {!isStreamingThis && (
+                              <div className="mt-1 opacity-60 md:opacity-0 md:group-hover/msg:opacity-100 transition-opacity">
+                                <CopyButton text={msg.content} />
+                              </div>
+                            )}
+                          </>
                         ) : isLoading ? (
-                          <div className="flex items-center gap-1 py-2">
-                            <div className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]" />
-                            <div className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]" />
-                            <div className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50" />
+                          <div className="flex items-center gap-1.5 py-1">
+                            <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                            <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                            <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
                           </div>
                         ) : null}
-                      </div>
-                      {msg.role === "user" && (
-                        <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted">
-                          <User className="h-4 w-4" />
-                        </div>
-                      )}
-                    </div>
-                    {msg.role === "assistant" && text && (
-                      <div className="ml-10 mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => handleCopy(text, msg.id)}
-                        >
-                          {copiedId === msg.id ? (
-                            <Check className="h-3.5 w-3.5 text-green-500" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
                       </div>
                     )}
                   </div>
                 );
               })}
+              <div ref={messagesEndRef} />
             </div>
           )}
         </div>
       </div>
 
-      {/* Input area */}
-      <div className="border-t bg-background p-4">
-        <div className="mx-auto max-w-3xl">
-          <div className="flex items-center gap-2 mb-2">
-            <ModelSelector
-              selectedModel={selectedModel}
-              onModelChange={handleModelChange}
-            />
-            {messages.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-muted-foreground"
-                onClick={clearHistory}
-              >
-                <Trash2 className="size-3.5 mr-1" />
-                清除對話
-              </Button>
-            )}
-          </div>
-          <div className="relative flex items-end gap-2">
-            <Textarea
+      {/* ── Input area ── */}
+      <div className="pt-2 px-3 md:px-4 pb-4 shrink-0">
+        <div className="max-w-3xl mx-auto">
+          <div className="relative rounded-3xl border bg-muted/30 focus-within:border-foreground/20 transition-colors">
+            <textarea
               ref={textareaRef}
               value={input}
-              onChange={handleInputChange}
+              onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
-              placeholder="輸入訊息... (Shift+Enter 換行)"
-              className="min-h-[44px] max-h-[200px] resize-none pr-12"
+              placeholder={t("chat.placeholder")}
               rows={1}
+              className="w-full resize-none bg-transparent px-4 md:px-5 pt-3.5 pb-12 text-sm placeholder:text-muted-foreground/70 focus:outline-none min-h-[52px] max-h-[200px]"
               disabled={isLoading}
             />
-            <div className="absolute bottom-2 right-2">
+            <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-2">
               {isLoading ? (
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={stop}>
-                  <Square className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={(e) => handleSubmit(e as any)}
-                  disabled={!input.trim()}
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  className="size-8 rounded-full bg-foreground text-background flex items-center justify-center hover:bg-foreground/80 transition-colors"
                 >
-                  <Send className="h-4 w-4" />
-                </Button>
+                  <Square className="size-3" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { if (input.trim()) sendMessage(input); }}
+                  disabled={!input.trim()}
+                  className="h-8 px-4 rounded-full bg-foreground text-background text-xs font-medium flex items-center justify-center disabled:bg-muted-foreground/30 disabled:text-muted-foreground/50 transition-colors hover:bg-foreground/80"
+                >
+                  {t("chat.send")}
+                </button>
               )}
             </div>
           </div>
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            由 Cloudflare Workers AI 驅動 | 透過 AI Gateway 路由
+          <p className="text-center text-[11px] text-muted-foreground/60 mt-2">
+            {t("chat.footer")}
           </p>
         </div>
       </div>

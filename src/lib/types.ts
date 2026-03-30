@@ -1,36 +1,70 @@
+export type ModelProvider = "workers-ai" | "openai" | "perplexity" | "anthropic";
+
 export interface AIModel {
   id: string;
   name: string;
-  workersAiModel: string;
+  provider: ModelProvider;
+  workersAiModel?: string;
+  providerModelId?: string;
   reasoning?: boolean;
 }
 
 export const AI_MODELS: AIModel[] = [
+  // Cloudflare Workers AI
   {
-    id: "llama-3.3-70b",
-    name: "Llama 3.3 70B",
-    workersAiModel: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-  },
-  {
-    id: "deepseek-r1-32b",
-    name: "DeepSeek R1 32B",
-    workersAiModel: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-    reasoning: true,
-  },
-  {
-    id: "qwq-32b",
-    name: "QwQ 32B",
-    workersAiModel: "@cf/qwen/qwq-32b",
-    reasoning: true,
+    id: "gpt-oss-120b",
+    name: "GPT OSS 120B",
+    provider: "workers-ai",
+    workersAiModel: "@cf/openai/gpt-oss-120b",
   },
   {
     id: "gpt-oss-20b",
     name: "GPT OSS 20B",
+    provider: "workers-ai",
     workersAiModel: "@cf/openai/gpt-oss-20b",
+  },
+  // OpenAI
+  {
+    id: "openai-gpt35",
+    name: "GPT-3.5 Turbo",
+    provider: "openai",
+    providerModelId: "gpt-3.5-turbo",
+  },
+  {
+    id: "openai-gpt5",
+    name: "GPT-5",
+    provider: "openai",
+    providerModelId: "gpt-5",
+  },
+  // Perplexity
+  {
+    id: "perplexity-sonar",
+    name: "Perplexity Sonar",
+    provider: "perplexity",
+    providerModelId: "sonar",
+  },
+  // Anthropic
+  {
+    id: "claude-sonnet-4",
+    name: "Claude Sonnet 4",
+    provider: "anthropic",
+    providerModelId: "claude-sonnet-4-20250514",
+  },
+  {
+    id: "claude-opus-4",
+    name: "Claude Opus 4",
+    provider: "anthropic",
+    providerModelId: "claude-opus-4-20250514",
+  },
+  {
+    id: "claude-3-haiku",
+    name: "Claude 3 Haiku",
+    provider: "anthropic",
+    providerModelId: "claude-3-haiku-20240307",
   },
 ];
 
-export const DEFAULT_MODEL_ID = "llama-3.3-70b";
+export const DEFAULT_MODEL_ID = "gpt-oss-120b";
 
 export interface BrowserRenderingEndpoint {
   id: string;

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Camera,
   FileDown,
@@ -11,28 +11,30 @@ import {
   Link2,
   Globe2,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const features = [
-  { id: "screenshot", title: "截圖", desc: "擷取網頁完整或部分截圖", icon: Camera, color: "text-rose-500" },
-  { id: "pdf", title: "PDF 轉換", desc: "將網頁轉換為 PDF 文件", icon: FileDown, color: "text-cyan-500" },
-  { id: "markdown", title: "Markdown 擷取", desc: "將 HTML 轉換為 Markdown 格式", icon: ScanText, color: "text-emerald-500" },
-  { id: "content", title: "HTML 內容", desc: "取得網頁的 HTML 原始碼", icon: Code, color: "text-violet-500" },
-  { id: "snapshot", title: "快照", desc: "同時取得 HTML 內容與截圖", icon: Image, color: "text-amber-500" },
-  { id: "scrape", title: "元素提取", desc: "使用 CSS 選取器提取特定元素", icon: Search, color: "text-blue-500" },
-  { id: "json", title: "JSON 結構化", desc: "用 AI 將網頁轉為結構化 JSON", icon: Braces, color: "text-orange-500" },
-  { id: "links", title: "連結抓取", desc: "提取網頁中所有超連結", icon: Link2, color: "text-teal-500" },
-  { id: "crawl", title: "整站爬取", desc: "按深度爬取整個網站所有頁面", icon: Globe2, color: "text-purple-500" },
+  { id: "screenshot", icon: Camera, color: "text-rose-500" },
+  { id: "pdf", icon: FileDown, color: "text-cyan-500" },
+  { id: "markdown", icon: ScanText, color: "text-emerald-500" },
+  { id: "content", icon: Code, color: "text-violet-500" },
+  { id: "snapshot", icon: Image, color: "text-amber-500" },
+  { id: "scrape", icon: Search, color: "text-blue-500" },
+  { id: "json", icon: Braces, color: "text-orange-500" },
+  { id: "links", icon: Link2, color: "text-teal-500" },
+  { id: "crawl", icon: Globe2, color: "text-purple-500" },
 ];
 
 export function CrawlerPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">網站爬蟲</h1>
+        <h1 className="text-2xl font-bold">{t("crawler.title")}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          選擇一個功能來開始使用 Cloudflare Browser Rendering API
+          {t("crawler.description")}
         </p>
       </div>
 
@@ -47,8 +49,8 @@ export function CrawlerPage() {
               <div className={`mb-2 ${f.color}`}>
                 <f.icon className="size-8 transition-transform group-hover:scale-110" />
               </div>
-              <CardTitle className="text-base">{f.title}</CardTitle>
-              <CardDescription className="text-xs">{f.desc}</CardDescription>
+              <CardTitle className="text-base">{t(`crawler.endpoints.${f.id}.title`)}</CardTitle>
+              <CardDescription className="text-xs">{t(`crawler.endpoints.${f.id}.desc`)}</CardDescription>
             </CardHeader>
           </Card>
         ))}

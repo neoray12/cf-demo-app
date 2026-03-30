@@ -4,9 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Bot, Eye, EyeOff } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -29,20 +31,20 @@ export function LoginPage() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
             <Bot className="h-8 w-8" />
           </div>
-          <CardTitle className="text-2xl">Cloudflare Demo</CardTitle>
+          <CardTitle className="text-2xl">{t("login.title")}</CardTitle>
           <CardDescription>
-            登入以使用 AI Agent、網站爬蟲與 Log 瀏覽器
+            {t("login.description")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="username">
-                帳號
+                {t("login.username")}
               </label>
               <Input
                 id="username"
-                placeholder="輸入帳號"
+                placeholder={t("login.usernamePlaceholder")}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
@@ -50,13 +52,13 @@ export function LoginPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="password">
-                密碼
+                {t("login.password")}
               </label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="輸入密碼"
+                  placeholder={t("login.passwordPlaceholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
@@ -75,11 +77,11 @@ export function LoginPage() {
               </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "登入中..." : "登入"}
+              {loading ? t("login.loggingIn") : t("login.loginButton")}
             </Button>
           </form>
           <p className="mt-4 text-center text-xs text-muted-foreground">
-            Demo 版本 — 輸入任意帳號密碼即可登入
+            {t("login.demoHint")}
           </p>
         </CardContent>
       </Card>

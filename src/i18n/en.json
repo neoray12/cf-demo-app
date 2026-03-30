@@ -1,0 +1,111 @@
+{
+  "common": {
+    "appName": "CF Demo",
+    "cloudflareDemo": "Cloudflare Demo",
+    "cloudflareWorkers": "Cloudflare Workers",
+    "execute": "Execute",
+    "executing": "Executing...",
+    "result": "Result",
+    "saveToR2": "Save to R2",
+    "demoUser": "Demo User",
+    "demoEmail": "demo@cloudflare.com"
+  },
+  "sidebar": {
+    "features": "Features",
+    "aiAgent": "AI Agent",
+    "crawler": "Web Crawler",
+    "overview": "Overview",
+    "tools": "Tools",
+    "logExplorer": "Log Explorer",
+    "backToHome": "Back to Home",
+    "lightMode": "Light Mode",
+    "darkMode": "Dark Mode",
+    "logout": "Log Out"
+  },
+  "login": {
+    "title": "Cloudflare Demo",
+    "description": "Sign in to use AI Agent, Web Crawler, and Log Explorer",
+    "username": "Username",
+    "usernamePlaceholder": "Enter username",
+    "password": "Password",
+    "passwordPlaceholder": "Enter password",
+    "loggingIn": "Signing in...",
+    "loginButton": "Sign In",
+    "demoHint": "Demo version — enter any username and password to sign in"
+  },
+  "chat": {
+    "title": "AI Agent",
+    "description": "Powered by Cloudflare Workers AI with knowledge base search (RAG)",
+    "placeholder": "Type a message... (Shift+Enter for new line)",
+    "send": "Send",
+    "clearHistory": "Clear Chat",
+    "footer": "Powered by Cloudflare Workers AI | Routed through AI Gateway",
+    "sendError": "Failed to send: {{message}}",
+    "reasoningModel": "Reasoning Model",
+    "suggestions": {
+      "workers": {
+        "title": "Cloudflare Workers",
+        "prompt": "Introduce the main features and advantages of Cloudflare Workers"
+      },
+      "aiGateway": {
+        "title": "AI Gateway",
+        "prompt": "What is Cloudflare AI Gateway? What is it used for?"
+      },
+      "r2": {
+        "title": "R2 Storage",
+        "prompt": "What are the differences between Cloudflare R2 and AWS S3?"
+      }
+    }
+  },
+  "crawler": {
+    "title": "Web Crawler",
+    "description": "Choose a feature to start using the Cloudflare Browser Rendering API",
+    "enterUrl": "Please enter a URL",
+    "selectorJsonError": "CSS selector JSON format error",
+    "executeSuccess": "Execution successful",
+    "executeError": "Execution failed: {{message}}",
+    "savedToR2": "Saved to R2: {{key}}",
+    "saveFailed": "Save failed",
+    "saveFailedWithError": "Save failed: {{message}}",
+    "emptyState": "Enter a URL and click \"Execute\" to see results",
+    "unknown": "Unknown",
+    "endpoints": {
+      "screenshot": { "title": "Screenshot", "desc": "Capture full or partial webpage screenshots" },
+      "pdf": { "title": "PDF Export", "desc": "Convert webpages to PDF documents" },
+      "markdown": { "title": "Markdown Extract", "desc": "Convert HTML to Markdown format" },
+      "content": { "title": "HTML Content", "desc": "Get the HTML source code of a webpage" },
+      "snapshot": { "title": "Snapshot", "desc": "Get both HTML content and screenshot" },
+      "scrape": { "title": "Element Scrape", "desc": "Extract specific elements using CSS selectors" },
+      "json": { "title": "JSON Structured", "desc": "Use AI to convert webpages to structured JSON" },
+      "links": { "title": "Link Extract", "desc": "Extract all hyperlinks from a webpage" },
+      "crawl": { "title": "Site Crawl", "desc": "Crawl all pages of a website by depth" }
+    },
+    "options": {
+      "fullPageScreenshot": "Full Page Screenshot",
+      "paperFormat": "Paper Format:",
+      "landscape": "Landscape",
+      "cssSelectors": "CSS Selectors (JSON Array)",
+      "aiPrompt": "AI Extraction Prompt",
+      "maxDepth": "Max Depth",
+      "pageLimit": "Page Limit",
+      "downloadScreenshot": "Download Screenshot",
+      "downloadPdf": "Download PDF",
+      "linksCount": "{{count}} links",
+      "noText": "(no text)",
+      "pagesCount": "{{count}} pages"
+    }
+  },
+  "logs": {
+    "title": "Log Explorer",
+    "r2Buckets": "R2 Buckets",
+    "selectFile": "Select a file to view its contents",
+    "searchPlaceholder": "Search log contents...",
+    "resultCount": "{{count}} entries",
+    "empty": "(empty)",
+    "decryptKeyLabel": "AI Gateway Decrypt Key",
+    "decryptKeyPlaceholder": "Enter private key...",
+    "loadBucketError": "Failed to load bucket list: {{message}}",
+    "loadError": "Failed to load: {{message}}",
+    "readFileError": "Failed to read file: {{message}}"
+  }
+}

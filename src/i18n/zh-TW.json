@@ -1,0 +1,111 @@
+{
+  "common": {
+    "appName": "CF Demo",
+    "cloudflareDemo": "Cloudflare Demo",
+    "cloudflareWorkers": "Cloudflare Workers",
+    "execute": "執行",
+    "executing": "執行中...",
+    "result": "結果",
+    "saveToR2": "存入 R2",
+    "demoUser": "Demo User",
+    "demoEmail": "demo@cloudflare.com"
+  },
+  "sidebar": {
+    "features": "功能",
+    "aiAgent": "AI Agent",
+    "crawler": "網站爬蟲",
+    "overview": "總覽",
+    "tools": "工具",
+    "logExplorer": "Log 瀏覽器",
+    "backToHome": "返回首頁",
+    "lightMode": "淺色模式",
+    "darkMode": "深色模式",
+    "logout": "登出"
+  },
+  "login": {
+    "title": "Cloudflare Demo",
+    "description": "登入以使用 AI Agent、網站爬蟲與 Log 瀏覽器",
+    "username": "帳號",
+    "usernamePlaceholder": "輸入帳號",
+    "password": "密碼",
+    "passwordPlaceholder": "輸入密碼",
+    "loggingIn": "登入中...",
+    "loginButton": "登入",
+    "demoHint": "Demo 版本 — 輸入任意帳號密碼即可登入"
+  },
+  "chat": {
+    "title": "AI Agent",
+    "description": "由 Cloudflare Workers AI 驅動，支援知識庫搜尋（RAG）",
+    "placeholder": "輸入訊息... (Shift+Enter 換行)",
+    "send": "傳送",
+    "clearHistory": "清除對話",
+    "footer": "由 Cloudflare Workers AI 驅動 | 透過 AI Gateway 路由",
+    "sendError": "發送失敗: {{message}}",
+    "reasoningModel": "推理模型",
+    "suggestions": {
+      "workers": {
+        "title": "Cloudflare Workers",
+        "prompt": "介紹一下 Cloudflare Workers 的主要功能和優勢"
+      },
+      "aiGateway": {
+        "title": "AI Gateway",
+        "prompt": "Cloudflare AI Gateway 是什麼？有什麼用途？"
+      },
+      "r2": {
+        "title": "R2 儲存",
+        "prompt": "Cloudflare R2 和 AWS S3 有什麼差異？"
+      }
+    }
+  },
+  "crawler": {
+    "title": "網站爬蟲",
+    "description": "選擇一個功能來開始使用 Cloudflare Browser Rendering API",
+    "enterUrl": "請輸入網址",
+    "selectorJsonError": "CSS 選取器 JSON 格式錯誤",
+    "executeSuccess": "執行成功",
+    "executeError": "執行失敗: {{message}}",
+    "savedToR2": "已儲存至 R2: {{key}}",
+    "saveFailed": "儲存失敗",
+    "saveFailedWithError": "儲存失敗: {{message}}",
+    "emptyState": "輸入網址並點擊「執行」以查看結果",
+    "unknown": "未知",
+    "endpoints": {
+      "screenshot": { "title": "截圖", "desc": "擷取網頁完整或部分截圖" },
+      "pdf": { "title": "PDF 轉換", "desc": "將網頁轉換為 PDF 文件" },
+      "markdown": { "title": "Markdown 擷取", "desc": "將 HTML 轉換為 Markdown 格式" },
+      "content": { "title": "HTML 內容", "desc": "取得網頁的 HTML 原始碼" },
+      "snapshot": { "title": "快照", "desc": "同時取得 HTML 內容與截圖" },
+      "scrape": { "title": "元素提取", "desc": "使用 CSS 選取器提取特定元素" },
+      "json": { "title": "JSON 結構化", "desc": "用 AI 將網頁轉為結構化 JSON" },
+      "links": { "title": "連結抓取", "desc": "提取網頁中所有超連結" },
+      "crawl": { "title": "整站爬取", "desc": "按深度爬取整個網站所有頁面" }
+    },
+    "options": {
+      "fullPageScreenshot": "全頁截圖",
+      "paperFormat": "紙張格式：",
+      "landscape": "橫向列印",
+      "cssSelectors": "CSS 選取器 (JSON 陣列)",
+      "aiPrompt": "AI 提取指令",
+      "maxDepth": "最大深度",
+      "pageLimit": "頁面上限",
+      "downloadScreenshot": "下載截圖",
+      "downloadPdf": "下載 PDF",
+      "linksCount": "{{count}} 個連結",
+      "noText": "(無文字)",
+      "pagesCount": "{{count}} 頁"
+    }
+  },
+  "logs": {
+    "title": "Log 瀏覽器",
+    "r2Buckets": "R2 Buckets",
+    "selectFile": "選擇一個檔案以查看內容",
+    "searchPlaceholder": "搜尋 log 內容...",
+    "resultCount": "{{count}} 筆",
+    "empty": "(空)",
+    "decryptKeyLabel": "AI Gateway 解密金鑰",
+    "decryptKeyPlaceholder": "輸入 private key...",
+    "loadBucketError": "載入 bucket 列表失敗: {{message}}",
+    "loadError": "載入失敗: {{message}}",
+    "readFileError": "讀取檔案失敗: {{message}}"
+  }
+}

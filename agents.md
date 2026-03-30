@@ -78,3 +78,7 @@
 - `wrangler secret put CF_API_TOKEN` — Cloudflare API Token
 - `.dev.vars` 中存放本地開發用的 secrets
 - 確保 `account_id` 設定為 `5efa272dc28e4e3933324c44165b6dbe` (Neo-Cloudflare)
+
+## 協作規範
+
+- **不要自動 push 到 remote**：除非使用者明確說「push」，否則只做本地 commit，不執行 `git push`

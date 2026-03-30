@@ -1,5 +1,6 @@
 import type { Env } from "../types";
 import { handleBrowserRendering } from "./browser-rendering";
+import { handleChat } from "./chat";
 import { handleCrawlerStorage } from "./crawler-storage";
 import { handleLogs } from "./logs";
 
@@ -24,7 +25,9 @@ export async function handleApiRoute(
   try {
     let response: Response;
 
-    if (path.startsWith("/api/browser-rendering/")) {
+    if (path.startsWith("/api/chat")) {
+      response = await handleChat(request, env);
+    } else if (path.startsWith("/api/browser-rendering/")) {
       response = await handleBrowserRendering(request, env, url);
     } else if (path.startsWith("/api/crawler/")) {
       response = await handleCrawlerStorage(request, env, url);

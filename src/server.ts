@@ -18,7 +18,7 @@ export default {
       return handleApiRoute(request, env, url);
     }
 
-    // 3. Static assets (SPA fallback handled by wrangler config)
-    return env.ASSETS.fetch(request);
+    // 3. Static assets are handled by @cloudflare/vite-plugin (dev) and Cloudflare edge (prod)
+    return new Response("Not Found", { status: 404 });
   },
 };

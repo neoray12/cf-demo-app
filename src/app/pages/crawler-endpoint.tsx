@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MarkdownRenderer } from "../components/chat/markdown-renderer";
 import {
@@ -25,23 +25,28 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
-const endpointMeta: Record<string, { title: string; desc: string; icon: React.ElementType }> = {
-  content: { title: "HTML 內容", desc: "取得網頁的 HTML 原始碼", icon: Code },
-  screenshot: { title: "截圖", desc: "擷取網頁完整或部分截圖", icon: Camera },
-  pdf: { title: "PDF 轉換", desc: "將網頁轉換為 PDF 文件", icon: FileDown },
-  markdown: { title: "Markdown 擷取", desc: "將 HTML 轉換為 Markdown 格式", icon: ScanText },
-  snapshot: { title: "快照", desc: "同時取得 HTML 內容與截圖", icon: Image },
-  scrape: { title: "元素提取", desc: "使用 CSS 選取器提取特定元素", icon: Search },
-  json: { title: "JSON 結構化", desc: "用 AI 將網頁轉為結構化 JSON", icon: Braces },
-  links: { title: "連結抓取", desc: "提取網頁中所有超連結", icon: Link2 },
-  crawl: { title: "整站爬取", desc: "按深度爬取整個網站所有頁面", icon: Globe2 },
+const endpointIcons: Record<string, React.ElementType> = {
+  content: Code,
+  screenshot: Camera,
+  pdf: FileDown,
+  markdown: ScanText,
+  snapshot: Image,
+  scrape: Search,
+  json: Braces,
+  links: Link2,
+  crawl: Globe2,
 };
 
 export function CrawlerEndpointPage() {
   const { endpoint } = useParams<{ endpoint: string }>();
   const navigate = useNavigate();
-  const meta = endpointMeta[endpoint || ""] || { title: "未知", desc: "", icon: Globe };
+  const { t } = useTranslation();
+
+  const Icon = endpointIcons[endpoint || ""] || Globe;
+  const title = endpoint ? t(`crawler.endpoints.${endpoint}.title`) : t("crawler.unknown");
+  const desc = endpoint ? t(`crawler.endpoints.${endpoint}.desc`) : "";
 
   const [url, setUrl] = useState("https://developers.cloudflare.com");
   const [loading, setLoading] = useState(false);
@@ -59,7 +64,7 @@ export function CrawlerEndpointPage() {
 
   const handleExecute = async () => {
     if (!url.trim()) {
-      toast.error("請輸入網址");
+      toast.error(t("crawler.enterUrl"));
       return;
     }
     setLoading(true);
@@ -80,7 +85,7 @@ export function CrawlerEndpointPage() {
           try {
             body = { ...body, elements: JSON.parse(selectors) };
           } catch {
-            toast.error("CSS 選取器 JSON 格式錯誤");
+            toast.error(t("crawler.selectorJsonError"));
             setLoading(false);
             return;
           }
@@ -119,9 +124,9 @@ export function CrawlerEndpointPage() {
         const data = await response.json();
         setResult(data);
       }
-      toast.success("執行成功");
+      toast.success(t("crawler.executeSuccess"));
     } catch (err) {
-      toast.error(`執行失敗: ${(err as Error).message}`);
+      toast.error(t("crawler.executeError", { message: (err as Error).message }));
     } finally {
       setLoading(false);
     }
@@ -144,12 +149,12 @@ export function CrawlerEndpointPage() {
       });
       const data = (await response.json()) as { success?: boolean; key?: string };
       if (data.success) {
-        toast.success(`已儲存至 R2: ${data.key}`);
+        toast.success(t("crawler.savedToR2", { key: data.key }));
       } else {
-        toast.error("儲存失敗");
+        toast.error(t("crawler.saveFailed"));
       }
     } catch (err) {
-      toast.error(`儲存失敗: ${(err as Error).message}`);
+      toast.error(t("crawler.saveFailedWithError", { message: (err as Error).message }));
     }
   };
 
@@ -165,7 +170,7 @@ export function CrawlerEndpointPage() {
                 onChange={(e) => setScreenshotFullPage(e.target.checked)}
                 className="rounded"
               />
-              全頁截圖
+              {t("crawler.options.fullPageScreenshot")}
             </label>
           </div>
         );
@@ -173,7 +178,7 @@ export function CrawlerEndpointPage() {
         return (
           <div className="flex flex-wrap items-center gap-4">
             <label className="text-sm">
-              紙張格式：
+              {t("crawler.options.paperFormat")}
               <select
                 value={pdfFormat}
                 onChange={(e) => setPdfFormat(e.target.value)}
@@ -191,14 +196,14 @@ export function CrawlerEndpointPage() {
                 onChange={(e) => setPdfLandscape(e.target.checked)}
                 className="rounded"
               />
-              橫向列印
+              {t("crawler.options.landscape")}
             </label>
           </div>
         );
       case "scrape":
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">CSS 選取器 (JSON 陣列)</label>
+            <label className="text-sm font-medium">{t("crawler.options.cssSelectors")}</label>
             <Textarea
               value={selectors}
               onChange={(e) => setSelectors(e.target.value)}
@@ -211,7 +216,7 @@ export function CrawlerEndpointPage() {
       case "json":
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">AI 提取指令</label>
+            <label className="text-sm font-medium">{t("crawler.options.aiPrompt")}</label>
             <Input
               value={jsonPrompt}
               onChange={(e) => setJsonPrompt(e.target.value)}
@@ -223,11 +228,11 @@ export function CrawlerEndpointPage() {
         return (
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">最大深度</label>
+              <label className="text-sm font-medium">{t("crawler.options.maxDepth")}</label>
               <Input type="number" value={maxDepth} onChange={(e) => setMaxDepth(e.target.value)} min={1} max={10} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">頁面上限</label>
+              <label className="text-sm font-medium">{t("crawler.options.pageLimit")}</label>
               <Input type="number" value={limit} onChange={(e) => setLimit(e.target.value)} min={1} max={100} />
             </div>
           </div>
@@ -242,7 +247,7 @@ export function CrawlerEndpointPage() {
       return (
         <div className="flex flex-col items-center justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <p className="mt-4 text-sm text-muted-foreground">執行中...</p>
+          <p className="mt-4 text-sm text-muted-foreground">{t("common.executing")}</p>
         </div>
       );
     }
@@ -255,7 +260,7 @@ export function CrawlerEndpointPage() {
             <a href={binaryResult} download={`screenshot_${Date.now()}.png`}>
               <Button variant="outline" size="sm">
                 <Download className="size-4 mr-2" />
-                下載截圖
+                {t("crawler.options.downloadScreenshot")}
               </Button>
             </a>
           </div>
@@ -268,7 +273,7 @@ export function CrawlerEndpointPage() {
             <a href={binaryResult} download={`page_${Date.now()}.pdf`}>
               <Button variant="outline" size="sm">
                 <Download className="size-4 mr-2" />
-                下載 PDF
+                {t("crawler.options.downloadPdf")}
               </Button>
             </a>
           </div>
@@ -279,8 +284,8 @@ export function CrawlerEndpointPage() {
     if (!result) {
       return (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-          <meta.icon className="h-12 w-12 mb-4 opacity-20" />
-          <p className="text-sm">輸入網址並點擊「執行」以查看結果</p>
+          <Icon className="h-12 w-12 mb-4 opacity-20" />
+          <p className="text-sm">{t("crawler.emptyState")}</p>
         </div>
       );
     }
@@ -295,11 +300,11 @@ export function CrawlerEndpointPage() {
     if (endpoint === "links" && Array.isArray(result)) {
       return (
         <div className="space-y-2">
-          <Badge variant="secondary">{result.length} 個連結</Badge>
+          <Badge variant="secondary">{t("crawler.options.linksCount", { count: result.length })}</Badge>
           <div className="rounded-lg border divide-y max-h-[500px] overflow-y-auto">
             {result.map((link: { href?: string; text?: string }, i: number) => (
               <div key={i} className="px-3 py-2 text-sm">
-                <div className="font-medium truncate">{link.text || "(無文字)"}</div>
+                <div className="font-medium truncate">{link.text || t("crawler.options.noText")}</div>
                 <a href={link.href} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate block">
                   {link.href}
                 </a>
@@ -314,7 +319,7 @@ export function CrawlerEndpointPage() {
       const pages = Array.isArray(result) ? result : result.data || result.results || [result];
       return (
         <div className="space-y-3">
-          <Badge variant="secondary">{Array.isArray(pages) ? pages.length : 1} 頁</Badge>
+          <Badge variant="secondary">{t("crawler.options.pagesCount", { count: Array.isArray(pages) ? pages.length : 1 })}</Badge>
           <div className="space-y-2">
             {(Array.isArray(pages) ? pages : [pages]).map((page: any, i: number) => (
               <details key={i} className="rounded-lg border group">
@@ -347,58 +352,60 @@ export function CrawlerEndpointPage() {
     );
   };
 
-  const Icon = meta.icon;
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 md:px-6 py-4 border-b shrink-0">
         <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate("/crawler")}>
           <ArrowLeft className="size-4" />
         </Button>
         <div>
           <div className="flex items-center gap-2">
             <Icon className="size-5 text-muted-foreground" />
-            <h1 className="text-xl font-bold">{meta.title}</h1>
+            <h1 className="text-xl font-bold">{title}</h1>
           </div>
-          <p className="text-sm text-muted-foreground">{meta.desc}</p>
+          <p className="text-sm text-muted-foreground">{desc}</p>
         </div>
       </div>
 
-      {/* URL Input + Options */}
-      <Card className="mb-4">
-        <CardContent className="pt-6 space-y-4">
-          <div className="flex gap-2">
-            <Input
-              placeholder="https://example.com"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="flex-1"
-              onKeyDown={(e) => e.key === "Enter" && handleExecute()}
-            />
-            <Button onClick={handleExecute} disabled={loading}>
-              {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-              <span className="hidden sm:inline ml-1">執行</span>
-            </Button>
+      {/* Two-column layout on desktop */}
+      <div className="flex-1 overflow-hidden flex flex-col md:flex-row gap-0">
+        {/* Left: Input + Options */}
+        <div className="md:w-[38%] md:border-r flex flex-col shrink-0">
+          <div className="p-4 md:p-5 flex flex-col gap-4 overflow-y-auto">
+            <div className="flex gap-2">
+              <Input
+                placeholder="https://example.com"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                className="flex-1"
+                onKeyDown={(e) => e.key === "Enter" && handleExecute()}
+              />
+              <Button onClick={handleExecute} disabled={loading}>
+                {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+                <span className="hidden sm:inline ml-1">{t("common.execute")}</span>
+              </Button>
+            </div>
+            {renderEndpointOptions()}
           </div>
-          {renderEndpointOptions()}
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Results */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">結果</CardTitle>
+        {/* Right: Results */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-4 md:px-5 py-3 border-b shrink-0">
+            <span className="text-sm font-medium">{t("common.result")}</span>
             {result && !binaryResult && (
               <Button variant="outline" size="sm" onClick={handleSaveToR2}>
                 <Save className="size-4 mr-1.5" />
-                存入 R2
+                {t("common.saveToR2")}
               </Button>
             )}
           </div>
-        </CardHeader>
-        <CardContent>{renderResult()}</CardContent>
-      </Card>
+          <div className="flex-1 overflow-y-auto p-4 md:p-5">
+            {renderResult()}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
-
