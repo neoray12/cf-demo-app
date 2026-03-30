@@ -1,14 +1,28 @@
 import { useRef, useEffect, useState, useCallback } from "react";
-import { useAgent } from "agents/react";
-import { useAgentChat } from "agents/ai-react";
 import { MarkdownRenderer } from "../components/chat/markdown-renderer";
 import { ModelSelector } from "../components/chat/model-selector";
 import { ErrorDialog, type ChatErrorState } from "../components/chat/error-dialog";
 import { McpConnectionsPanel } from "../components/chat/mcp-panel";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Plug, Search as SearchIcon } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Plug, Search as SearchIcon, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { UIMessage, ReasoningUIPart, TextUIPart, UIMessagePart } from "ai";
+
+interface ToolCallInfo {
+  id: string;
+  name: string;
+  status: "calling" | "done";
+}
+
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  reasoning?: string;
+  toolCalls?: ToolCallInfo[];
+}
+
+let _id = 0;
+function genId() { return `msg-${++_id}-${Date.now()}`; }
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -28,38 +42,6 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function extractReasoning(msg: UIMessage): string {
-  return msg.parts
-    .filter((p): p is ReasoningUIPart => p.type === "reasoning")
-    .map((p) => p.text)
-    .join("");
-}
-
-function extractText(msg: UIMessage): string {
-  return msg.parts
-    .filter((p): p is TextUIPart => p.type === "text")
-    .map((p) => p.text)
-    .join("");
-}
-
-interface ToolCallInfo {
-  toolCallId: string;
-  toolName: string;
-  state: string;
-}
-
-function extractToolCalls(msg: UIMessage): ToolCallInfo[] {
-  return msg.parts
-    .filter((p: UIMessagePart<any, any>) =>
-      p.type.startsWith("tool-") || p.type === "dynamic-tool"
-    )
-    .map((p: any) => ({
-      toolCallId: p.toolCallId as string,
-      toolName: p.type === "dynamic-tool" ? (p.toolName as string) : (p.type as string).slice(5),
-      state: (p.state as string) ?? "input",
-    }));
-}
-
 const TOOL_LABELS: Record<string, string> = {
   searchKnowledge: "搜尋知識庫",
 };
@@ -72,9 +54,9 @@ function friendlyToolName(rawName: string): string {
   return rawName.replace(/_/g, " ");
 }
 
-function ToolBadge({ toolName, state }: { toolName: string; state: string }) {
+function ToolBadge({ toolName, state }: { toolName: string; state: "calling" | "done" }) {
   const label = friendlyToolName(toolName);
-  const isDone = state === "output" || state === "output-error";
+  const isDone = state === "done";
   return (
     <span
       className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-opacity ${
@@ -92,6 +74,9 @@ function ToolBadge({ toolName, state }: { toolName: string; state: string }) {
 export function ChatPage() {
   const { t } = useTranslation();
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [toolsEnabled, setToolsEnabled] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{ open: boolean; error: ChatErrorState | null }>({
     open: false,
     error: null,
@@ -99,56 +84,18 @@ export function ChatPage() {
   const [showMcpPanel, setShowMcpPanel] = useState(false);
   const [input, setInput] = useState("");
 
+  const abortRef = useRef<AbortController | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+  const aiModel = AI_MODELS.find((m) => m.id === selectedModel);
+  const modelId = aiModel?.workersAiModel ?? aiModel?.providerModelId ?? "@cf/openai/gpt-oss-120b";
+  const provider = aiModel?.provider ?? "workers-ai";
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
-
-  const agent = useAgent({ agent: "chat-agent", name: "default" });
-
-  const currentModelRef = useRef(selectedModel);
-  currentModelRef.current = selectedModel;
-
-  const errorShownRef = useRef(false);
-
-  const handleError = useCallback((err: Error) => {
-    // Guard against repeated calls triggering infinite re-renders
-    if (errorShownRef.current) return;
-    errorShownRef.current = true;
-    console.error("[Chat] Agent error:", err);
-    // Defer setState to break synchronous re-render cycle that causes
-    // "Maximum update depth exceeded" when useAgentChat fires rapid updates
-    setTimeout(() => {
-      setErrorDialog({
-        open: true,
-        error: {
-          errorType: "general",
-          message: err.message || "發生未知錯誤",
-          rayId: null,
-          gatewayLogId: null,
-          statusCode: null,
-          gatewayCode: null,
-          userIp: null,
-        },
-      });
-    }, 0);
-  }, []);
-
-  const getBody = useCallback(() => {
-    const model = AI_MODELS.find((m) => m.id === currentModelRef.current);
-    const modelId =
-      model?.workersAiModel ?? model?.providerModelId ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-    return { model: modelId, provider: model?.provider ?? "workers-ai" };
-  }, []);
-
-  const { messages, sendMessage: agentSendMessage, status, stop, clearHistory } = useAgentChat({
-    agent,
-    body: getBody,
-    onError: handleError,
-    experimental_throttle: 50,
-  });
-
-  const isLoading = status === "streaming" || status === "submitted";
 
   // Smart auto-scroll
   useEffect(() => {
@@ -168,16 +115,121 @@ export function ChatPage() {
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const sendMessage = useCallback(
-    (text: string) => {
-      if (!text.trim() || isLoading) return;
-      isNearBottomRef.current = true;
-      if (textareaRef.current) textareaRef.current.style.height = "auto";
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-      agentSendMessage({ text });
-    },
-    [isLoading, agentSendMessage]
-  );
+  const doSend = useCallback(async (text: string) => {
+    if (!text.trim() || isLoading) return;
+    isNearBottomRef.current = true;
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+    const userMsg: ChatMessage = { id: genId(), role: "user", content: text.trim() };
+    const assistantId = genId();
+    const assistantMsg: ChatMessage = { id: assistantId, role: "assistant", content: "", toolCalls: [], reasoning: "" };
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setIsLoading(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const apiMessages = [...messagesRef.current, userMsg]
+      .filter((m): m is ChatMessage => m.role === "user" || (m.role === "assistant" && !!(m.content || m.toolCalls?.length)))
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    let accContent = "";
+    let accReasoning = "";
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushStreaming = () => {
+      flushTimer = null;
+      const c = accContent;
+      const r = accReasoning;
+      setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: c, reasoning: r || m.reasoning } : m));
+    };
+    const scheduleFlush = () => { if (!flushTimer) flushTimer = setTimeout(flushStreaming, 50); };
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: apiMessages, model: modelId, provider, toolsEnabled }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: `❌ Error ${res.status}: ${errText}` } : m));
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const processLine = (line: string) => {
+        if (!line.trim()) return;
+        try {
+          const event = JSON.parse(line);
+          switch (event.type) {
+            case "text-delta":
+              accContent += event.text as string;
+              scheduleFlush();
+              break;
+            case "reasoning-delta":
+              accReasoning += event.text as string;
+              scheduleFlush();
+              break;
+            case "tool-call-start":
+              setMessages((prev) => prev.map((m) => m.id === assistantId ? {
+                ...m,
+                toolCalls: [...(m.toolCalls || []), { id: event.toolCallId as string, name: event.toolName as string, status: "calling" as const }],
+              } : m));
+              break;
+            case "tool-result":
+              setMessages((prev) => prev.map((m) => m.id === assistantId ? {
+                ...m,
+                toolCalls: (m.toolCalls || []).map((tc) => tc.id === event.toolCallId ? { ...tc, status: "done" as const } : tc),
+              } : m));
+              break;
+            case "error": {
+              const errEvent = event as { type: string; errorType?: string; message?: string; rayId?: string; gatewayLogId?: string; statusCode?: number; gatewayCode?: string; userIp?: string };
+              setErrorDialog({ open: true, error: {
+                errorType: (errEvent.errorType as "firewall" | "gateway" | "dlp" | "general") || "general",
+                message: errEvent.message || "發生錯誤",
+                rayId: errEvent.rayId || null,
+                gatewayLogId: errEvent.gatewayLogId || null,
+                statusCode: errEvent.statusCode || null,
+                gatewayCode: errEvent.gatewayCode || null,
+                userIp: errEvent.userIp || null,
+              }});
+              break;
+            }
+          }
+        } catch { /* skip malformed */ }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) processLine(line);
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) processLine(buffer);
+
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      flushStreaming();
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        setErrorDialog({ open: true, error: { errorType: "general", message: (err as Error).message || "發生錯誤", rayId: null, gatewayLogId: null, statusCode: null, gatewayCode: null, userIp: null } });
+      }
+    } finally {
+      setIsLoading(false);
+      abortRef.current = null;
+    }
+  }, [isLoading, modelId, provider, toolsEnabled]);
+
+  const handleStop = useCallback(() => { abortRef.current?.abort(); }, []);
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -188,23 +240,18 @@ export function ChatPage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (input.trim()) {
-        const text = input;
-        setInput("");
-        sendMessage(text);
-      }
+      if (input.trim()) { const text = input; setInput(""); doSend(text); }
     }
   };
 
   const handleNewChat = useCallback(() => {
-    if (isLoading) stop();
-    clearHistory();
+    if (isLoading) abortRef.current?.abort();
+    setMessages([]);
     setInput("");
     textareaRef.current?.focus();
-  }, [isLoading, stop, clearHistory]);
+  }, [isLoading]);
 
-  const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
-  const hasMessages = visibleMessages.length > 0;
+  const hasMessages = messages.length > 0;
 
   const suggestions = [
     { title: t("chat.suggestions.workers.title"), desc: t("chat.suggestions.workers.prompt") },
@@ -221,7 +268,7 @@ export function ChatPage() {
     { title: t("chat.safetySuggestions.injection2.title"), desc: t("chat.safetySuggestions.injection2.prompt") },
   ];
 
-  const lastAssistantMsg = [...visibleMessages].reverse().find((m) => m.role === "assistant");
+  const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
   const isStreamingLast = isLoading && lastAssistantMsg != null;
 
   return (
@@ -241,6 +288,17 @@ export function ChatPage() {
               </button>
             )}
             <ModelSelector selectedModel={selectedModel} onModelChange={setSelectedModel} />
+            <button
+              onClick={() => setToolsEnabled((v) => !v)}
+              className={`inline-flex items-center gap-1.5 h-8 px-2 rounded-lg transition-colors ${
+                toolsEnabled
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-muted/60"
+              }`}
+              title={toolsEnabled ? "工具已啟用 (AI Search / MCP)" : "啟用工具 (AI Search / MCP)"}
+            >
+              <Zap className="size-4" />
+            </button>
             <button
               onClick={() => setShowMcpPanel((v) => !v)}
               className={`inline-flex items-center gap-1.5 h-8 px-2 rounded-lg transition-colors ${
@@ -269,7 +327,7 @@ export function ChatPage() {
                     {suggestions.map((s) => (
                       <button
                         key={s.title}
-                        onClick={() => sendMessage(s.desc)}
+                        onClick={() => doSend(s.desc)}
                         className="text-left rounded-2xl border border-border/60 px-4 py-3.5 hover:bg-muted/50 active:bg-muted/70 transition-colors"
                       >
                         <div className="text-sm font-medium">{s.title}</div>
@@ -283,7 +341,7 @@ export function ChatPage() {
                       {safetySuggestions.map((s) => (
                         <button
                           key={s.title}
-                          onClick={() => sendMessage(s.desc)}
+                          onClick={() => doSend(s.desc)}
                           className="text-left rounded-2xl border border-destructive/30 px-4 py-3.5 hover:bg-destructive/5 active:bg-destructive/10 transition-colors"
                         >
                           <div className="text-sm font-medium text-destructive">{s.title}</div>
@@ -296,10 +354,11 @@ export function ChatPage() {
               </div>
             ) : (
               <div className="py-6 space-y-6">
-                {visibleMessages.map((msg) => {
+                {messages.map((msg) => {
                   const isStreamingThis = isStreamingLast && msg.id === lastAssistantMsg?.id;
-                  const reasoning = extractReasoning(msg);
-                  const textContent = extractText(msg);
+                  const textContent = msg.content;
+                  const reasoning = msg.reasoning || "";
+                  const toolCalls = msg.toolCalls || [];
 
                   return (
                     <div key={msg.id}>
@@ -309,23 +368,18 @@ export function ChatPage() {
                             <CopyButton text={textContent} />
                           </div>
                           <div className="bg-muted rounded-3xl px-4 py-2.5 md:px-5 md:py-3 max-w-[85%]">
-                            <p className="text-sm whitespace-pre-wrap break-words">
-                              {extractText(msg)}
-                            </p>
+                            <p className="text-sm whitespace-pre-wrap break-words">{textContent}</p>
                           </div>
                         </div>
                       ) : (
                         <div className="group/msg">
-                          {(() => {
-                            const toolCalls = extractToolCalls(msg);
-                            return toolCalls.length > 0 ? (
-                              <div className="flex flex-wrap gap-1.5 mb-2">
-                                {toolCalls.map((tc) => (
-                                  <ToolBadge key={tc.toolCallId} toolName={tc.toolName} state={tc.state} />
-                                ))}
-                              </div>
-                            ) : null;
-                          })()}
+                          {toolCalls.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {toolCalls.map((tc) => (
+                                <ToolBadge key={tc.id} toolName={tc.name} state={tc.status} />
+                              ))}
+                            </div>
+                          )}
                           {textContent || reasoning ? (
                             <>
                               <MarkdownRenderer
@@ -352,7 +406,7 @@ export function ChatPage() {
                   );
                 })}
                 {/* Loading indicator when waiting for first assistant response */}
-                {isLoading && (!lastAssistantMsg || visibleMessages[visibleMessages.length - 1]?.role === "user") && (
+                {isLoading && (!lastAssistantMsg || messages[messages.length - 1]?.role === "user") && (
                   <div className="flex items-center gap-1.5 py-1">
                     <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
                     <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
@@ -383,7 +437,7 @@ export function ChatPage() {
                 {isLoading ? (
                   <button
                     type="button"
-                    onClick={stop}
+                    onClick={handleStop}
                     className="size-8 rounded-full bg-foreground text-background flex items-center justify-center hover:bg-foreground/80 transition-colors"
                   >
                     <Square className="size-3" />
@@ -391,7 +445,7 @@ export function ChatPage() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => { if (input.trim()) { const t = input; setInput(""); sendMessage(t); } }}
+                    onClick={() => { if (input.trim()) { const text = input; setInput(""); doSend(text); } }}
                     disabled={!input.trim()}
                     className="h-8 px-4 rounded-full bg-foreground text-background text-xs font-medium flex items-center justify-center disabled:bg-muted-foreground/30 disabled:text-muted-foreground/50 transition-colors hover:bg-foreground/80"
                   >
@@ -414,10 +468,7 @@ export function ChatPage() {
 
       <ErrorDialog
         open={errorDialog.open}
-        onClose={() => {
-          setErrorDialog({ open: false, error: null });
-          errorShownRef.current = false;
-        }}
+        onClose={() => setErrorDialog({ open: false, error: null })}
         error={errorDialog.error}
       />
     </div>

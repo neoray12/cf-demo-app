@@ -258,7 +258,6 @@ export class ChatAgent extends AIChatAgent<Env> {
         onFinish: onFinish as any,
       });
 
-      console.log("[ChatAgent] streamText initiated successfully");
       return result.toUIMessageStreamResponse();
     } catch (err) {
       console.error("[ChatAgent] streamText error:", err);

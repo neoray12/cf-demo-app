@@ -3,19 +3,30 @@ import { createAiGateway } from "ai-gateway-provider";
 import { createOpenAI } from "ai-gateway-provider/providers/openai";
 import { createAnthropic } from "ai-gateway-provider/providers/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { streamText, convertToModelMessages, APICallError, type UIMessage } from "ai";
+import { streamText, stepCountIs, APICallError } from "ai";
+import { z } from "zod";
 import type { Env } from "../types";
 import type { ModelProvider } from "../../lib/types";
+
+const TOOL_CAPABLE_WORKERS_AI = [
+  /llama.*instruct/i,
+  /llama.*function/i,
+  /gpt-oss/i,
+  /gemma.*instruct/i,
+  /qwen.*instruct/i,
+  /mistral.*instruct/i,
+];
+
+function modelSupportsTools(provider: ModelProvider, modelId: string): boolean {
+  if (provider === "openai" || provider === "anthropic") return true;
+  if (provider === "perplexity") return false;
+  return TOOL_CAPABLE_WORKERS_AI.some((re) => re.test(modelId));
+}
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
 回答時請使用繁體中文，除非使用者使用其他語言提問。回答要精確、有幫助。`;
 
-const STREAMING_HEADERS = {
-  "Content-Type": "text/plain; charset=utf-8",
-  "Transfer-Encoding": "chunked",
-  "Cache-Control": "no-cache",
-};
 
 // Ensure messages strictly alternate user/assistant roles.
 // Merges consecutive messages of the same role to prevent provider errors.
@@ -174,46 +185,105 @@ function extractIpFromHtml(html: string): string | null {
   return m?.[1] ?? null;
 }
 
-// Convert AI SDK fullStream to NDJSON events for frontend
-function streamToNdjson(result: ReturnType<typeof streamText>): Response {
+
+function buildSearchKnowledgeTool(env: Env) {
+  return {
+    description: "搜尋知識庫中已爬取的網站內容。當使用者詢問與已爬取網站相關的問題時使用此工具。",
+    inputSchema: z.object({
+      query: z.string().describe("搜尋查詢，使用與使用者問題相同的語言"),
+      maxResults: z.number().optional().default(5).describe("最大結果數量 (1-10)"),
+    }),
+    execute: async ({ query, maxResults }: { query: string; maxResults?: number }) => {
+      try {
+        console.log("[Chat API] searchKnowledge:", query);
+        const numResults = Math.min(Math.max(maxResults ?? 5, 1), 10);
+        const ragResult = await (env.AI as any).autorag(env.AUTORAG_NAME).search({
+          query,
+          max_num_results: numResults,
+        });
+        if (!ragResult?.data?.length) return { found: false, message: "未找到相關的知識庫內容。" };
+        const filtered = ragResult.data
+          .filter((item: { score: number }) => item.score >= 0.3)
+          .map((item: { filename: string; score: number; content: Array<{ text: string }> }) => ({
+            filename: item.filename,
+            score: item.score,
+            text: item.content?.map((c: { text: string }) => c.text).join("\n"),
+          }));
+        if (!filtered.length) return { found: false, message: "找到結果但相關性不足，請嘗試換個問法。" };
+        return { found: true, count: filtered.length, results: filtered };
+      } catch (err) {
+        console.error("[Chat API] searchKnowledge error:", err);
+        return { error: `知識庫搜尋失敗: ${(err as Error).message}` };
+      }
+    },
+  };
+}
+
+type SimpleChatMessage = { role: string; content: string };
+
+const STREAMING_HEADERS: Record<string, string> = {
+  "Content-Type": "text/plain; charset=utf-8",
+  "Cache-Control": "no-cache",
+  "Access-Control-Allow-Origin": "*",
+};
+
+function makeNdjsonStream(
+  fn: (send: (data: Record<string, unknown>) => void) => Promise<void>,
+): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      function send(data: Record<string, unknown>) {
+        try { controller.enqueue(encoder.encode(JSON.stringify(data) + "\n")); } catch { /* closed */ }
+      }
       try {
-        for await (const part of result.fullStream) {
-          let event: Record<string, unknown> | null = null;
-          switch (part.type) {
-            case "text-delta":
-              event = { type: "text-delta", text: part.text };
-              break;
-            case "reasoning-delta":
-              event = { type: "reasoning-delta", text: part.text };
-              break;
-            case "error":
-              event = { type: "error", message: String(part.error) };
-              break;
-            case "finish":
-              event = { type: "finish" };
-              break;
-          }
-          if (event) controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
-        }
+        await fn(send);
       } catch (err) {
-        controller.enqueue(encoder.encode(JSON.stringify(parseStreamError(err)) + "\n"));
+        try { send(parseStreamError(err) as unknown as Record<string, unknown>); } catch { /* closed */ }
       } finally {
-        controller.close();
+        try { controller.close(); } catch { /* closed */ }
       }
     },
   });
-
   return new Response(stream, { headers: STREAMING_HEADERS });
 }
 
-// Workers AI: use binding + gateway option (same pattern as agent.ts)
+async function streamTextToNdjson(
+  result: { fullStream: AsyncIterable<any> },
+  send: (data: Record<string, unknown>) => void,
+): Promise<void> {
+  for await (const part of result.fullStream) {
+    switch (part.type) {
+      case "text-delta":
+        send({ type: "text-delta", text: part.text });
+        break;
+      case "reasoning-delta":
+        send({ type: "reasoning-delta", text: part.text });
+        break;
+      case "tool-input-start":
+        send({ type: "tool-call-start", toolCallId: part.id, toolName: part.toolName });
+        break;
+      case "tool-call":
+        send({ type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: part.input });
+        break;
+      case "tool-result":
+        send({ type: "tool-result", toolCallId: part.toolCallId, toolName: part.toolName, result: part.output });
+        break;
+      case "error":
+        send(parseStreamError(part.error) as unknown as Record<string, unknown>);
+        break;
+    }
+  }
+  send({ type: "finish" });
+  send({ type: "done" });
+}
+
+// Workers AI: use binding + gateway option
 async function handleWorkersAI(
-  messages: Array<{ role: string; content: string }>,
+  messages: SimpleChatMessage[],
   modelId: string,
   env: Env,
+  toolsEnabled: boolean,
 ): Promise<Response> {
   const gatewayId = env.AI_GATEWAY_ID || "nkcf-gateway-01";
   const workersai = createWorkersAI({
@@ -221,31 +291,31 @@ async function handleWorkersAI(
     gateway: { id: gatewayId },
   });
 
-  const uiMessages: UIMessage[] = sanitizeMessages(messages).map((m, i) => ({
-    id: `msg-${i}`,
-    role: m.role as "user" | "assistant",
-    content: m.content,
-    parts: [{ type: "text" as const, text: m.content }],
-  }));
+  const useTools = toolsEnabled && modelSupportsTools("workers-ai", modelId);
+  const chatMessages = sanitizeMessages(messages);
 
-  const chatMessages = await convertToModelMessages(uiMessages);
-
-  const result = streamText({
-    model: workersai(modelId),
-    system: SYSTEM_PROMPT,
-    messages: chatMessages,
-    maxOutputTokens: 4096,
+  return makeNdjsonStream(async (send) => {
+    const result = streamText({
+      model: workersai(modelId),
+      system: SYSTEM_PROMPT,
+      messages: chatMessages as any,
+      maxOutputTokens: 4096,
+      ...(useTools ? {
+        tools: { searchKnowledge: buildSearchKnowledgeTool(env) },
+        stopWhen: stepCountIs(5),
+      } : {}),
+    });
+    await streamTextToNdjson(result, send);
   });
-
-  return streamToNdjson(result);
 }
 
 // External providers: use ai-gateway-provider (OpenAI, Anthropic, Perplexity)
 async function handleExternalProvider(
-  messages: Array<{ role: string; content: string }>,
+  messages: SimpleChatMessage[],
   provider: "openai" | "anthropic" | "perplexity",
   modelId: string,
   env: Env,
+  toolsEnabled: boolean,
 ): Promise<Response> {
   const aigateway = createAiGateway({
     accountId: env.CF_ACCOUNT_ID || "5efa272dc28e4e3933324c44165b6dbe",
@@ -277,19 +347,22 @@ async function handleExternalProvider(
     }
   }
 
-  const chatMessages = sanitizeMessages(messages).map((m) => ({
-    role: m.role as "user" | "assistant" | "system",
-    content: m.content,
-  }));
+  const useTools = toolsEnabled && modelSupportsTools(provider, modelId);
+  const chatMessages = sanitizeMessages(messages);
 
-  const result = streamText({
-    model: aiModel,
-    system: SYSTEM_PROMPT,
-    messages: chatMessages,
-    maxOutputTokens: 4096,
+  return makeNdjsonStream(async (send) => {
+    const result = streamText({
+      model: aiModel,
+      system: SYSTEM_PROMPT,
+      messages: chatMessages as any,
+      maxOutputTokens: 4096,
+      ...(useTools ? {
+        tools: { searchKnowledge: buildSearchKnowledgeTool(env) },
+        stopWhen: stepCountIs(5),
+      } : {}),
+    });
+    await streamTextToNdjson(result, send);
   });
-
-  return streamToNdjson(result);
 }
 
 export async function handleChat(
@@ -304,12 +377,13 @@ export async function handleChat(
   }
 
   const body = await request.json() as {
-    messages: Array<{ role: string; content: string }>;
+    messages: SimpleChatMessage[];
     model?: string;
     provider?: ModelProvider;
+    toolsEnabled?: boolean;
   };
 
-  const { messages, model, provider } = body;
+  const { messages, model, provider, toolsEnabled = false } = body;
 
   if (!messages || !Array.isArray(messages)) {
     return new Response(JSON.stringify({ error: "messages is required" }), {
@@ -326,14 +400,14 @@ export async function handleChat(
   };
   const modelId = model || defaultModels[provider || "workers-ai"] || "@cf/openai/gpt-oss-120b";
 
-  console.log("[Chat API] provider:", provider, "model:", modelId, "messages:", messages.length);
+  console.log("[Chat API] provider:", provider, "model:", modelId, "messages:", messages.length, "toolsEnabled:", toolsEnabled);
 
   try {
     if (provider === "openai" || provider === "anthropic" || provider === "perplexity") {
-      return await handleExternalProvider(messages, provider, modelId, env);
+      return await handleExternalProvider(messages, provider, modelId, env, toolsEnabled);
     }
     // Default: Workers AI via binding + gateway
-    return await handleWorkersAI(messages, modelId, env);
+    return await handleWorkersAI(messages, modelId, env, toolsEnabled);
   } catch (err) {
     console.error("[Chat API] Error:", err);
     return new Response(

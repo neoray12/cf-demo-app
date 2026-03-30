@@ -8,4 +8,5 @@ export interface Env {
   AUTORAG_NAME: string;
   CF_API_TOKEN: string;
   CF_AIG_TOKEN: string;
+  MCP_SERVER_URLS?: string;
 }

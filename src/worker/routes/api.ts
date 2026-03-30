@@ -26,7 +26,27 @@ export async function handleApiRoute(
     let response: Response;
 
     if (path.startsWith("/api/chat")) {
-      response = await handleChat(request, env);
+      // Return streaming response directly — wrapping in new Response()
+      // causes Workers runtime to buffer the entire stream (known issue).
+      // CORS headers are included in the streaming response from chat.ts.
+      return await handleChat(request, env);
+    } else if (path === "/api/mcp/servers") {
+      const raw = env.MCP_SERVER_URLS || "";
+      const servers = raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const eq = entry.indexOf("=");
+          if (eq === -1) return null;
+          const id = entry.slice(0, eq).trim();
+          const url = entry.slice(eq + 1).trim();
+          return { id, url };
+        })
+        .filter(Boolean);
+      response = new Response(JSON.stringify({ servers }), {
+        headers: { "Content-Type": "application/json" },
+      });
     } else if (path.startsWith("/api/browser-rendering/")) {
       response = await handleBrowserRendering(request, env, url);
     } else if (path.startsWith("/api/crawler/")) {
