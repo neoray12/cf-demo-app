@@ -8,11 +8,75 @@ const SYSTEM_PROMPT = `你是一個由 Cloudflare Workers AI 驅動的智慧助�
 1. 回答一般性問題
 2. 透過知識庫搜尋（AI Search）查詢已爬取的網站內容
 3. 提供有關 Cloudflare 產品與功能的資訊
+4. 使用已連線的 MCP 工具取得外部資訊
 
 回答時請使用繁體中文，除非使用者使用其他語言提問。
 回答要精確、有幫助，並在適當時引用資料來源。`;
 
 export class ChatAgent extends AIChatAgent<Env> {
+  onStart() {
+    this.mcp.configureOAuthCallback({
+      customHandler: () =>
+        new Response(
+          `<!DOCTYPE html><html><head><title>Authorized</title></head><body>
+          <script>
+            window.opener && window.opener.postMessage('mcp-auth-done', '*');
+            window.close();
+          </script>
+          <p>Authorized. You may close this window.</p>
+          </body></html>`,
+          { headers: { "content-type": "text/html" } }
+        ),
+    });
+  }
+
+  async onRequest(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const segments = url.pathname.split("/").filter(Boolean);
+    const mcpIdx = segments.indexOf("mcp");
+
+    if (mcpIdx !== -1) {
+      const sub = segments[mcpIdx + 1];
+
+      if (sub === "connect" && request.method === "POST") {
+        try {
+          const { name, serverUrl } = (await request.json()) as {
+            name: string;
+            serverUrl: string;
+          };
+          const origin = new URL(request.url).origin;
+          const result = await this.addMcpServer(name, serverUrl, origin);
+          return Response.json(result);
+        } catch (err) {
+          const msg = (err as Error).message || "";
+          const status = msg.includes("401") || msg.toLowerCase().includes("unauthorized") ? 401
+            : msg.toLowerCase().includes("transport") ? 400
+            : 500;
+          return Response.json(
+            { error: "connect_failed", message: msg, authRequired: status === 401 },
+            { status }
+          );
+        }
+      }
+
+      if (sub === "disconnect" && request.method === "DELETE") {
+        const serverId = segments[mcpIdx + 2];
+        if (!serverId) {
+          return Response.json({ error: "missing server id" }, { status: 400 });
+        }
+        await this.removeMcpServer(serverId);
+        return Response.json({ ok: true });
+      }
+
+      if (sub === "servers" && request.method === "GET") {
+        const servers = await this.getMcpServers();
+        return Response.json({ servers });
+      }
+    }
+
+    return new Response("Not Found", { status: 404 });
+  }
+
   async onChatMessage(
     onFinish: Parameters<AIChatAgent<Env>["onChatMessage"]>[0]
   ) {
@@ -43,11 +107,15 @@ export class ChatAgent extends AIChatAgent<Env> {
       maxResults: z.number().optional().default(5).describe("最大結果數量 (1-10)"),
     });
 
+    const mcpTools = this.mcp.getAITools();
+    console.log("[ChatAgent] MCP tools available:", Object.keys(mcpTools).length);
+
     try {
       const result = streamText({
         model: workersai(modelId),
         system: SYSTEM_PROMPT,
         messages: chatMessages,
+        maxOutputTokens: 4096,
         tools: {
           searchKnowledge: {
             description:
@@ -87,6 +155,7 @@ export class ChatAgent extends AIChatAgent<Env> {
               }
             },
           },
+          ...mcpTools,
         },
         onFinish: onFinish as any,
       });
