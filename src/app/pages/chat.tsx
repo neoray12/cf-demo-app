@@ -4,13 +4,15 @@ import { ModelSelector } from "../components/chat/model-selector";
 import { ErrorDialog, type ChatErrorState } from "../components/chat/error-dialog";
 import { McpConnectionsPanel } from "../components/chat/mcp-panel";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Plug, Search as SearchIcon, Zap } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Plug, Search as SearchIcon, Zap, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 interface ToolCallInfo {
   id: string;
   name: string;
   status: "calling" | "done";
+  args?: unknown;
+  result?: unknown;
 }
 
 interface ChatMessage {
@@ -155,6 +157,7 @@ export function ChatPage() {
 
   const abortRef = useRef<AbortController | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  const streamingMsgIdRef = useRef<string | null>(null);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   const aiModel = AI_MODELS.find((m) => m.id === selectedModel);
@@ -192,114 +195,210 @@ export function ChatPage() {
     const userMsg: ChatMessage = { id: genId(), role: "user", content: text.trim() };
     const assistantId = genId();
     const assistantMsg: ChatMessage = { id: assistantId, role: "assistant", content: "", toolCalls: [], reasoning: "" };
+
+    streamingMsgIdRef.current = assistantId;
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setInput("");
     setIsLoading(true);
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const apiMessages = [...messagesRef.current, userMsg]
-      .filter((m): m is ChatMessage => m.role === "user" || (m.role === "assistant" && !!(m.content || m.toolCalls?.length)))
-      .map((m) => ({ role: m.role, content: m.content }));
-
-    let accContent = "";
-    let accReasoning = "";
-    let flushTimer: ReturnType<typeof setTimeout> | null = null;
-    const flushStreaming = () => {
-      flushTimer = null;
-      const c = accContent;
-      const r = accReasoning;
-      setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: c, reasoning: r || m.reasoning } : m));
-    };
-    const scheduleFlush = () => { if (!flushTimer) flushTimer = setTimeout(flushStreaming, 50); };
+    // Fetch timeout: abort after 30s if no response starts
+    const fetchTimeout = setTimeout(() => controller.abort(), 30_000);
 
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages, model: modelId, provider, toolsEnabled }),
-        signal: controller.signal,
-      });
+      // Use messagesRef to avoid stale closure
+      const apiMessages = [...messagesRef.current, userMsg]
+        .filter((m): m is ChatMessage => m.role === "user" || (m.role === "assistant" && !!(m.content || m.toolCalls?.length)))
+        .map((m) => ({ role: m.role, content: m.content }));
 
-      if (!res.ok) {
-        const errText = await res.text();
-        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
-        setErrorDialog({ open: true, error: parseClientHttpError(res.status, errText) });
-        return;
-      }
+      // Fetch + stream reader with client-side retry
+      const doFetch = async (): Promise<{ gotTextContent: boolean; gotError: boolean }> => {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: apiMessages, model: modelId, provider, toolsEnabled }),
+          signal: controller.signal,
+        });
 
-      const reader = res.body?.getReader();
-      if (!reader) return;
+        clearTimeout(fetchTimeout);
 
-      const decoder = new TextDecoder();
-      let buffer = "";
+        if (!res.ok) {
+          const errText = await res.text();
+          setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+          setErrorDialog({ open: true, error: parseClientHttpError(res.status, errText) });
+          return { gotTextContent: false, gotError: true };
+        }
 
-      const processLine = (line: string) => {
-        if (!line.trim()) return;
-        try {
-          const event = JSON.parse(line);
-          switch (event.type) {
-            case "text-delta":
-              accContent += event.text as string;
-              scheduleFlush();
-              break;
-            case "reasoning-delta":
-              accReasoning += event.text as string;
-              scheduleFlush();
-              break;
-            case "tool-call-start":
-              setMessages((prev) => prev.map((m) => m.id === assistantId ? {
-                ...m,
-                toolCalls: [...(m.toolCalls || []), { id: event.toolCallId as string, name: event.toolName as string, status: "calling" as const }],
-              } : m));
-              break;
-            case "tool-result":
-              setMessages((prev) => prev.map((m) => m.id === assistantId ? {
-                ...m,
-                toolCalls: (m.toolCalls || []).map((tc) => tc.id === event.toolCallId ? { ...tc, status: "done" as const } : tc),
-              } : m));
-              break;
-            case "error": {
-              const errEvent = event as { type: string; errorType?: string; message?: string; rayId?: string; gatewayLogId?: string; statusCode?: number; gatewayCode?: string; userIp?: string };
-              setErrorDialog({ open: true, error: {
-                errorType: (errEvent.errorType as "firewall" | "gateway" | "dlp" | "general") || "general",
-                message: errEvent.message || "發生錯誤",
-                rayId: errEvent.rayId || null,
-                gatewayLogId: errEvent.gatewayLogId || null,
-                statusCode: errEvent.statusCode || null,
-                gatewayCode: errEvent.gatewayCode || null,
-                userIp: errEvent.userIp || null,
-              }});
-              break;
+        const reader = res.body?.getReader();
+        if (!reader) return { gotTextContent: false, gotError: true };
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let gotTextContent = false;
+        let gotError = false;
+
+        // Batch streaming state updates — accumulate in locals, flush every 50ms
+        let accContent = "";
+        let accReasoning = "";
+        let flushTimer: ReturnType<typeof setTimeout> | null = null;
+        const flushStreaming = () => {
+          flushTimer = null;
+          const c = accContent;
+          const r = accReasoning;
+          setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: c, reasoning: r || m.reasoning } : m));
+        };
+        const scheduleFlush = () => { if (!flushTimer) flushTimer = setTimeout(flushStreaming, 50); };
+
+        const processLine = (line: string) => {
+          if (!line.trim()) return;
+          try {
+            const event = JSON.parse(line);
+            switch (event.type) {
+              case "text-delta":
+                gotTextContent = true;
+                accContent += event.text as string;
+                scheduleFlush();
+                break;
+              case "reasoning-delta":
+                gotTextContent = true;
+                accReasoning += event.text as string;
+                scheduleFlush();
+                break;
+              case "tool-call-start":
+                setMessages((prev) => prev.map((m) => m.id === assistantId ? {
+                  ...m,
+                  toolCalls: [...(m.toolCalls || []), { id: event.toolCallId as string, name: event.toolName as string, status: "calling" as const }],
+                } : m));
+                break;
+              case "tool-call":
+                setMessages((prev) => prev.map((m) => m.id === assistantId ? {
+                  ...m,
+                  toolCalls: (m.toolCalls || []).map((tc) =>
+                    tc.id === event.toolCallId ? { ...tc, args: event.args } : tc
+                  ),
+                } : m));
+                break;
+              case "tool-result":
+                setMessages((prev) => prev.map((m) => m.id === assistantId ? {
+                  ...m,
+                  toolCalls: (m.toolCalls || []).map((tc) =>
+                    tc.id === event.toolCallId ? { ...tc, result: event.result, status: "done" as const } : tc
+                  ),
+                } : m));
+                break;
+              case "error": {
+                gotError = true;
+                const errEvent = event as { type: string; errorType?: string; message?: string; rayId?: string; gatewayLogId?: string; statusCode?: number; gatewayCode?: string; userIp?: string };
+                setErrorDialog({ open: true, error: {
+                  errorType: (errEvent.errorType as "firewall" | "gateway" | "dlp" | "general") || "general",
+                  message: errEvent.message || "發生錯誤",
+                  rayId: errEvent.rayId || null,
+                  gatewayLogId: errEvent.gatewayLogId || null,
+                  statusCode: errEvent.statusCode || null,
+                  gatewayCode: errEvent.gatewayCode || null,
+                  userIp: errEvent.userIp || null,
+                }});
+                break;
+              }
+              case "finish":
+              case "done":
+                break;
             }
-          }
-        } catch { /* skip malformed */ }
+          } catch { /* skip malformed */ }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) processLine(line);
+        }
+
+        // Flush remaining buffer + decoder
+        buffer += decoder.decode();
+        if (buffer.trim()) processLine(buffer);
+
+        // Final flush of accumulated streaming content
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+        flushStreaming();
+
+        return { gotTextContent, gotError };
       };
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) processLine(line);
-      }
-      buffer += decoder.decode();
-      if (buffer.trim()) processLine(buffer);
+      // First attempt
+      let { gotTextContent, gotError } = await doFetch();
 
-      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-      flushStreaming();
+      // Client-side retry: if server returned no text content (no text, no explicit error), retry once
+      if (!gotTextContent && !gotError && !controller.signal.aborted) {
+        console.warn("[Chat] Client: no text content, retrying...");
+        // Reset assistant message for retry
+        setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: "", toolCalls: [], reasoning: "" } : m));
+        ({ gotTextContent, gotError } = await doFetch());
+      }
+
+      // Show fallback error only if all attempts returned no text
+      if (!gotTextContent && !gotError) {
+        setMessages((prev) => prev.map((m) =>
+          m.id === assistantId && !m.content
+            ? { ...m, content: "❌ 無法取得回應，請再試一次。" }
+            : m
+        ));
+      }
+
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
+      clearTimeout(fetchTimeout);
+      console.error("[Chat] Fetch error:", err);
+      if ((err as Error).name === "AbortError") {
+        // User clicked stop or timeout — clean up
+        setMessages((prev) => {
+          const msg = prev.find((m) => m.id === assistantId);
+          if (msg && !msg.content && !msg.reasoning && !msg.toolCalls?.length) {
+            return prev.filter((m) => m.id !== assistantId);
+          }
+          // Has tool results but no text — show fallback message
+          if (msg && !msg.content && msg.toolCalls?.some((tc) => tc.status === "done")) {
+            return prev.map((m) => m.id === assistantId
+              ? { ...m, content: "工具已執行但未產生回覆，請重試。" }
+              : m
+            );
+          }
+          return prev;
+        });
+      } else {
         setErrorDialog({ open: true, error: { errorType: "general", message: (err as Error).message || "發生錯誤", rayId: null, gatewayLogId: null, statusCode: null, gatewayCode: null, userIp: null } });
       }
     } finally {
       setIsLoading(false);
       abortRef.current = null;
+      streamingMsgIdRef.current = null;
     }
   }, [isLoading, modelId, provider, toolsEnabled]);
 
-  const handleStop = useCallback(() => { abortRef.current?.abort(); }, []);
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+    // isLoading will be set to false in the finally block of doSend
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    const msgs = messagesRef.current;
+    const lastUserMsg = [...msgs].reverse().find((m) => m.role === "user");
+    if (!lastUserMsg) return;
+
+    // Remove the failed assistant message (last message)
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant") return prev.slice(0, -1);
+      return prev;
+    });
+
+    // Use setTimeout to ensure state is updated before sending
+    setTimeout(() => doSend(lastUserMsg.content), 0);
+  }, [doSend]);
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -339,7 +438,15 @@ export function ChatPage() {
   ];
 
   const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
-  const isStreamingLast = isLoading && lastAssistantMsg != null;
+
+  // Scroll to bottom when streaming ends
+  const prevIsLoadingRef = useRef(false);
+  useEffect(() => {
+    if (prevIsLoadingRef.current && !isLoading) {
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
+    }
+    prevIsLoadingRef.current = isLoading;
+  }, [isLoading]);
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -425,7 +532,7 @@ export function ChatPage() {
             ) : (
               <div className="py-6 space-y-6">
                 {messages.map((msg) => {
-                  const isStreamingThis = isStreamingLast && msg.id === lastAssistantMsg?.id;
+                  const isStreamingThis = streamingMsgIdRef.current === msg.id && isLoading;
                   const textContent = msg.content;
                   const reasoning = msg.reasoning || "";
                   const toolCalls = msg.toolCalls || [];
@@ -458,8 +565,17 @@ export function ChatPage() {
                                 isStreaming={isStreamingThis}
                               />
                               {!isStreamingThis && textContent && (
-                                <div className="mt-1 opacity-60 md:opacity-0 md:group-hover/msg:opacity-100 transition-opacity">
+                                <div className="mt-1 flex items-center gap-1 opacity-60 md:opacity-0 md:group-hover/msg:opacity-100 transition-opacity">
                                   <CopyButton text={textContent} />
+                                  {msg.id === lastAssistantMsg?.id && !isLoading && (
+                                    <button
+                                      onClick={handleRetry}
+                                      className="p-1 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/60 transition-colors"
+                                      title="重試"
+                                    >
+                                      <RotateCcw className="size-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </>

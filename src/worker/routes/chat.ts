@@ -68,6 +68,22 @@ function parseStreamError(err: unknown): StreamErrorEvent {
     userIp: null,
   };
 
+  // Workers AI InferenceUpstreamError: "error code: 1031" etc.
+  const errMsg = base.message;
+  const workersAiCodeMatch = errMsg.match(/error code:\s*(\d+)/i);
+  if (workersAiCodeMatch) {
+    const code = workersAiCodeMatch[1]!;
+    const WORKERS_AI_ERRORS: Record<string, string> = {
+      "1031": "Workers AI 模型推論失敗（上游錯誤），請稍後再試或換一個模型",
+      "1004": "Workers AI 模型不存在或已停用",
+      "1042": "Workers AI 請求逾時，請縮短輸入或稍後再試",
+      "3002": "Workers AI 輸入格式錯誤",
+    };
+    base.message = WORKERS_AI_ERRORS[code] || `Workers AI 錯誤（代碼 ${code}），請稍後再試或換一個模型`;
+    base.errorType = "general";
+    return base;
+  }
+
   // Duck-type check: ai-gateway-provider may use a different AICallError class
   // that doesn't pass APICallError.isInstance() from the main 'ai' package.
   const apiErr = err as Record<string, unknown>;
@@ -197,10 +213,14 @@ function buildSearchKnowledgeTool(env: Env) {
       try {
         console.log("[Chat API] searchKnowledge:", query);
         const numResults = Math.min(Math.max(maxResults ?? 5, 1), 10);
-        const ragResult = await (env.AI as any).autorag(env.AUTORAG_NAME).search({
+        const searchPromise = (env.AI as any).autorag(env.AUTORAG_NAME).search({
           query,
           max_num_results: numResults,
         });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("AutoRAG 搜尋逾時（15s）")), 15000)
+        );
+        const ragResult = await Promise.race([searchPromise, timeoutPromise]);
         if (!ragResult?.data?.length) return { found: false, message: "未找到相關的知識庫內容。" };
         const filtered = ragResult.data
           .filter((item: { score: number }) => item.score >= 0.3)
@@ -227,15 +247,17 @@ const STREAMING_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
 };
 
+type NdjsonSender = (data: Record<string, unknown>) => Promise<void>;
+
 function makeNdjsonStream(
-  fn: (send: (data: Record<string, unknown>) => void) => Promise<void>,
+  fn: (send: NdjsonSender) => Promise<void>,
 ): Response {
   const encoder = new TextEncoder();
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
 
-  const send = (data: Record<string, unknown>) => {
-    writer.write(encoder.encode(JSON.stringify(data) + "\n")).catch(() => { /* closed */ });
+  const send: NdjsonSender = async (data) => {
+    try { await writer.write(encoder.encode(JSON.stringify(data) + "\n")); } catch { /* closed */ }
   };
 
   // Fire-and-forget: Workers runtime keeps the response alive while the writer is open
@@ -243,7 +265,7 @@ function makeNdjsonStream(
     try {
       await fn(send);
     } catch (err) {
-      try { send(parseStreamError(err) as unknown as Record<string, unknown>); } catch { /* closed */ }
+      try { await send(parseStreamError(err) as unknown as Record<string, unknown>); } catch { /* closed */ }
     } finally {
       try { await writer.close(); } catch { /* closed */ }
     }
@@ -252,121 +274,330 @@ function makeNdjsonStream(
   return new Response(readable, { headers: STREAMING_HEADERS });
 }
 
-async function streamTextToNdjson(
-  result: { fullStream: AsyncIterable<any> },
-  send: (data: Record<string, unknown>) => void,
+// Only parse <think> tags for reasoning models that embed reasoning in text
+function needsThinkParsing(modelId: string): boolean {
+  return /deepseek/i.test(modelId) || /qwq/i.test(modelId);
+}
+
+function isReasoningModel(modelId: string): boolean {
+  return needsThinkParsing(modelId);
+}
+
+interface ToolResultEntry {
+  toolName: string;
+  result: unknown;
+}
+
+interface StreamState {
+  insideThink: boolean;
+  thinkBuffer: string;
+}
+
+// Process text-delta: split on <think>/<​/think> boundaries when needed
+async function processTextDelta(
+  send: NdjsonSender,
+  raw: string,
+  state: StreamState,
+  parseThink: boolean,
 ): Promise<void> {
+  if (!parseThink) {
+    await send({ type: "text-delta", text: raw });
+    return;
+  }
+
+  let text = state.thinkBuffer + raw;
+  state.thinkBuffer = "";
+
+  // Buffer potential partial tags at the end (e.g. "<", "<t", "<th", "</thi", etc.)
+  const partial = text.match(/<\/?(?:t(?:h(?:i(?:n(?:k)?)?)?)?)?$/);
+  if (partial) {
+    state.thinkBuffer = partial[0];
+    text = text.slice(0, -state.thinkBuffer.length);
+  }
+
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (state.insideThink) {
+      const closeIdx = remaining.indexOf("</think>");
+      if (closeIdx !== -1) {
+        const reasoningText = remaining.slice(0, closeIdx);
+        if (reasoningText) await send({ type: "reasoning-delta", text: reasoningText });
+        state.insideThink = false;
+        remaining = remaining.slice(closeIdx + "</think>".length);
+      } else {
+        if (remaining) await send({ type: "reasoning-delta", text: remaining });
+        remaining = "";
+      }
+    } else {
+      const openIdx = remaining.indexOf("<think>");
+      if (openIdx !== -1) {
+        const normalText = remaining.slice(0, openIdx);
+        if (normalText) await send({ type: "text-delta", text: normalText });
+        state.insideThink = true;
+        remaining = remaining.slice(openIdx + "<think>".length);
+      } else {
+        if (remaining) await send({ type: "text-delta", text: remaining });
+        remaining = "";
+      }
+    }
+  }
+}
+
+// Process a single stream attempt; returns flags and collected tool results
+async function processStream(
+  result: { fullStream: AsyncIterable<any> },
+  send: NdjsonSender,
+  state: StreamState,
+  parseThink: boolean,
+  attempt: number,
+): Promise<{ hasTextContent: boolean; hasToolCalls: boolean; hasError: boolean; toolResults: ToolResultEntry[] }> {
+  let hasTextContent = false;
+  let hasToolCalls = false;
+  let hasError = false;
+  const toolResults: ToolResultEntry[] = [];
+
   for await (const part of result.fullStream) {
     switch (part.type) {
       case "text-delta":
-        send({ type: "text-delta", text: part.text });
+        hasTextContent = true;
+        await processTextDelta(send, part.text, state, parseThink);
         break;
       case "reasoning-delta":
-        send({ type: "reasoning-delta", text: part.text });
+        hasTextContent = true;
+        await send({ type: "reasoning-delta", text: part.text });
         break;
       case "tool-input-start":
-        send({ type: "tool-call-start", toolCallId: part.id, toolName: part.toolName });
+        hasToolCalls = true;
+        await send({ type: "tool-call-start", toolCallId: part.id, toolName: part.toolName });
         break;
       case "tool-call":
-        send({ type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: part.input });
+        await send({ type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, args: part.input });
         break;
       case "tool-result":
-        send({ type: "tool-result", toolCallId: part.toolCallId, toolName: part.toolName, result: part.output });
+        await send({ type: "tool-result", toolCallId: part.toolCallId, toolName: part.toolName, result: part.output });
+        toolResults.push({ toolName: part.toolName, result: part.output });
+        break;
+      case "finish":
+        // Flush any remaining thinkBuffer
+        if (state.thinkBuffer) {
+          const eventType = state.insideThink ? "reasoning-delta" : "text-delta";
+          await send({ type: eventType, text: state.thinkBuffer });
+          state.thinkBuffer = "";
+        }
+        if (part.finishReason === "length") {
+          await send({ type: "text-delta", text: "\n\n⚠️ *回覆因長度限制被截斷，請嘗試縮小問題範圍。*" });
+        }
+        console.log(`[Chat API] Stream finished (attempt ${attempt}): ${part.finishReason}, text=${hasTextContent}, tools=${hasToolCalls}`);
         break;
       case "error":
-        send(parseStreamError(part.error) as unknown as Record<string, unknown>);
+        console.error(`[Chat API] Stream error (attempt ${attempt}):`, part.error);
+        await send(parseStreamError(part.error) as unknown as Record<string, unknown>);
+        hasError = true;
+        break;
+      // Known informational events — ignore silently
+      case "start":
+      case "start-step":
+      case "finish-step":
+      case "text-start":
+      case "text-end":
+      case "tool-input-delta":
+      case "tool-input-end":
+        break;
+      default:
+        console.log(`[Chat API] Unhandled stream event: ${(part as { type: string }).type}`);
         break;
     }
   }
-  send({ type: "finish" });
-  send({ type: "done" });
+  return { hasTextContent, hasToolCalls, hasError, toolResults };
+}
+
+// Smart retry: inject tool results as context and call model WITHOUT tools
+async function processSmartRetry(
+  send: NdjsonSender,
+  state: StreamState,
+  parseThink: boolean,
+  toolResults: ToolResultEntry[],
+  messages: SimpleChatMessage[],
+  createModel: () => any,
+  maxTokens: number,
+): Promise<boolean> {
+  const resultsSummary = toolResults.map((tr) => {
+    const data = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result, null, 2);
+    return `[${tr.toolName}]\n${data}`;
+  }).join("\n\n");
+
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content || "";
+
+  const retryMessages = [
+    ...messages,
+    { role: "assistant" as const, content: "我查詢了相關資料，以下是查詢結果：" },
+    { role: "user" as const, content: `請根據以下查詢結果回答我的問題。不要再呼叫任何工具，直接用自然語言回答。\n\n查詢結果：\n${resultsSummary}\n\n原始問題：${lastUserMessage}` },
+  ];
+
+  console.log(`[Chat API] Smart retry: injecting ${toolResults.length} tool result(s) as context`);
+
+  const retryResult = streamText({
+    model: createModel(),
+    system: SYSTEM_PROMPT,
+    messages: retryMessages as any,
+    maxOutputTokens: maxTokens,
+    abortSignal: AbortSignal.timeout(60_000),
+  });
+
+  let hasText = false;
+  for await (const part of retryResult.fullStream) {
+    switch (part.type) {
+      case "text-delta":
+        hasText = true;
+        await processTextDelta(send, part.text, state, parseThink);
+        break;
+      case "reasoning-delta":
+        hasText = true;
+        await send({ type: "reasoning-delta", text: part.text });
+        break;
+      case "finish":
+        if (state.thinkBuffer) {
+          const eventType = state.insideThink ? "reasoning-delta" : "text-delta";
+          await send({ type: eventType, text: state.thinkBuffer });
+          state.thinkBuffer = "";
+        }
+        console.log(`[Chat API] Smart retry finished: ${part.finishReason}, text=${hasText}`);
+        break;
+      case "error":
+        console.error("[Chat API] Smart retry error:", part.error);
+        break;
+      default:
+        break;
+    }
+  }
+  return hasText;
+}
+
+// Multi-attempt streaming orchestration (replicates tce-app logic)
+async function orchestrateStream(
+  send: NdjsonSender,
+  messages: SimpleChatMessage[],
+  modelId: string,
+  createModel: () => any,
+  tools: Record<string, any> | undefined,
+): Promise<void> {
+  const parseThink = needsThinkParsing(modelId);
+  const maxTokens = isReasoningModel(modelId) ? 8192 : 4096;
+  const state: StreamState = { insideThink: false, thinkBuffer: "" };
+
+  const createStreamResult = (attempt: number) => streamText({
+    model: createModel(),
+    system: SYSTEM_PROMPT,
+    messages: messages as any,
+    maxOutputTokens: maxTokens,
+    abortSignal: AbortSignal.timeout(60_000),
+    ...(tools ? { tools, stopWhen: stepCountIs(5) } : {}),
+  });
+
+  // Step 1: Normal stream with tools
+  state.insideThink = false;
+  state.thinkBuffer = "";
+  const firstResult = await processStream(createStreamResult(1), send, state, parseThink, 1);
+  let resolved = firstResult.hasTextContent || firstResult.hasError;
+
+  // Step 2: Smart retry — inject tool results as context, no tools
+  if (!resolved && firstResult.hasToolCalls && firstResult.toolResults.length > 0) {
+    console.warn("[Chat API] Tool calls succeeded but no text, using smart retry...");
+    state.insideThink = false;
+    state.thinkBuffer = "";
+    const smartRetryOk = await processSmartRetry(send, state, parseThink, firstResult.toolResults, messages, createModel, maxTokens);
+    resolved = smartRetryOk;
+  }
+
+  // Step 3: If still nothing, try a plain retry (no tool results to inject)
+  if (!resolved) {
+    console.warn("[Chat API] No content after first attempt, plain retry...");
+    state.insideThink = false;
+    state.thinkBuffer = "";
+    const retryResult = await processStream(createStreamResult(2), send, state, parseThink, 2);
+    resolved = retryResult.hasTextContent || retryResult.hasError;
+
+    // Smart retry for the plain retry too
+    if (!resolved && retryResult.hasToolCalls && retryResult.toolResults.length > 0) {
+      state.insideThink = false;
+      state.thinkBuffer = "";
+      resolved = await processSmartRetry(send, state, parseThink, retryResult.toolResults, messages, createModel, maxTokens);
+    }
+  }
+
+  // Final fallback
+  if (!resolved) {
+    console.error("[Chat API] All attempts failed, sending fallback");
+    await send({ type: "text-delta", text: "抱歉，我無法產生回覆。請再試一次或換一種方式提問。" });
+  }
+
+  await send({ type: "finish", finishReason: "stop" });
+  await send({ type: "done" });
 }
 
 // Workers AI: use binding + gateway option
-async function handleWorkersAI(
+function handleWorkersAI(
   messages: SimpleChatMessage[],
   modelId: string,
   env: Env,
   toolsEnabled: boolean,
-): Promise<Response> {
+): Response {
   const gatewayId = env.AI_GATEWAY_ID || "nkcf-gateway-01";
-  const workersai = createWorkersAI({
-    binding: env.AI,
-    gateway: { id: gatewayId },
-  });
+  const createModel = () => {
+    const workersai = createWorkersAI({
+      binding: env.AI,
+      gateway: { id: gatewayId },
+    });
+    return workersai(modelId);
+  };
 
   const useTools = toolsEnabled && modelSupportsTools("workers-ai", modelId);
   const chatMessages = sanitizeMessages(messages);
+  const tools = useTools ? { searchKnowledge: buildSearchKnowledgeTool(env) } : undefined;
 
-  return makeNdjsonStream(async (send) => {
-    const result = streamText({
-      model: workersai(modelId),
-      system: SYSTEM_PROMPT,
-      messages: chatMessages as any,
-      maxOutputTokens: 4096,
-      ...(useTools ? {
-        tools: { searchKnowledge: buildSearchKnowledgeTool(env) },
-        stopWhen: stepCountIs(5),
-      } : {}),
-    });
-    await streamTextToNdjson(result, send);
-  });
+  return makeNdjsonStream((send) => orchestrateStream(send, chatMessages, modelId, createModel, tools));
 }
 
 // External providers: use ai-gateway-provider (OpenAI, Anthropic, Perplexity)
-async function handleExternalProvider(
+function handleExternalProvider(
   messages: SimpleChatMessage[],
   provider: "openai" | "anthropic" | "perplexity",
   modelId: string,
   env: Env,
   toolsEnabled: boolean,
-): Promise<Response> {
+): Response {
   const aigateway = createAiGateway({
     accountId: env.CF_ACCOUNT_ID || "5efa272dc28e4e3933324c44165b6dbe",
     gateway: env.AI_GATEWAY_ID || "nkcf-gateway-01",
     apiKey: env.CF_AIG_TOKEN,
   });
 
-  let aiModel;
-  switch (provider) {
-    case "openai": {
-      const openai = createOpenAI();
-      aiModel = aigateway(openai.chat(modelId));
-      break;
+  const createModel = () => {
+    switch (provider) {
+      case "openai": {
+        const openai = createOpenAI();
+        return aigateway(openai.chat(modelId));
+      }
+      case "anthropic": {
+        const anthropic = createAnthropic();
+        return aigateway(anthropic(modelId));
+      }
+      case "perplexity": {
+        const perplexity = createOpenAICompatible({
+          baseURL: "https://api.perplexity.ai/",
+          name: "Perplexity",
+          apiKey: "CF_TEMP_TOKEN",
+        });
+        return aigateway(perplexity.chatModel(modelId));
+      }
     }
-    case "anthropic": {
-      const anthropic = createAnthropic();
-      aiModel = aigateway(anthropic(modelId));
-      break;
-    }
-    case "perplexity": {
-      // Perplexity is OpenAI-compatible; baseURL matches "perplexity-ai" provider regex
-      const perplexity = createOpenAICompatible({
-        baseURL: "https://api.perplexity.ai/",
-        name: "Perplexity",
-        apiKey: "CF_TEMP_TOKEN",
-      });
-      aiModel = aigateway(perplexity.chatModel(modelId));
-      break;
-    }
-  }
+  };
 
   const useTools = toolsEnabled && modelSupportsTools(provider, modelId);
   const chatMessages = sanitizeMessages(messages);
+  const tools = useTools ? { searchKnowledge: buildSearchKnowledgeTool(env) } : undefined;
 
-  return makeNdjsonStream(async (send) => {
-    const result = streamText({
-      model: aiModel,
-      system: SYSTEM_PROMPT,
-      messages: chatMessages as any,
-      maxOutputTokens: 4096,
-      ...(useTools ? {
-        tools: { searchKnowledge: buildSearchKnowledgeTool(env) },
-        stopWhen: stepCountIs(5),
-      } : {}),
-    });
-    await streamTextToNdjson(result, send);
-  });
+  return makeNdjsonStream((send) => orchestrateStream(send, chatMessages, modelId, createModel, tools));
 }
 
 export async function handleChat(
@@ -408,10 +639,10 @@ export async function handleChat(
 
   try {
     if (provider === "openai" || provider === "anthropic" || provider === "perplexity") {
-      return await handleExternalProvider(messages, provider, modelId, env, toolsEnabled);
+      return handleExternalProvider(messages, provider, modelId, env, toolsEnabled);
     }
     // Default: Workers AI via binding + gateway
-    return await handleWorkersAI(messages, modelId, env, toolsEnabled);
+    return handleWorkersAI(messages, modelId, env, toolsEnabled);
   } catch (err) {
     console.error("[Chat API] Error:", err);
     return new Response(
