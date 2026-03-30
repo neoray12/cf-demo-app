@@ -231,21 +231,25 @@ function makeNdjsonStream(
   fn: (send: (data: Record<string, unknown>) => void) => Promise<void>,
 ): Response {
   const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      function send(data: Record<string, unknown>) {
-        try { controller.enqueue(encoder.encode(JSON.stringify(data) + "\n")); } catch { /* closed */ }
-      }
-      try {
-        await fn(send);
-      } catch (err) {
-        try { send(parseStreamError(err) as unknown as Record<string, unknown>); } catch { /* closed */ }
-      } finally {
-        try { controller.close(); } catch { /* closed */ }
-      }
-    },
-  });
-  return new Response(stream, { headers: STREAMING_HEADERS });
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+
+  const send = (data: Record<string, unknown>) => {
+    writer.write(encoder.encode(JSON.stringify(data) + "\n")).catch(() => { /* closed */ });
+  };
+
+  // Fire-and-forget: Workers runtime keeps the response alive while the writer is open
+  (async () => {
+    try {
+      await fn(send);
+    } catch (err) {
+      try { send(parseStreamError(err) as unknown as Record<string, unknown>); } catch { /* closed */ }
+    } finally {
+      try { await writer.close(); } catch { /* closed */ }
+    }
+  })();
+
+  return new Response(readable, { headers: STREAMING_HEADERS });
 }
 
 async function streamTextToNdjson(

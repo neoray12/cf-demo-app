@@ -24,6 +24,75 @@ interface ChatMessage {
 let _id = 0;
 function genId() { return `msg-${++_id}-${Date.now()}`; }
 
+function extractRayId(html: string): string | null {
+  const m =
+    html.match(/Cloudflare Ray ID[:\s]*<[^>]+>([a-f0-9]{16,})<\/[^>]+>/i) ||
+    html.match(/Cloudflare Ray ID[:\s]*([a-f0-9]{16,})/i) ||
+    html.match(/Ray ID[:\s]*([a-f0-9]{16,})/i);
+  return m?.[1] ?? null;
+}
+
+function extractUserIp(html: string): string | null {
+  const m =
+    html.match(/id=["']cf-footer-ip["'][^>]*>([\d.:a-fA-F]+)<\/span>/i) ||
+    html.match(/Your IP[:\s]*([\d.:a-fA-F]+)/i);
+  return m?.[1] ?? null;
+}
+
+function parseClientHttpError(status: number, body: string): import("../components/chat/error-dialog").ChatErrorState {
+  const isCfFirewall =
+    status === 403 &&
+    (body.includes("Sorry, you have been blocked") ||
+      body.includes("Cloudflare Ray ID") ||
+      body.includes("Firewall for AI") ||
+      body.includes("security service"));
+  if (isCfFirewall) {
+    return {
+      errorType: "firewall",
+      message: "您的請求被 Cloudflare Firewall for AI 安全防護攔截",
+      rayId: extractRayId(body),
+      gatewayLogId: null,
+      statusCode: status,
+      gatewayCode: null,
+      userIp: extractUserIp(body),
+    };
+  }
+  // AI Gateway JSON format: { success: false, error: [{code, message}] }
+  const jsonStart = body.indexOf("{");
+  if (jsonStart !== -1) {
+    try {
+      const parsed = JSON.parse(body.slice(jsonStart)) as {
+        success?: boolean;
+        error?: Array<{ code?: number | string; message?: string }>;
+      };
+      if (parsed.success === false && Array.isArray(parsed.error) && parsed.error[0]?.message) {
+        const code = parsed.error[0].code;
+        const codeNum = code ? Number(code) : NaN;
+        const errorType = !isNaN(codeNum) && codeNum === 2016 ? "firewall" :
+          !isNaN(codeNum) && codeNum === 2029 ? "dlp" : "gateway";
+        return {
+          errorType,
+          message: parsed.error[0].message,
+          rayId: null,
+          gatewayLogId: null,
+          statusCode: status,
+          gatewayCode: code ? String(code) : null,
+          userIp: null,
+        };
+      }
+    } catch { /* ignore */ }
+  }
+  return {
+    errorType: "general",
+    message: `HTTP ${status}`,
+    rayId: null,
+    gatewayLogId: null,
+    statusCode: status,
+    gatewayCode: null,
+    userIp: null,
+  };
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
@@ -154,7 +223,8 @@ export function ChatPage() {
 
       if (!res.ok) {
         const errText = await res.text();
-        setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: `❌ Error ${res.status}: ${errText}` } : m));
+        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+        setErrorDialog({ open: true, error: parseClientHttpError(res.status, errText) });
         return;
       }
 
