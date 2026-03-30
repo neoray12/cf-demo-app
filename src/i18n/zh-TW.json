@@ -43,7 +43,7 @@
     "sendError": "發送失敗: {{message}}",
     "reasoningModel": "推理模型",
     "error": {
-      "titleBlocked": "被 Cloudflare AI Gateway 成功阻擋",
+      "titleBlocked": "被 Cloudflare Firewall 或 AI 成功阻擋",
       "titleFirewall": "安全防護攔截",
       "titleGateway": "AI Gateway 攔截",
       "titleDlp": "DLP 政策攔截",
