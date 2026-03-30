@@ -105,29 +105,51 @@ const mdComponents = {
 
 interface MarkdownRendererProps {
   content: string;
+  reasoning?: string;
   isStreaming?: boolean;
+}
+
+function ReasoningBlock({ text, isStreaming }: { text: string; isStreaming?: boolean }) {
+  if (!text) return null;
+  return (
+    <details className="mb-2 group" open={isStreaming}>
+      <summary className="text-xs text-muted-foreground/60 cursor-pointer select-none hover:text-muted-foreground/80 transition-colors">
+        思考過程
+      </summary>
+      <div className="mt-1 pl-3 border-l-2 border-muted-foreground/20 text-xs text-muted-foreground/50 leading-relaxed whitespace-pre-wrap break-words max-h-60 overflow-y-auto">
+        {text}
+      </div>
+    </details>
+  );
 }
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   content,
+  reasoning,
   isStreaming,
 }: MarkdownRendererProps) {
   if (isStreaming) {
     return (
-      <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-        {content}
+      <div>
+        <ReasoningBlock text={reasoning || ""} isStreaming />
+        <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+          {content}
+        </div>
       </div>
     );
   }
   return (
-    <div className="text-sm">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
-        components={mdComponents as never}
-      >
-        {content}
-      </ReactMarkdown>
+    <div>
+      <ReasoningBlock text={reasoning || ""} />
+      <div className="text-sm">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeRaw]}
+          components={mdComponents as never}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 });

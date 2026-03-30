@@ -3,8 +3,10 @@ import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bot, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
+import cfLogo from "../../../CF_logomark.svg";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -13,11 +15,16 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const isZh = i18n.language === "zh-TW" || i18n.language?.startsWith("zh");
+
+  const toggleLanguage = () => {
+    const next = isZh ? "en" : "zh-TW";
+    i18n.changeLanguage(next);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // Simulate login delay
     await new Promise((r) => setTimeout(r, 500));
     localStorage.setItem("cf-demo-auth", "true");
     setLoading(false);
@@ -25,16 +32,28 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+      {/* Language Toggle - top right */}
+      <button
+        type="button"
+        onClick={toggleLanguage}
+        className="absolute right-4 top-4 rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+      >
+        {isZh ? "English" : "中文"}
+      </button>
+
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-            <Bot className="h-8 w-8" />
+        <CardHeader className="text-center space-y-4">
+          {/* Cloudflare Logo */}
+          <div className="mx-auto">
+            <img src={cfLogo} alt="Cloudflare" className="h-12 w-auto" />
           </div>
-          <CardTitle className="text-2xl">{t("login.title")}</CardTitle>
-          <CardDescription>
-            {t("login.description")}
-          </CardDescription>
+          <div>
+            <CardTitle className="text-2xl">{t("login.title")}</CardTitle>
+            <CardDescription className="mt-1">
+              {t("login.description")}
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">

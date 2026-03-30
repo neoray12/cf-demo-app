@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { MarkdownRenderer } from "../components/chat/markdown-renderer";
 import { ModelSelector } from "../components/chat/model-selector";
+import { ErrorDialog, type ChatErrorState } from "../components/chat/error-dialog";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
 import { Square, SquarePen, Copy, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +10,7 @@ interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  reasoning?: string;
 }
 
 let msgCounter = 0;
@@ -40,6 +42,7 @@ export function ChatPage() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorDialog, setErrorDialog] = useState<{ open: boolean; error: ChatErrorState | null }>({ open: false, error: null });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -72,7 +75,7 @@ export function ChatPage() {
 
     const userMsg: ChatMessage = { id: genId(), role: "user", content: text.trim() };
     const assistantMsgId = genId();
-    const assistantMsg: ChatMessage = { id: assistantMsgId, role: "assistant", content: "" };
+    const assistantMsg: ChatMessage = { id: assistantMsgId, role: "assistant", content: "", reasoning: "" };
 
     // Snapshot BEFORE setState to prevent messagesRef.current from being
     // updated with userMsg before apiMessages is built (avoids duplicate user messages).
@@ -122,6 +125,7 @@ export function ChatPage() {
       const decoder = new TextDecoder();
       let buffer = "";
       let accContent = "";
+      let accReasoning = "";
       let gotContent = false;
 
       const processLine = (line: string) => {
@@ -130,21 +134,35 @@ export function ChatPage() {
           const event = JSON.parse(line);
           switch (event.type) {
             case "text-delta":
-            case "reasoning-delta":
               gotContent = true;
               accContent += event.text as string;
               setMessages((prev) =>
                 prev.map((m) => m.id === assistantMsgId ? { ...m, content: accContent } : m)
               );
               break;
-            case "error":
-              console.error("[Chat] Stream error:", event.message);
+            case "reasoning-delta":
+              gotContent = true;
+              accReasoning += event.text as string;
               setMessages((prev) =>
-                prev.map((m) => m.id === assistantMsgId
-                  ? { ...m, content: m.content || `❌ ${(event.message as string) || "Unknown error"}` }
-                  : m)
+                prev.map((m) => m.id === assistantMsgId ? { ...m, reasoning: accReasoning } : m)
               );
               break;
+            case "error": {
+              console.error("[Chat] Stream error:", event);
+              const errState: ChatErrorState = {
+                errorType: (event.errorType as ChatErrorState["errorType"]) || "general",
+                message: (event.message as string) || "Unknown error",
+                rayId: (event.rayId as string | null) ?? null,
+                gatewayLogId: (event.gatewayLogId as string | null) ?? null,
+                statusCode: (event.statusCode as number | null) ?? null,
+                gatewayCode: (event.gatewayCode as string | null) ?? null,
+              };
+              setMessages((prev) =>
+                prev.map((m) => m.id === assistantMsgId ? { ...m, content: accContent } : m)
+              );
+              setErrorDialog({ open: true, error: errState });
+              break;
+            }
           }
         } catch {
           // skip malformed lines
@@ -157,13 +175,16 @@ export function ChatPage() {
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-        for (const line of lines) processLine(line);
+        for (const line of lines) {
+          processLine(line);
+          await new Promise((r) => setTimeout(r, 0));
+        }
       }
       buffer += decoder.decode();
       if (buffer.trim()) processLine(buffer);
 
       setMessages((prev) =>
-        prev.map((m) => m.id === assistantMsgId ? { ...m, content: accContent } : m)
+        prev.map((m) => m.id === assistantMsgId ? { ...m, content: accContent, reasoning: accReasoning } : m)
       );
 
       if (!gotContent) {
@@ -239,6 +260,15 @@ export function ChatPage() {
     },
   ];
 
+  const safetySuggestions = [
+    { title: t("chat.safetySuggestions.bully.title"), desc: t("chat.safetySuggestions.bully.prompt") },
+    { title: t("chat.safetySuggestions.hate.title"), desc: t("chat.safetySuggestions.hate.prompt") },
+    { title: t("chat.safetySuggestions.violence.title"), desc: t("chat.safetySuggestions.violence.prompt") },
+    { title: t("chat.safetySuggestions.pii.title"), desc: t("chat.safetySuggestions.pii.prompt") },
+    { title: t("chat.safetySuggestions.injection1.title"), desc: t("chat.safetySuggestions.injection1.prompt") },
+    { title: t("chat.safetySuggestions.injection2.title"), desc: t("chat.safetySuggestions.injection2.prompt") },
+  ];
+
   return (
     <div className="flex flex-col h-full">
       {/* ── Header: model selector + new chat ── */}
@@ -279,6 +309,21 @@ export function ChatPage() {
                     </button>
                   ))}
                 </div>
+                <div className="pt-2">
+                  <p className="text-xs font-medium text-muted-foreground/70 mb-2">{t("chat.safetyLabel")}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {safetySuggestions.map((s) => (
+                      <button
+                        key={s.title}
+                        onClick={() => sendMessage(s.desc)}
+                        className="text-left rounded-2xl border border-destructive/30 px-4 py-3.5 hover:bg-destructive/5 active:bg-destructive/10 transition-colors"
+                      >
+                        <div className="text-sm font-medium text-destructive">{s.title}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
@@ -298,10 +343,10 @@ export function ChatPage() {
                       </div>
                     ) : (
                       <div className="group/msg">
-                        {msg.content ? (
+                        {(msg.content || msg.reasoning) ? (
                           <>
-                            <MarkdownRenderer content={msg.content} isStreaming={isStreamingThis} />
-                            {!isStreamingThis && (
+                            <MarkdownRenderer content={msg.content} reasoning={msg.reasoning} isStreaming={isStreamingThis} />
+                            {!isStreamingThis && msg.content && (
                               <div className="mt-1 opacity-60 md:opacity-0 md:group-hover/msg:opacity-100 transition-opacity">
                                 <CopyButton text={msg.content} />
                               </div>
@@ -365,6 +410,12 @@ export function ChatPage() {
           </p>
         </div>
       </div>
+
+      <ErrorDialog
+        open={errorDialog.open}
+        onClose={() => setErrorDialog({ open: false, error: null })}
+        error={errorDialog.error}
+      />
     </div>
   );
 }

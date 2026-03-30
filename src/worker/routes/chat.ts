@@ -3,7 +3,7 @@ import { createAiGateway } from "ai-gateway-provider";
 import { createOpenAI } from "ai-gateway-provider/providers/openai";
 import { createAnthropic } from "ai-gateway-provider/providers/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { streamText, convertToModelMessages, type UIMessage } from "ai";
+import { streamText, convertToModelMessages, APICallError, type UIMessage } from "ai";
 import type { Env } from "../types";
 import type { ModelProvider } from "../../lib/types";
 
@@ -34,6 +34,99 @@ function sanitizeMessages(
   return result;
 }
 
+interface StreamErrorEvent {
+  type: "error";
+  errorType: "firewall" | "gateway" | "dlp" | "general";
+  message: string;
+  rayId: string | null;
+  gatewayLogId: string | null;
+  statusCode: number | null;
+  gatewayCode: string | null;
+}
+
+function parseStreamError(err: unknown): StreamErrorEvent {
+  const base: StreamErrorEvent = {
+    type: "error",
+    errorType: "general",
+    message: (err as Error).message || "Stream error",
+    rayId: null,
+    gatewayLogId: null,
+    statusCode: null,
+    gatewayCode: null,
+  };
+
+  if (!APICallError.isInstance(err)) return base;
+
+  const statusCode = err.statusCode ?? null;
+  const body = typeof err.responseBody === "string" ? err.responseBody : "";
+  const headers = (err.responseHeaders as Record<string, string> | undefined) ?? {};
+  const rayId = headers["cf-ray"] || extractRayIdFromHtml(body);
+  const gatewayLogId = headers["cf-aig-log-id"] || null;
+
+  base.statusCode = statusCode;
+  base.rayId = rayId;
+  base.gatewayLogId = gatewayLogId;
+
+  // Firewall for AI: 403 with HTML Cloudflare block page
+  if (
+    statusCode === 403 &&
+    (body.includes("Cloudflare Ray ID") ||
+      body.includes("Sorry, you have been blocked") ||
+      body.includes("Firewall for AI") ||
+      body.includes("security service"))
+  ) {
+    base.errorType = "firewall";
+    base.message = "您的請求被 Cloudflare Firewall for AI 安全防護攔截";
+    base.rayId = extractRayIdFromHtml(body) || rayId;
+    return base;
+  }
+
+  // DLP policy violation: 500/424 with DLP mention
+  if (
+    (statusCode === 500 || statusCode === 424) &&
+    body.includes("DLP policy violations")
+  ) {
+    base.errorType = "dlp";
+    base.message = "您的請求內容被 AI Gateway DLP 政策攔截";
+    const dlpMatch = body.match(/"message":"([^"]+)"/);
+    if (dlpMatch?.[1]) base.message = dlpMatch[1];
+    return base;
+  }
+
+  // AI Gateway block: various status codes
+  if (body.includes("AI Gateway") || body.includes("ai-gateway")) {
+    base.errorType = "gateway";
+    base.message = "請求被 AI Gateway 攔截";
+    try {
+      const jsonStart = body.indexOf("{");
+      const jsonEnd = body.lastIndexOf("}");
+      if (jsonStart !== -1 && jsonEnd > jsonStart) {
+        const parsed = JSON.parse(body.slice(jsonStart, jsonEnd + 1)) as {
+          error?: Array<{ code?: string; message?: string }>;
+        };
+        const first = Array.isArray(parsed.error) ? parsed.error[0] : undefined;
+        if (first) {
+          base.gatewayCode = first.code ? String(first.code) : null;
+          base.message = first.message || base.message;
+        }
+      }
+    } catch {
+      base.message = body || base.message;
+    }
+    return base;
+  }
+
+  return base;
+}
+
+function extractRayIdFromHtml(html: string): string | null {
+  const m =
+    html.match(/Cloudflare Ray ID[:\s]*([a-f0-9]{16,})/i) ||
+    html.match(/Ray ID[:\s]*([a-f0-9]{16,})/i) ||
+    html.match(/ray[_\-\s]*id[:\s]*([a-f0-9]{16,})/i);
+  return m?.[1] ?? null;
+}
+
 // Convert AI SDK fullStream to NDJSON events for frontend
 function streamToNdjson(result: ReturnType<typeof streamText>): Response {
   const encoder = new TextEncoder();
@@ -59,8 +152,7 @@ function streamToNdjson(result: ReturnType<typeof streamText>): Response {
           if (event) controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
         }
       } catch (err) {
-        const errEvent = { type: "error", message: (err as Error).message || "Stream error" };
-        controller.enqueue(encoder.encode(JSON.stringify(errEvent) + "\n"));
+        controller.enqueue(encoder.encode(JSON.stringify(parseStreamError(err)) + "\n"));
       } finally {
         controller.close();
       }
@@ -95,6 +187,7 @@ async function handleWorkersAI(
     model: workersai(modelId),
     system: SYSTEM_PROMPT,
     messages: chatMessages,
+    maxOutputTokens: 4096,
   });
 
   return streamToNdjson(result);
@@ -146,6 +239,7 @@ async function handleExternalProvider(
     model: aiModel,
     system: SYSTEM_PROMPT,
     messages: chatMessages,
+    maxOutputTokens: 4096,
   });
 
   return streamToNdjson(result);
