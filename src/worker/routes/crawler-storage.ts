@@ -135,8 +135,30 @@ export async function handleCrawlerStorage(
       },
     });
 
+    // Trigger AI Search index job (fire-and-forget)
+    let indexJobId: string | null = null;
+    try {
+      const syncRes = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai-search/instances/${env.AUTORAG_NAME}/jobs`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${env.CF_API_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        }
+      );
+      const syncData = (await syncRes.json()) as { success?: boolean; result?: { id?: string } };
+      if (syncData.success && syncData.result?.id) {
+        indexJobId = syncData.result.id;
+      }
+    } catch {
+      // Non-critical: ignore trigger errors
+    }
+
     return new Response(
-      JSON.stringify({ success: true, key }),
+      JSON.stringify({ success: true, key, indexJobId }),
       { headers: { "Content-Type": "application/json" } }
     );
   }
