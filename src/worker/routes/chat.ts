@@ -462,7 +462,7 @@ async function processSmartRetry(
     system: SYSTEM_PROMPT,
     messages: retryMessages as any,
     maxOutputTokens: maxTokens,
-    abortSignal: AbortSignal.timeout(60_000),
+    abortSignal: AbortSignal.timeout(120_000),
   });
 
   let hasText = false;
@@ -503,7 +503,7 @@ async function orchestrateStream(
   tools: Record<string, any> | undefined,
 ): Promise<void> {
   const parseThink = needsThinkParsing(modelId);
-  const maxTokens = isReasoningModel(modelId) ? 8192 : 1024;
+  const maxTokens = isReasoningModel(modelId) ? 16384 : 8192;
   const state: StreamState = { insideThink: false, thinkBuffer: "" };
 
   const createStreamResult = (attempt: number) => streamText({
