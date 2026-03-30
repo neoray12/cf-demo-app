@@ -43,15 +43,41 @@
     "sendError": "發送失敗: {{message}}",
     "reasoningModel": "推理模型",
     "error": {
+      "titleBlocked": "被 Cloudflare AI Gateway 成功阻擋",
       "titleFirewall": "安全防護攔截",
       "titleGateway": "AI Gateway 攔截",
       "titleDlp": "DLP 政策攔截",
       "titleGeneral": "發生錯誤",
-      "statusCode": "狀態碼",
+      "statusCode": "錯誤代碼",
       "rayId": "Ray ID",
       "gatewayLogId": "AIG Log ID",
-      "errorCode": "錯誤代碼",
-      "ok": "確定"
+      "errorCode": "Gateway Code",
+      "reason": "原因",
+      "detailsLabel": "詳細資訊：",
+      "solutionLabel": "解決方法：",
+      "ok": "我知道了",
+      "solutions": {
+        "firewall": [
+          "請修改您的訊息內容",
+          "避免使用敏感詞彙或特殊字符",
+          "如持續發生，請聯繫管理員"
+        ],
+        "gateway": [
+          "請稍後重試",
+          "檢查所選模型是否可用",
+          "如持續發生，請聯繫管理員"
+        ],
+        "dlp": [
+          "您的訊息包含被 DLP 政策偵測到的敏感資料",
+          "請移除個人身份資訊（如身分證號、信用卡號等）",
+          "如有疑問，請聯繫管理員了解 DLP 政策細節"
+        ],
+        "general": [
+          "請稍後重試",
+          "嘗試切換其他模型",
+          "如持續發生，請聯繫管理員"
+        ]
+      }
     },
     "suggestions": {
       "workers": {

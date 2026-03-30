@@ -64,7 +64,7 @@ export const AI_MODELS: AIModel[] = [
   },
 ];
 
-export const DEFAULT_MODEL_ID = "gpt-oss-120b";
+export const DEFAULT_MODEL_ID = "gpt-oss-20b";
 
 export interface BrowserRenderingEndpoint {
   id: string;

@@ -43,6 +43,7 @@
     "sendError": "Failed to send: {{message}}",
     "reasoningModel": "Reasoning Model",
     "error": {
+      "titleBlocked": "Blocked by Cloudflare AI Gateway",
       "titleFirewall": "Security Block",
       "titleGateway": "AI Gateway Block",
       "titleDlp": "DLP Policy Block",
@@ -50,8 +51,33 @@
       "statusCode": "Status Code",
       "rayId": "Ray ID",
       "gatewayLogId": "AIG Log ID",
-      "errorCode": "Error Code",
-      "ok": "OK"
+      "errorCode": "Gateway Code",
+      "reason": "Reason",
+      "detailsLabel": "Details:",
+      "solutionLabel": "Solutions:",
+      "ok": "Got it",
+      "solutions": {
+        "firewall": [
+          "Please modify your message content",
+          "Avoid using sensitive words or special characters",
+          "If the issue persists, please contact an administrator"
+        ],
+        "gateway": [
+          "Please try again later",
+          "Check if the selected model is available",
+          "If the issue persists, please contact an administrator"
+        ],
+        "dlp": [
+          "Your message contains sensitive data detected by DLP policy",
+          "Please remove personal identifiable information (e.g., ID numbers, credit card numbers)",
+          "If you have questions, contact an administrator for DLP policy details"
+        ],
+        "general": [
+          "Please try again later",
+          "Try switching to a different model",
+          "If the issue persists, please contact an administrator"
+        ]
+      }
     },
     "suggestions": {
       "workers": {

@@ -157,8 +157,11 @@ export function ChatPage() {
                 statusCode: (event.statusCode as number | null) ?? null,
                 gatewayCode: (event.gatewayCode as string | null) ?? null,
               };
+              const blockedMsg = errState.errorType !== "general"
+                ? "此訊息被 Cloudflare AI Gateway 安全政策攔截。"
+                : accContent;
               setMessages((prev) =>
-                prev.map((m) => m.id === assistantMsgId ? { ...m, content: accContent } : m)
+                prev.map((m) => m.id === assistantMsgId ? { ...m, content: blockedMsg || accContent } : m)
               );
               setErrorDialog({ open: true, error: errState });
               break;
@@ -190,7 +193,7 @@ export function ChatPage() {
       if (!gotContent) {
         setMessages((prev) =>
           prev.map((m) => m.id === assistantMsgId && !m.content
-            ? { ...m, content: "❌ 無法取得回應，請再試一次。" }
+            ? { ...m, content: "此訊息被 Cloudflare AI Gateway 安全政策攔截。" }
             : m)
         );
       }
@@ -206,7 +209,7 @@ export function ChatPage() {
         console.error("[Chat] Fetch error:", err);
         setMessages((prev) =>
           prev.map((m) => m.id === assistantMsgId
-            ? { ...m, content: m.content || `❌ ${(err as Error).message || "發生錯誤"}` }
+            ? { ...m, content: m.content || "發生錯誤，請稍後再試。" }
             : m)
         );
       }

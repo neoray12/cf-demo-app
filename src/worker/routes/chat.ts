@@ -55,17 +55,64 @@ function parseStreamError(err: unknown): StreamErrorEvent {
     gatewayCode: null,
   };
 
-  if (!APICallError.isInstance(err)) return base;
+  // Duck-type check: ai-gateway-provider may use a different AICallError class
+  // that doesn't pass APICallError.isInstance() from the main 'ai' package.
+  const apiErr = err as Record<string, unknown>;
+  const hasApiCallShape =
+    APICallError.isInstance(err) ||
+    (typeof apiErr.statusCode === "number" && "responseBody" in apiErr);
+  if (!hasApiCallShape) return base;
 
-  const statusCode = err.statusCode ?? null;
-  const body = typeof err.responseBody === "string" ? err.responseBody : "";
-  const headers = (err.responseHeaders as Record<string, string> | undefined) ?? {};
+  const statusCode = (apiErr.statusCode as number) ?? null;
+  const rawBody = typeof apiErr.responseBody === "string" ? apiErr.responseBody : "";
+  const headers = (apiErr.responseHeaders as Record<string, string> | undefined) ?? {};
+  const msg = base.message; // original err.message
+  // Use responseBody if available, otherwise fall back to the message string
+  const body = rawBody || msg;
   const rayId = headers["cf-ray"] || extractRayIdFromHtml(body);
   const gatewayLogId = headers["cf-aig-log-id"] || null;
 
   base.statusCode = statusCode;
   base.rayId = rayId;
   base.gatewayLogId = gatewayLogId;
+
+  // AI Gateway error codes
+  // 2016 = Firewall for AI / security block (prompt injection, security policy)
+  // 2029 = DLP policy violation
+  // others = generic gateway block
+  const FIREWALL_CODES = new Set([2016]);
+  const DLP_CODES = new Set([2029]);
+
+  // Try to extract a human-readable message from embedded JSON in the error body
+  function extractGatewayJson(text: string): {
+    message?: string;
+    code?: string;
+    isGatewayFormat: boolean;
+  } | null {
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
+    if (jsonStart === -1 || jsonEnd <= jsonStart) return null;
+    try {
+      const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as {
+        success?: boolean;
+        error?: Array<{ code?: number | string; message?: string }>;
+        message?: string;
+      };
+      // AI Gateway error format: { success: false, error: [{code, message}] }
+      const isGatewayFormat =
+        parsed.success === false && Array.isArray(parsed.error);
+      const first = Array.isArray(parsed.error) ? parsed.error[0] : undefined;
+      if (first?.message) {
+        return {
+          message: first.message,
+          code: first.code ? String(first.code) : undefined,
+          isGatewayFormat,
+        };
+      }
+      if (parsed.message) return { message: parsed.message, isGatewayFormat };
+    } catch { /* ignore */ }
+    return null;
+  }
 
   // Firewall for AI: 403 with HTML Cloudflare block page
   if (
@@ -81,39 +128,27 @@ function parseStreamError(err: unknown): StreamErrorEvent {
     return base;
   }
 
-  // DLP policy violation: 500/424 with DLP mention
-  if (
-    (statusCode === 500 || statusCode === 424) &&
-    body.includes("DLP policy violations")
-  ) {
-    base.errorType = "dlp";
-    base.message = "您的請求內容被 AI Gateway DLP 政策攔截";
-    const dlpMatch = body.match(/"message":"([^"]+)"/);
-    if (dlpMatch?.[1]) base.message = dlpMatch[1];
-    return base;
-  }
-
-  // AI Gateway block: various status codes
-  if (body.includes("AI Gateway") || body.includes("ai-gateway")) {
-    base.errorType = "gateway";
-    base.message = "請求被 AI Gateway 攔截";
-    try {
-      const jsonStart = body.indexOf("{");
-      const jsonEnd = body.lastIndexOf("}");
-      if (jsonStart !== -1 && jsonEnd > jsonStart) {
-        const parsed = JSON.parse(body.slice(jsonStart, jsonEnd + 1)) as {
-          error?: Array<{ code?: string; message?: string }>;
-        };
-        const first = Array.isArray(parsed.error) ? parsed.error[0] : undefined;
-        if (first) {
-          base.gatewayCode = first.code ? String(first.code) : null;
-          base.message = first.message || base.message;
-        }
+  // Universal AI Gateway JSON format detection (works for Workers AI binding too)
+  const extracted = extractGatewayJson(body);
+  if (extracted) {
+    const codeNum = extracted.code ? Number(extracted.code) : NaN;
+    if (extracted.isGatewayFormat || !isNaN(codeNum)) {
+      if (!isNaN(codeNum) && FIREWALL_CODES.has(codeNum)) {
+        base.errorType = "firewall";
+        base.message = extracted.message || "您的請求被 Cloudflare AI Gateway 安全防護攔截";
+      } else if (!isNaN(codeNum) && DLP_CODES.has(codeNum)) {
+        base.errorType = "dlp";
+        base.message = extracted.message || "您的請求內容被 AI Gateway DLP 政策攔截";
+      } else if (extracted.isGatewayFormat) {
+        base.errorType = "gateway";
+        base.message = extracted.message || "請求被 AI Gateway 攔截";
+      } else {
+        base.message = extracted.message || base.message;
       }
-    } catch {
-      base.message = body || base.message;
+      if (extracted.code) base.gatewayCode = extracted.code;
+    } else {
+      base.message = extracted.message || base.message;
     }
-    return base;
   }
 
   return base;

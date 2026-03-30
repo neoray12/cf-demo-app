@@ -1,11 +1,10 @@
-import { ShieldAlert, AlertTriangle, AlertCircle } from "lucide-react";
+import { ShieldCheck, ClipboardList } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -24,96 +23,86 @@ interface ErrorDialogProps {
   error: ChatErrorState | null;
 }
 
+const STATUS_LABEL: Record<number, string> = {
+  400: "Bad Request",
+  403: "Forbidden",
+  424: "Failed Dependency",
+  429: "Too Many Requests",
+  500: "Internal Server Error",
+  502: "Bad Gateway",
+  503: "Service Unavailable",
+};
+
+const BADGE_MAP: Record<ChatErrorState["errorType"], { label: string; className: string }> = {
+  firewall: { label: "Firewall for AI", className: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
+  gateway: { label: "AI Gateway", className: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
+  dlp: { label: "DLP", className: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
+  general: { label: "Error", className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
+};
+
 export function ErrorDialog({ open, onClose, error }: ErrorDialogProps) {
   const { t } = useTranslation();
 
   if (!error) return null;
 
-  const titleMap: Record<ChatErrorState["errorType"], string> = {
-    firewall: t("chat.error.titleFirewall"),
-    gateway: t("chat.error.titleGateway"),
-    dlp: t("chat.error.titleDlp"),
-    general: t("chat.error.titleGeneral"),
-  };
+  const statusLabel = error.statusCode
+    ? `${error.statusCode} ${STATUS_LABEL[error.statusCode] || ""}`
+    : null;
 
-  const IconComponent =
-    error.errorType === "firewall"
-      ? ShieldAlert
-      : error.errorType === "gateway" || error.errorType === "dlp"
-        ? AlertTriangle
-        : AlertCircle;
+  const details: Array<{ label: string; value: string }> = [];
+  if (statusLabel) details.push({ label: t("chat.error.statusCode"), value: statusLabel });
+  if (error.rayId) details.push({ label: t("chat.error.rayId"), value: error.rayId });
+  if (error.gatewayLogId) details.push({ label: t("chat.error.gatewayLogId"), value: error.gatewayLogId });
+  if (error.gatewayCode) details.push({ label: t("chat.error.errorCode"), value: error.gatewayCode });
+  if (error.message) details.push({ label: t("chat.error.reason"), value: error.message });
 
-  const iconColor =
-    error.errorType === "firewall"
-      ? "text-destructive"
-      : error.errorType === "gateway" || error.errorType === "dlp"
-        ? "text-orange-500"
-        : "text-muted-foreground";
-
-  const hasDetails =
-    error.statusCode !== null ||
-    error.rayId ||
-    error.gatewayLogId ||
-    error.gatewayCode;
+  const badge = BADGE_MAP[error.errorType];
 
   return (
     <Dialog open={open} onOpenChange={(isOpen: boolean) => !isOpen && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <IconComponent className={`size-5 shrink-0 ${iconColor}`} />
-            {titleMap[error.errorType]}
+      <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-5 pt-5 pb-3">
+          <DialogTitle className="flex items-center gap-2.5 text-lg">
+            <ShieldCheck className="size-5 shrink-0 text-red-500" />
+            {t("chat.error.titleBlocked")}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3 py-1">
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {error.message}
-          </p>
+        <div className="mx-5 mb-4 rounded-lg border-l-4 border-l-red-500 bg-red-50 dark:bg-red-950/20 px-4 py-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.className}`}>
+              {badge.label}
+            </span>
+          </div>
 
-          {hasDetails && (
-            <div className="rounded-md border bg-muted/50 px-3 py-2.5 space-y-1.5 text-xs font-mono">
-              {error.statusCode !== null && (
-                <Row label={t("chat.error.statusCode")} value={String(error.statusCode)} />
-              )}
-              {error.rayId && (
-                <Row label={t("chat.error.rayId")} value={error.rayId} highlight />
-              )}
-              {error.gatewayLogId && (
-                <Row label={t("chat.error.gatewayLogId")} value={error.gatewayLogId} />
-              )}
-              {error.gatewayCode && (
-                <Row label={t("chat.error.errorCode")} value={error.gatewayCode} />
-              )}
+          {details.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold flex items-center gap-1.5 mb-2">
+                <ClipboardList className="size-3.5" />
+                {t("chat.error.detailsLabel")}
+              </p>
+              <ul className="space-y-1 text-sm">
+                {details.map((d) => (
+                  <li key={d.label} className="flex items-start gap-1">
+                    <span className="shrink-0">•</span>
+                    <span>
+                      <span className="font-medium">{d.label}：</span>
+                      <span className="font-mono text-xs break-all">{d.value}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
+
         </div>
 
-        <DialogFooter>
-          <Button onClick={onClose}>{t("chat.error.ok")}</Button>
-        </DialogFooter>
+        <div className="flex justify-end px-5 pb-4">
+          <Button variant="link" onClick={onClose} className="text-primary">
+            {t("chat.error.ok")}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function Row({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="text-muted-foreground shrink-0 w-24">{label}:</span>
-      <span
-        className={`break-all ${highlight ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-      >
-        {value}
-      </span>
-    </div>
   );
 }
