@@ -41,6 +41,14 @@ const BADGE_MAP: Record<ChatErrorState["errorType"], { label: string; className:
   general: { label: "Error", className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
 };
 
+// Title i18n key: firewall (HTML block) → Firewall for AI title; gateway/dlp (JSON) → AI Gateway title
+const TITLE_KEY_MAP: Record<ChatErrorState["errorType"], string> = {
+  firewall: "chat.error.titleFirewall",
+  gateway: "chat.error.titleBlocked",
+  dlp: "chat.error.titleBlocked",
+  general: "chat.error.titleGeneral",
+};
+
 export function ErrorDialog({ open, onClose, error }: ErrorDialogProps) {
   const { t } = useTranslation();
 
@@ -58,7 +66,9 @@ export function ErrorDialog({ open, onClose, error }: ErrorDialogProps) {
   if (error.userIp) details.push({ label: t("chat.error.userIp"), value: error.userIp });
   if (error.message) details.push({ label: t("chat.error.reason"), value: error.message });
 
-  const badge = BADGE_MAP[error.errorType];
+  const badge = error.errorType === "gateway" && error.gatewayCode === "2016"
+    ? BADGE_MAP.firewall
+    : BADGE_MAP[error.errorType];
 
   return (
     <Dialog open={open} onOpenChange={(isOpen: boolean) => !isOpen && onClose()}>
@@ -66,7 +76,7 @@ export function ErrorDialog({ open, onClose, error }: ErrorDialogProps) {
         <DialogHeader className="px-5 pt-5 pb-3">
           <DialogTitle className="flex items-center gap-2.5 text-lg">
             <ShieldCheck className="size-5 shrink-0 text-red-500" />
-            {t("chat.error.titleBlocked")}
+            {t(TITLE_KEY_MAP[error.errorType])}
           </DialogTitle>
         </DialogHeader>
 

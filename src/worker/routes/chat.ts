@@ -164,8 +164,8 @@ function parseStreamError(err: unknown): StreamErrorEvent {
     const codeNum = extracted.code ? Number(extracted.code) : NaN;
     if (extracted.isGatewayFormat || !isNaN(codeNum)) {
       if (!isNaN(codeNum) && FIREWALL_CODES.has(codeNum)) {
-        base.errorType = "firewall";
-        base.message = extracted.message || "您的請求被 Cloudflare AI Gateway 安全防護攔截";
+        base.errorType = "gateway";
+        base.message = extracted.message || "您的請求被 Cloudflare AI Gateway Firewall for AI 攔截";
       } else if (!isNaN(codeNum) && DLP_CODES.has(codeNum)) {
         base.errorType = "dlp";
         base.message = extracted.message || "您的請求內容被 AI Gateway DLP 政策攔截";

@@ -44,10 +44,10 @@
     "reasoningModel": "推理模型",
     "error": {
       "titleBlocked": "被 Cloudflare AI Gateway 成功阻擋",
-      "titleFirewall": "安全防護攔截",
+      "titleFirewall": "被 Cloudflare Firewall for AI 成功阻擋",
       "titleGateway": "AI Gateway 攔截",
       "titleDlp": "DLP 政策攔截",
-      "titleGeneral": "發生錯誤",
+      "titleGeneral": "請求發生錯誤",
       "statusCode": "錯誤代碼",
       "rayId": "Ray ID",
       "gatewayLogId": "AIG Log ID",

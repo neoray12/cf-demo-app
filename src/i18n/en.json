@@ -44,10 +44,10 @@
     "reasoningModel": "Reasoning Model",
     "error": {
       "titleBlocked": "Blocked by Cloudflare AI Gateway",
-      "titleFirewall": "Security Block",
+      "titleFirewall": "Blocked by Cloudflare Firewall for AI",
       "titleGateway": "AI Gateway Block",
       "titleDlp": "DLP Policy Block",
-      "titleGeneral": "Error Occurred",
+      "titleGeneral": "Request Error",
       "statusCode": "Status Code",
       "rayId": "Ray ID",
       "gatewayLogId": "AIG Log ID",
