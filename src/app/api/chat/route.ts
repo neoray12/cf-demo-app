@@ -55,6 +55,10 @@ function buildSearchKnowledgeTool(env: Record<string, unknown>) {
     execute: safeTool(async ({ query, maxResults }: { query: string; maxResults: number }) => {
       try {
         console.log('[Chat API] searchKnowledge:', query);
+        // AI Search (AutoRAG) requires Cloudflare AI binding — not available in local dev
+        if (!(env.AI as any)?.autorag) {
+          return { error: 'AI Search 在本地開發環境不可用，請部署到 Cloudflare Workers 後使用。' };
+        }
         const numResults = Math.min(Math.max(maxResults ?? 5, 1), 10);
         const autoragName = (env.AUTORAG_NAME as string) || 'cf-demo-ai-search';
         const searchPromise = (env.AI as any).autorag(autoragName).search({
