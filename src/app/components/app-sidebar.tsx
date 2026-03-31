@@ -88,6 +88,7 @@ export function AppSidebar() {
     loading,
     loadingPath,
     selectedFile,
+    datasetMap,
     loadBuckets,
     toggleNode,
     selectFile,
@@ -166,8 +167,13 @@ export function AppSidebar() {
               <FileText className="size-3.5 shrink-0 text-muted-foreground" />
             )}
 
-            <span className="flex-1 text-left truncate" title={node.name}>
-              {node.name}
+            <span className="flex-1 text-left truncate min-w-0">
+              <span className="block truncate" title={node.name}>{node.name}</span>
+              {node.type === "bucket" && datasetMap[node.name] && (
+                <span className="block truncate text-[10px] text-blue-500 dark:text-blue-400 font-normal" title={datasetMap[node.name]}>
+                  {datasetMap[node.name]}
+                </span>
+              )}
             </span>
 
             {node.size !== undefined && (

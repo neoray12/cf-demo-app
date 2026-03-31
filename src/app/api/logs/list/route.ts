@@ -12,41 +12,47 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'bucket parameter required' }, { status: 400 });
   }
 
-  // Use S3-compatible API to list objects in any bucket
-  const s3Url = new URL(`https://${(env as any).CF_ACCOUNT_ID}.r2.cloudflarestorage.com/${bucket}`);
-  s3Url.searchParams.set('list-type', '2');
-  s3Url.searchParams.set('delimiter', '/');
-  if (prefix) s3Url.searchParams.set('prefix', prefix);
-  if (cursor) s3Url.searchParams.set('continuation-token', cursor);
-  s3Url.searchParams.set('max-keys', '100');
+  const accountId = (env as any).CF_ACCOUNT_ID as string;
+  const apiToken = (env as any).CF_API_TOKEN as string;
 
-  const response = await fetch(s3Url.toString(), {
-    headers: { Authorization: `Bearer ${(env as any).CF_API_TOKEN}` },
+  // Fetch all objects with this prefix from CF REST API
+  const url = new URL(`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket)}/objects`);
+  url.searchParams.set('per_page', '1000');
+  if (prefix) url.searchParams.set('prefix', prefix);
+  if (cursor) url.searchParams.set('cursor', cursor);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${apiToken}` },
   });
 
   if (!response.ok) {
-    // Fallback: use Cloudflare API
-    const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${(env as any).CF_ACCOUNT_ID}/r2/buckets/${bucket}/objects?delimiter=/&prefix=${encodeURIComponent(prefix)}&per_page=100`;
-    const apiResponse = await fetch(apiUrl, {
-      headers: { Authorization: `Bearer ${(env as any).CF_API_TOKEN}` },
-    });
-    const data = await apiResponse.text();
-    return new Response(data, {
-      status: apiResponse.status,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const text = await response.text();
+    return Response.json({ error: `CF API error ${response.status}: ${text}` }, { status: response.status });
   }
 
-  const xmlText = await response.text();
-  const folders = [...xmlText.matchAll(/<CommonPrefixes><Prefix>([^<]+)<\/Prefix><\/CommonPrefixes>/g)].map((m) => m[1]!);
-  const files = [...xmlText.matchAll(/<Contents><Key>([^<]+)<\/Key><LastModified>([^<]+)<\/LastModified><Size>([^<]+)<\/Size>[^]*?<\/Contents>/g)].map((m) => ({
-    key: m[1]!,
-    lastModified: m[2]!,
-    size: parseInt(m[3]!, 10),
-  }));
+  const data = await response.json() as any;
+  const objects: Array<{ key: string; last_modified: string; size: number }> = data.result ?? [];
 
-  const isTruncated = xmlText.includes('<IsTruncated>true</IsTruncated>');
-  const nextToken = xmlText.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/)?.[1] || null;
+  // Simulate S3 delimiter='/' behaviour: extract folders and direct files
+  const folderSet = new Set<string>();
+  const files: Array<{ key: string; lastModified: string; size: number }> = [];
 
-  return Response.json({ folders, files, truncated: isTruncated, cursor: nextToken });
+  for (const obj of objects) {
+    const suffix = obj.key.slice(prefix.length); // part after the current prefix
+    if (!suffix) continue;
+    const slashIdx = suffix.indexOf('/');
+    if (slashIdx === -1) {
+      // Direct file at this level
+      files.push({ key: obj.key, lastModified: obj.last_modified, size: obj.size });
+    } else {
+      // Belongs to a subfolder — record the folder prefix
+      folderSet.add(prefix + suffix.slice(0, slashIdx + 1));
+    }
+  }
+
+  const folders = Array.from(folderSet);
+  const truncated = !!(data.result_info?.cursor);
+  const nextCursor = data.result_info?.cursor ?? null;
+
+  return Response.json({ folders, files, truncated, cursor: nextCursor });
 }

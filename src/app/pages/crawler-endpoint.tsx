@@ -122,6 +122,10 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
   const [result, setResult] = useState<any>(null);
   const [binaryResult, setBinaryResult] = useState<string | null>(null);
 
+  // Crawl polling state
+  const [crawlStatus, setCrawlStatus] = useState<string | null>(null);
+  const [crawlProgress, setCrawlProgress] = useState<{ finished: number; total: number } | null>(null);
+
   // Endpoint-specific state
   const [selectors, setSelectors] = useState('[{"selector": "h1"}, {"selector": "p"}]');
   const [jsonPrompt, setJsonPrompt] = useState("Extract the main title and description");
@@ -130,6 +134,58 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
   const [screenshotFullPage, setScreenshotFullPage] = useState(true);
   const [pdfFormat, setPdfFormat] = useState("a4");
   const [pdfLandscape, setPdfLandscape] = useState(false);
+  const [crawlRender, setCrawlRender] = useState(false);
+
+  // ── Crawl: poll for results on the client side ──
+  const pollCrawlResults = async (jobId: string) => {
+    const POLL_INTERVAL = 3000;
+    const MAX_POLLS = 200; // ~10 min
+
+    setCrawlStatus("running");
+    setCrawlProgress(null);
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+      try {
+        const res = await fetch(`/api/browser-rendering/crawl?jobId=${jobId}&limit=1`);
+        const data = await res.json();
+        console.log(`[crawl poll #${i}]`, JSON.stringify(data).slice(0, 500));
+        const job = data.result;
+        if (!job) throw new Error("Invalid crawl poll response");
+
+        setCrawlStatus(job.status ?? "running");
+        if (job.total != null) setCrawlProgress({ finished: job.finished ?? 0, total: job.total });
+
+        if (job.status && job.status !== "running") {
+          // Job done — fetch all records (including errored/skipped for visibility)
+          const allRecords: any[] = [];
+          let cursor: string | undefined;
+          let fullResult: any;
+
+          do {
+            const qs = cursor
+              ? `jobId=${jobId}&cursor=${cursor}`
+              : `jobId=${jobId}`;
+            const fullRes = await fetch(`/api/browser-rendering/crawl?${qs}`);
+            const fullData = await fullRes.json();
+            fullResult = fullData.result;
+            if (fullResult?.records) allRecords.push(...fullResult.records);
+            cursor = fullResult?.cursor;
+          } while (cursor);
+
+          console.log(`[crawl done] status=${fullResult?.status}, records=${allRecords.length}`);
+          setResult({ ...fullResult, records: allRecords });
+          toast.success(t("crawler.executeSuccess"));
+          return;
+        }
+      } catch (err) {
+        console.error("[crawl poll]", err);
+      }
+
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+    }
+
+    toast.error("Crawl 超時，請稍後再試");
+  };
 
   const handleExecute = async () => {
     if (!url.trim()) {
@@ -139,6 +195,8 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
     setLoading(true);
     setResult(null);
     setBinaryResult(null);
+    setCrawlStatus(null);
+    setCrawlProgress(null);
 
     try {
       let body: Record<string, unknown> = { url: url.trim() };
@@ -168,6 +226,7 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
             depth: parseInt(maxDepth),
             limit: parseInt(limit),
             formats: ["markdown"],
+            render: crawlRender,
           };
           break;
       }
@@ -189,15 +248,23 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
       } else if (endpoint === "pdf") {
         const blob = await response.blob();
         setBinaryResult(URL.createObjectURL(blob));
+      } else if (endpoint === "crawl") {
+        // POST returns { jobId }, then we poll
+        const { jobId, error } = await response.json();
+        if (!jobId) throw new Error(error || "No jobId returned");
+        toast.info(`Crawl 任務已啟動 (${jobId.slice(0, 8)}…)，輪詢結果中…`);
+        await pollCrawlResults(jobId);
       } else {
         const data = await response.json();
         setResult(data);
+        toast.success(t("crawler.executeSuccess"));
       }
-      toast.success(t("crawler.executeSuccess"));
     } catch (err) {
       toast.error(t("crawler.executeError", { message: (err as Error).message }));
     } finally {
       setLoading(false);
+      setCrawlStatus(null);
+      setCrawlProgress(null);
     }
   };
 
@@ -208,14 +275,21 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
       if (binaryResult && (endpoint === "screenshot" || endpoint === "pdf")) {
         const resp = await fetch(binaryResult);
         const blob = await resp.blob();
-        const reader = new FileReader();
-        const base64 = await new Promise<string>((resolve, reject) => {
-          reader.onloadend = () => {
-            if (typeof reader.result === "string") resolve(reader.result.split(",")[1] ?? "");
-            else reject(new Error("Failed to read file"));
-          };
-          reader.readAsDataURL(blob);
-        });
+        if (blob.size === 0) {
+          toast.error("Binary data is empty — cannot save to R2");
+          return;
+        }
+        // Convert blob to base64 using arrayBuffer for reliability
+        const arrayBuf = await blob.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuf);
+        let binaryStr = "";
+        // Process in chunks to avoid call stack overflow
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binaryStr += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+        const base64 = btoa(binaryStr);
+
         const ext = endpoint === "screenshot" ? "png" : "pdf";
         const response = await fetch("/api/crawler/save-to-r2", {
           method: "POST",
@@ -228,11 +302,13 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
             filename: `${endpoint}_${Date.now()}.${ext}`,
           }),
         });
-        const data = (await response.json()) as { success?: boolean; key?: string };
+        const text = await response.text();
+        let data: { success?: boolean; key?: string; error?: string };
+        try { data = JSON.parse(text); } catch { data = { error: text.slice(0, 200) }; }
         if (data.success) {
           toast.success(t("crawler.savedToR2", { key: data.key }));
         } else {
-          toast.error(t("crawler.saveFailed"));
+          toast.error(data.error || t("crawler.saveFailed"));
         }
         return;
       }
@@ -249,14 +325,16 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
           filename: `${endpoint}_${Date.now()}.${ext}`,
         }),
       });
-      const data = (await response.json()) as { success?: boolean; key?: string };
+      const text = await response.text();
+      let data: { success?: boolean; key?: string; error?: string };
+      try { data = JSON.parse(text); } catch { data = { error: text.slice(0, 200) }; }
       if (data.success) {
         toast.success(t("crawler.savedToR2", { key: data.key }));
       } else {
-        toast.error(t("crawler.saveFailed"));
+        toast.error(data.error || t("crawler.saveFailed"));
       }
     } catch (err) {
-      toast.error(t("crawler.saveFailedWithError", { message: (err as Error).message }));
+      toast.error(`儲存失敗: ${(err as Error).message}`);
     }
   };
 
@@ -328,15 +406,21 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
         );
       case "crawl":
         return (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t("crawler.options.maxDepth")}</label>
-              <Input type="number" value={maxDepth} onChange={(e) => setMaxDepth(e.target.value)} min={1} max={10} />
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("crawler.options.maxDepth")}</label>
+                <Input type="number" value={maxDepth} onChange={(e) => setMaxDepth(e.target.value)} min={1} max={10} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("crawler.options.pageLimit")}</label>
+                <Input type="number" value={limit} onChange={(e) => setLimit(e.target.value)} min={1} max={100} />
+              </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t("crawler.options.pageLimit")}</label>
-              <Input type="number" value={limit} onChange={(e) => setLimit(e.target.value)} min={1} max={100} />
-            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={crawlRender} onChange={(e) => setCrawlRender(e.target.checked)} className="rounded" />
+              <span>瀏覽器渲染（較慢，適合 SPA；關閉則用快速 HTML 擷取）</span>
+            </label>
           </div>
         );
       default:
@@ -350,6 +434,26 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
         <div className="flex flex-col items-center justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           <p className="mt-4 text-sm text-muted-foreground">{t("common.executing")}</p>
+          {crawlStatus && (
+            <div className="mt-3 flex flex-col items-center gap-1.5">
+              <Badge variant="secondary" className="text-xs">
+                {crawlStatus === "running" ? "🔄 爬取中…" : crawlStatus}
+              </Badge>
+              {crawlProgress && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    已完成 {crawlProgress.finished} / {crawlProgress.total} 頁
+                  </p>
+                  <div className="w-48 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-300"
+                      style={{ width: `${crawlProgress.total ? (crawlProgress.finished / crawlProgress.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       );
     }
@@ -358,11 +462,10 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
       if (endpoint === "screenshot") {
         return (
           <div className="space-y-4">
-            <img src={binaryResult} alt="Screenshot" className="w-full rounded-lg border shadow" />
             <div className="flex gap-2">
               <a href={binaryResult} download={`screenshot_${Date.now()}.png`}>
                 <Button variant="outline" size="sm">
-                  <Download className="size-4 mr-2" />
+                  <Download className="size-4 mr-1.5" />
                   {t("crawler.options.downloadScreenshot")}
                 </Button>
               </a>
@@ -371,17 +474,17 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
                 {t("common.saveToR2")}
               </Button>
             </div>
+            <img src={binaryResult} alt="Screenshot" className="w-full rounded-lg border shadow" />
           </div>
         );
       }
       if (endpoint === "pdf") {
         return (
           <div className="space-y-4">
-            <iframe src={binaryResult} className="h-[600px] w-full rounded-lg border" title="PDF Preview" />
             <div className="flex gap-2">
               <a href={binaryResult} download={`page_${Date.now()}.pdf`}>
                 <Button variant="outline" size="sm">
-                  <Download className="size-4 mr-2" />
+                  <Download className="size-4 mr-1.5" />
                   {t("crawler.options.downloadPdf")}
                 </Button>
               </a>
@@ -390,6 +493,7 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
                 {t("common.saveToR2")}
               </Button>
             </div>
+            <iframe src={binaryResult} className="h-[600px] w-full rounded-lg border" title="PDF Preview" />
           </div>
         );
       }
@@ -466,20 +570,39 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
     }
 
     if (endpoint === "crawl" && result) {
-      const pages = Array.isArray(result) ? result : result.data || result.results || [result];
+      const records: any[] = result.records || (Array.isArray(result) ? result : []);
+      const jobStatus = result.status;
+      const total = result.total ?? records.length;
       return (
         <div className="space-y-3">
-          <Badge variant="secondary">{t("crawler.options.pagesCount", { count: Array.isArray(pages) ? pages.length : 1 })}</Badge>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="secondary">{t("crawler.options.pagesCount", { count: records.length })}</Badge>
+            {jobStatus && <Badge variant={jobStatus === "completed" ? "default" : "destructive"} className={jobStatus !== "completed" ? "text-white" : ""}>{jobStatus}</Badge>}
+            {total > records.length && <span className="text-xs text-muted-foreground">({total} total)</span>}
+          </div>
           <div className="space-y-2">
-            {(Array.isArray(pages) ? pages : [pages]).map((page: any, i: number) => (
-              <details key={i} className="rounded-lg border group">
+            {records.map((page: any, i: number) => (
+              <details key={i} className="rounded-lg border group" open={records.length <= 3}>
                 <summary className="cursor-pointer px-4 py-3 text-sm font-medium hover:bg-accent transition-colors flex items-center gap-2">
                   <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
-                  <span className="truncate">{page.url || page.sourceURL || `Page ${i + 1}`}</span>
+                  <span className="truncate flex-1">{page.url || page.sourceURL || `Page ${i + 1}`}</span>
+                  {page.status && (
+                    <Badge variant={page.status === "completed" ? "secondary" : "destructive"} className="text-[10px] shrink-0 text-white">
+                      {page.status}
+                    </Badge>
+                  )}
                 </summary>
                 <div className="border-t p-4">
                   {page.markdown ? (
-                    <MarkdownRenderer content={page.markdown} />
+                    <div className="relative">
+                      <div className="absolute top-2 right-2 z-10"><CopyButton text={page.markdown} /></div>
+                      <MarkdownRenderer content={page.markdown} />
+                    </div>
+                  ) : page.html ? (
+                    <div className="relative rounded-lg border bg-muted/30 p-4 overflow-x-auto max-h-[400px] overflow-y-auto">
+                      <div className="absolute top-2 right-2"><CopyButton text={page.html} /></div>
+                      <HtmlHighlight html={page.html} />
+                    </div>
                   ) : (
                     <div className="relative">
                       <div className="absolute top-2 right-2"><CopyButton text={JSON.stringify(page, null, 2)} /></div>
@@ -536,6 +659,31 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
             {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
             <span className="hidden sm:inline ml-1">{t("common.execute")}</span>
           </Button>
+        </div>
+        {/* Preset URLs */}
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            { label: "Cloudflare Docs", url: "https://developers.cloudflare.com" },
+            { label: "Cloudflare Blog", url: "https://blog.cloudflare.com" },
+            { label: "Hacker News", url: "https://news.ycombinator.com" },
+            { label: "Wikipedia", url: "https://en.wikipedia.org/wiki/Cloudflare" },
+            { label: "HTTP Bin", url: "https://httpbin.org" },
+            { label: "Quotes to Scrape", url: "https://quotes.toscrape.com" },
+            { label: "Books to Scrape", url: "https://books.toscrape.com" },
+            { label: "Scrape This Site", url: "https://www.scrapethissite.com" },
+          ].map((preset) => (
+            <button
+              key={preset.url}
+              onClick={() => setUrl(preset.url)}
+              className={`px-2.5 py-1 text-xs rounded-full border transition-colors cursor-pointer ${
+                url === preset.url
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-muted/50 hover:bg-muted border-transparent"
+              }`}
+            >
+              {preset.label}
+            </button>
+          ))}
         </div>
         {renderEndpointOptions()}
       </div>

@@ -31,6 +31,7 @@ interface LogExplorerContextType {
   loading: boolean;
   loadingPath: string | null;
   selectedFile: { bucket: string; key: string } | null;
+  datasetMap: Record<string, string>;
   loadBuckets: () => Promise<void>;
   toggleNode: (nodePath: string[], bucketName?: string) => Promise<void>;
   selectFile: (bucket: string, key: string) => void;
@@ -53,6 +54,7 @@ export function LogExplorerProvider({ children }: { children: ReactNode }) {
     bucket: string;
     key: string;
   } | null>(null);
+  const [datasetMap, setDatasetMap] = useState<Record<string, string>>({});
 
   const loadBuckets = useCallback(async () => {
     setLoading(true);
@@ -60,7 +62,15 @@ export function LogExplorerProvider({ children }: { children: ReactNode }) {
       const response = await fetch("/api/logs/buckets");
       const data = (await response.json()) as any;
 
+      // Fetch logpush jobs in parallel to get dataset labels
+      const logpushPromise = fetch("/api/logs/logpush-jobs")
+        .then((r) => r.json() as Promise<{ map?: Record<string, string> }>)
+        .then((d) => d.map ?? {})
+        .catch(() => ({} as Record<string, string>));
+
       if (data.result?.buckets) {
+        const dsMap = await logpushPromise;
+        setDatasetMap(dsMap);
         setBuckets(
           data.result.buckets.map((b: BucketInfo) => ({
             name: b.name,
@@ -212,7 +222,7 @@ export function LogExplorerProvider({ children }: { children: ReactNode }) {
 
   return (
     <LogExplorerContext.Provider
-      value={{ buckets, loading, loadingPath, selectedFile, loadBuckets, toggleNode, selectFile }}
+      value={{ buckets, loading, loadingPath, selectedFile, datasetMap, loadBuckets, toggleNode, selectFile }}
     >
       {children}
     </LogExplorerContext.Provider>
