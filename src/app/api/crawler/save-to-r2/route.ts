@@ -41,17 +41,28 @@ function sanitizeForRag(raw: string, contentType: string): { content: string; co
 
 export async function POST(request: NextRequest) {
   const { env } = await getCloudflareContext();
-  const { content, sourceUrl, contentType, filename } = await request.json();
+  const { content, sourceUrl, contentType, filename, binary } = await request.json();
 
-  const sanitized = sanitizeForRag(content, contentType);
-  const finalFilename = sanitized.ext && !filename.endsWith(`.${sanitized.ext}`)
-    ? filename.replace(/\.[^.]+$/, `.${sanitized.ext}`)
-    : filename;
+  let storedKey = filename;
 
-  await (env as any).CRAWLER_BUCKET.put(finalFilename, sanitized.content, {
-    httpMetadata: { contentType: sanitized.contentType },
-    customMetadata: { sourceUrl, crawledAt: new Date().toISOString() },
-  });
+  // Binary files (screenshot/pdf) — store as-is, no sanitization
+  if (binary) {
+    const buffer = Uint8Array.from(atob(content), (c) => c.charCodeAt(0));
+    await (env as any).CRAWLER_BUCKET.put(filename, buffer, {
+      httpMetadata: { contentType },
+      customMetadata: { sourceUrl, crawledAt: new Date().toISOString() },
+    });
+  } else {
+    const sanitized = sanitizeForRag(content, contentType);
+    storedKey = sanitized.ext && !filename.endsWith(`.${sanitized.ext}`)
+      ? filename.replace(/\.[^.]+$/, `.${sanitized.ext}`)
+      : filename;
+
+    await (env as any).CRAWLER_BUCKET.put(storedKey, sanitized.content, {
+      httpMetadata: { contentType: sanitized.contentType },
+      customMetadata: { sourceUrl, crawledAt: new Date().toISOString() },
+    });
+  }
 
   // Trigger AI Search index job (fire-and-forget)
   let indexJobId: string | null = null;
@@ -68,5 +79,5 @@ export async function POST(request: NextRequest) {
     if (syncData.success && syncData.result?.id) indexJobId = syncData.result.id;
   } catch { /* Non-critical */ }
 
-  return Response.json({ success: true, key: finalFilename, indexJobId });
+  return Response.json({ success: true, key: storedKey, indexJobId });
 }
