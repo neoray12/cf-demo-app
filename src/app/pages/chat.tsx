@@ -647,7 +647,7 @@ export function ChatPage() {
                       gatewayLogId: event.gatewayLogId || null,
                       statusCode: event.statusCode || null,
                       gatewayCode: event.gatewayCode || null,
-                      userIp: null,
+                      userIp: event.userIp || null,
                     },
                   });
                   break;

@@ -33,6 +33,16 @@ function usesMaxCompletionTokens(modelId: string): boolean {
   return /gpt-5/i.test(modelId) || /gpt-4o/i.test(modelId) || /o1/i.test(modelId) || /o3/i.test(modelId) || /o4/i.test(modelId);
 }
 
+// Detect Cloudflare Firewall for AI HTML block page and extract metadata
+function extractFirewallFromHtml(html: string): { isFirewall: boolean; rayId: string | null; userIp: string | null } {
+  if (!html.includes('<!DOCTYPE html') && !html.includes('<html')) return { isFirewall: false, rayId: null, userIp: null };
+  const isBlock = /you have been blocked/i.test(html) || /cf-error-details/i.test(html);
+  if (!isBlock) return { isFirewall: false, rayId: null, userIp: null };
+  const rayMatch = html.match(/Cloudflare Ray ID:\s*<strong[^>]*>([^<]+)<\/strong>/);
+  const ipMatch = html.match(/id="cf-footer-ip">([^<]+)</);
+  return { isFirewall: true, rayId: rayMatch?.[1] || null, userIp: ipMatch?.[1] || null };
+}
+
 // Wrap tool execute to catch errors gracefully instead of crashing the stream
 function safeTool<T>(fn: (args: T) => Promise<unknown>) {
   return async (args: T) => {
@@ -325,18 +335,29 @@ export async function POST(request: NextRequest) {
           let errType: 'firewall' | 'gateway' | 'dlp' | 'general' = 'general';
           let errCode: string | null = null;
           let errMsg = '';
+          let finalRayId = errRayId;
+          let userIp: string | null = null;
 
-          try {
-            const body = JSON.parse(errResponseBody) as { error?: Array<{ code: number; message: string }> };
-            if (body?.error?.[0]) {
-              const gwErr = body.error[0];
-              errCode = String(gwErr.code);
-              errMsg = gwErr.message;
-              if (gwErr.code === 2029) errType = 'dlp';
-              else if (gwErr.code === 2016) errType = 'firewall';
-              else if (gwErr.code >= 2000 && gwErr.code < 3000) errType = 'gateway';
-            }
-          } catch { /* not JSON */ }
+          // Check for Firewall for AI HTML block page
+          const fwCheck = extractFirewallFromHtml(errResponseBody);
+          if (fwCheck.isFirewall) {
+            errType = 'firewall';
+            errMsg = '您的請求已被 Cloudflare Firewall for AI 攔截。';
+            finalRayId = fwCheck.rayId || finalRayId;
+            userIp = fwCheck.userIp;
+          } else {
+            try {
+              const body = JSON.parse(errResponseBody) as { error?: Array<{ code: number; message: string }> };
+              if (body?.error?.[0]) {
+                const gwErr = body.error[0];
+                errCode = String(gwErr.code);
+                errMsg = gwErr.message;
+                if (gwErr.code === 2029) errType = 'dlp';
+                else if (gwErr.code === 2016) errType = 'firewall';
+                else if (gwErr.code >= 2000 && gwErr.code < 3000) errType = 'gateway';
+              }
+            } catch { /* not JSON */ }
+          }
 
           if (!errMsg) errMsg = String(part.error);
 
@@ -346,9 +367,10 @@ export async function POST(request: NextRequest) {
             errorType: errType,
             message: errMsg,
             statusCode: errStatusCode || null,
-            rayId: errRayId,
+            rayId: finalRayId,
             gatewayLogId: errLogId,
             gatewayCode: errCode,
+            userIp,
           });
           hasError = true;
           break;
@@ -488,33 +510,44 @@ export async function POST(request: NextRequest) {
         let errorType: 'firewall' | 'gateway' | 'dlp' | 'general' = 'general';
         let gatewayCode: string | null = null;
         let message = '';
+        let finalRayId = rayId;
+        let userIp: string | null = null;
 
-        try {
-          const body = JSON.parse(responseBody) as { error?: Array<{ code: number; message: string }> };
-          if (body?.error?.[0]) {
-            const gwErr = body.error[0];
-            gatewayCode = String(gwErr.code);
-            message = gwErr.message;
+        // Check for Firewall for AI HTML block page
+        const fwCheck = extractFirewallFromHtml(responseBody);
+        if (fwCheck.isFirewall) {
+          errorType = 'firewall';
+          message = '您的請求已被 Cloudflare Firewall for AI 攔截。';
+          finalRayId = fwCheck.rayId || finalRayId;
+          userIp = fwCheck.userIp;
+        } else {
+          try {
+            const body = JSON.parse(responseBody) as { error?: Array<{ code: number; message: string }> };
+            if (body?.error?.[0]) {
+              const gwErr = body.error[0];
+              gatewayCode = String(gwErr.code);
+              message = gwErr.message;
 
-            // Classify error type by code
-            // 2029 = DLP policy violation
-            if (gwErr.code === 2029) {
-              errorType = 'dlp';
+              // Classify error type by code
+              // 2029 = DLP policy violation
+              if (gwErr.code === 2029) {
+                errorType = 'dlp';
+              }
+              // 2016 = Firewall for AI block
+              else if (gwErr.code === 2016) {
+                errorType = 'firewall';
+              }
+              // Other 2xxx = AI Gateway errors
+              else if (gwErr.code >= 2000 && gwErr.code < 3000) {
+                errorType = 'gateway';
+              }
             }
-            // 2016 = Firewall for AI block
-            else if (gwErr.code === 2016) {
-              errorType = 'firewall';
-            }
-            // Other 2xxx = AI Gateway errors
-            else if (gwErr.code >= 2000 && gwErr.code < 3000) {
-              errorType = 'gateway';
-            }
+          } catch {
+            // responseBody is not JSON — use raw message
+            message = statusCode
+              ? `API Error ${statusCode}: ${responseBody?.substring(0, 200) || error?.message || err}`
+              : String(err);
           }
-        } catch {
-          // responseBody is not JSON — use raw message
-          message = statusCode
-            ? `API Error ${statusCode}: ${responseBody || error?.message || err}`
-            : String(err);
         }
 
         if (!message) {
@@ -529,9 +562,10 @@ export async function POST(request: NextRequest) {
           errorType,
           message,
           statusCode: statusCode || null,
-          rayId,
+          rayId: finalRayId,
           gatewayLogId,
           gatewayCode,
+          userIp,
         });
       } finally {
         try { controller.close(); } catch { /* already closed */ }
