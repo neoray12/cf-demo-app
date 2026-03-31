@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useState } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,9 +41,8 @@ const endpointIcons: Record<string, React.ElementType> = {
   crawl: Globe2,
 };
 
-export function CrawlerEndpointPage() {
-  const { endpoint } = useParams<{ endpoint: string }>();
-  const navigate = useNavigate();
+export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
+  const router = useRouter();
   const { t } = useTranslation();
 
   const Icon = endpointIcons[endpoint || ""] || Globe;
@@ -356,7 +357,7 @@ export function CrawlerEndpointPage() {
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 md:px-6 py-4 border-b shrink-0">
-        <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate("/crawler")}>
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={() => router.push("/crawler")}>
           <ArrowLeft className="size-4" />
         </Button>
         <div>

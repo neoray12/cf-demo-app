@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect } from "react";
 import { Plug, X, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";

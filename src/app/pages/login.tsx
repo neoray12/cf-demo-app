@@ -1,15 +1,16 @@
+'use client';
+
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, EyeOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
-import cfLogo from "../../../CF_logomark.svg";
 
 export function LoginPage() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const { t } = useTranslation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -28,7 +29,7 @@ export function LoginPage() {
     await new Promise((r) => setTimeout(r, 500));
     localStorage.setItem("cf-demo-auth", "true");
     setLoading(false);
-    navigate("/");
+    router.push("/");
   };
 
   return (
@@ -46,7 +47,8 @@ export function LoginPage() {
         <CardHeader className="text-center space-y-4">
           {/* Cloudflare Logo */}
           <div className="mx-auto">
-            <img src={cfLogo} alt="Cloudflare" className="h-12 w-auto" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/CF_logomark.svg" alt="Cloudflare" className="h-12 w-auto" />
           </div>
           <div>
             <CardTitle className="text-2xl">{t("login.title")}</CardTitle>

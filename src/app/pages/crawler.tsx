@@ -1,4 +1,6 @@
-import { useNavigate } from "react-router";
+'use client';
+
+import { useRouter } from "next/navigation";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Camera,
@@ -26,7 +28,7 @@ const features = [
 ];
 
 export function CrawlerPage() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const { t } = useTranslation();
 
   return (
@@ -43,7 +45,7 @@ export function CrawlerPage() {
           <Card
             key={f.id}
             className="cursor-pointer transition-all hover:shadow-md hover:border-primary/30 group"
-            onClick={() => navigate(`/crawler/${f.id}`)}
+            onClick={() => router.push(`/crawler/${f.id}`)}
           >
             <CardHeader className="pb-3">
               <div className={`mb-2 ${f.color}`}>

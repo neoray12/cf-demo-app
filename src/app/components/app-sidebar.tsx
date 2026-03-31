@@ -1,5 +1,7 @@
+'use client';
+
 import { useEffect } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Bot,
   Globe,
@@ -72,14 +74,14 @@ const crawlerSubItems = [
 ];
 
 export function AppSidebar() {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const pathname = usePathname();
+  const router = useRouter();
   const { setOpenMobile, isMobile } = useSidebar();
   const { theme, toggleTheme } = useTheme();
   const { t, i18n } = useTranslation();
 
-  const isCrawlerActive = location.pathname.startsWith("/crawler");
-  const isLogsActive = location.pathname === "/logs";
+  const isCrawlerActive = pathname.startsWith("/crawler");
+  const isLogsActive = pathname === "/logs";
 
   const {
     buckets,
@@ -99,13 +101,13 @@ export function AppSidebar() {
   }, [isLogsActive, buckets.length, loadBuckets]);
 
   const handleNavClick = (url: string) => {
-    navigate(url);
+    router.push(url);
     if (isMobile) setOpenMobile(false);
   };
 
   const handleLogout = () => {
     localStorage.removeItem("cf-demo-auth");
-    navigate("/login");
+    router.push("/login");
   };
 
   const toggleLanguage = () => {
@@ -350,7 +352,7 @@ export function AppSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={location.pathname === "/"}
+                  isActive={pathname === "/"}
                   onClick={() => handleNavClick("/")}
                   tooltip={t("sidebar.aiAgent")}
                 >
@@ -371,7 +373,7 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
                     <SidebarMenuButton
-                      isActive={location.pathname === "/crawler"}
+                      isActive={pathname === "/crawler"}
                       tooltip={t("sidebar.crawler")}
                       onClick={() => handleNavClick("/crawler")}
                     >
@@ -385,7 +387,7 @@ export function AppSidebar() {
                       {crawlerSubItems.map((item) => (
                         <SidebarMenuItem key={item.url}>
                           <SidebarMenuButton
-                            isActive={location.pathname === item.url}
+                            isActive={pathname === item.url}
                             onClick={() => handleNavClick(item.url)}
                             tooltip={t(`crawler.endpoints.${item.key}.title`)}
                             size="sm"

@@ -1,3 +1,5 @@
+'use client';
+
 import { AI_MODELS, type AIModel, type ModelProvider } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {

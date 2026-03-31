@@ -1,3 +1,5 @@
+'use client';
+
 import { ShieldCheck, ClipboardList } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {

@@ -1,3 +1,4 @@
+# Dev-only wrangler config — excludes [ai] binding which breaks edge-preview proxy
 name = "cf-demo-app"
 account_id = "5efa272dc28e4e3933324c44165b6dbe"
 compatibility_date = "2025-12-01"
@@ -7,13 +8,6 @@ main = ".open-next/worker.js"
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
-
-[observability]
-enabled = true
-
-# Workers AI + AI Gateway
-[ai]
-binding = "AI"
 
 # R2 - Crawler data storage (for AI Search / AutoRAG indexing)
 [[r2_buckets]]
