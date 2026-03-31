@@ -25,7 +25,11 @@ bucket_name = "cf-demo-crawler"
 binding = "KV"
 id = "cd03af00eb9340a180014760028fbebd"
 
-# Migration to remove old Durable Object classes from Vite version
+# Temporary: DO binding needed for wrangler to apply delete migration
+[[durable_objects.bindings]]
+name = "ChatAgent"
+class_name = "ChatAgent"
+
 [[migrations]]
 tag = "v1"
 deleted_classes = ["ChatAgent"]
