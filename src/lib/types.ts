@@ -82,7 +82,7 @@ export const AI_MODELS: AIModel[] = [
   },
 ];
 
-export const DEFAULT_MODEL_ID = "openai-gpt35";
+export const DEFAULT_MODEL_ID = "claude-sonnet-4";
 
 export interface BrowserRenderingEndpoint {
   id: string;
