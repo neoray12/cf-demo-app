@@ -565,7 +565,26 @@ export function ChatPage() {
 
       if (!res.ok) {
         const errorText = await res.text().catch(() => "Unknown error");
-        throw new Error(`HTTP ${res.status}: ${errorText}`);
+        // Detect Cloudflare Firewall for AI HTML block page
+        if (errorText.includes("<!DOCTYPE html") && (/you have been blocked/i.test(errorText) || /cf-error-details/i.test(errorText))) {
+          const rayMatch = errorText.match(/Cloudflare Ray ID:\s*<strong[^>]*>([^<]+)<\/strong>/);
+          const ipMatch = errorText.match(/id="cf-footer-ip">([^<]+)</);
+          gotError = true;
+          setErrorDialog({
+            open: true,
+            error: {
+              errorType: "firewall",
+              message: "您的請求已被 Cloudflare Firewall for AI 攔截。",
+              rayId: rayMatch?.[1] || null,
+              gatewayLogId: null,
+              statusCode: res.status,
+              gatewayCode: null,
+              userIp: ipMatch?.[1] || null,
+            },
+          });
+          return { gotTextContent, gotError, hasToolResults };
+        }
+        throw new Error(`HTTP ${res.status}: ${errorText.substring(0, 300)}`);
       }
 
       const reader = res.body?.getReader();
@@ -713,18 +732,38 @@ export function ChatPage() {
         return;
       }
       console.error("[Chat] Stream error:", err);
-      setErrorDialog({
-        open: true,
-        error: {
-          errorType: "general",
-          message: (err as Error).message || "發生錯誤",
-          rayId: null,
-          gatewayLogId: null,
-          statusCode: null,
-          gatewayCode: null,
-          userIp: null,
-        },
-      });
+      const errMsg = (err as Error).message || "發生錯誤";
+      // Detect Firewall HTML in error message (fallback)
+      const isFirewallHtml = errMsg.includes("<!DOCTYPE html") && (/you have been blocked/i.test(errMsg) || /cf-error-details/i.test(errMsg));
+      if (isFirewallHtml) {
+        const rayMatch = errMsg.match(/Cloudflare Ray ID:\s*<strong[^>]*>([^<]+)<\/strong>/);
+        const ipMatch = errMsg.match(/id="cf-footer-ip">([^<]+)</);
+        setErrorDialog({
+          open: true,
+          error: {
+            errorType: "firewall",
+            message: "您的請求已被 Cloudflare Firewall for AI 攔截。",
+            rayId: rayMatch?.[1] || null,
+            gatewayLogId: null,
+            statusCode: null,
+            gatewayCode: null,
+            userIp: ipMatch?.[1] || null,
+          },
+        });
+      } else {
+        setErrorDialog({
+          open: true,
+          error: {
+            errorType: "general",
+            message: errMsg.substring(0, 500),
+            rayId: null,
+            gatewayLogId: null,
+            statusCode: null,
+            gatewayCode: null,
+            userIp: null,
+          },
+        });
+      }
     } finally {
       setIsLoading(false);
       abortRef.current = null;
