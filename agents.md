@@ -50,11 +50,47 @@
 - 開發階段：UI only，任意帳密即可登入
 - 未來可接入真正的認證系統
 
+### 5. MCP (Model Context Protocol) 整合
+
+- **架構**：無 Durable Objects，使用 `@modelcontextprotocol/sdk` Client 直接在 API route 中連線
+- **OAuth 2.1 PKCE 流程**：前端 popup 處理，token 存入 KV，postMessage 通知父視窗
+- **Token 儲存**：KV key `mcp-token:{sessionId}:{serverId}`
+- **Tool cache**：KV key `mcp-tools:{sessionId}:{serverId}`，TTL 5 分鐘
+- **MCP_SERVER_URLS 格式**：
+  - 公開 server：`id=url`（例如 `cf-docs=https://docs.mcp.cloudflare.com/mcp`）
+  - OAuth server：`id=url:oauth`（例如 `cf-radar=https://radar.mcp.cloudflare.com/mcp:oauth`）
+- **已設定的 servers**：
+  - `cf-docs` — Cloudflare Docs（公開）
+  - `cf-observability` — Workers Observability（OAuth）
+  - `cf-radar` — Radar（OAuth）
+
+#### MCP 相關檔案
+
+| 檔案 | 說明 |
+|------|------|
+| `src/lib/mcp-auth.ts` | PKCE 生成、OAuth metadata discovery、token exchange、KV key helpers |
+| `src/lib/mcp-client.ts` | MCP Client wrapper，`connectAndListTools()`、`callMcpTool()` |
+| `src/app/api/mcp/servers/route.ts` | 回傳所有 server 清單及 auth 狀態 |
+| `src/app/api/mcp/auth/start/route.ts` | 啟動 OAuth 流程（PKCE + dynamic client registration） |
+| `src/app/api/mcp/auth/callback/route.ts` | OAuth callback，exchange code，存入 KV |
+| `src/app/api/mcp/connect/route.ts` | 連線 server，discover tools，cache 到 KV |
+| `src/app/api/mcp/tools/route.ts` | 彙總所有已連線 server 的工具 |
+| `src/app/api/mcp/call/route.ts` | 執行指定 MCP tool |
+| `src/app/api/mcp/disconnect/route.ts` | 刪除 KV token 和 tool cache |
+| `src/app/components/chat/mcp-panel.tsx` | MCP 面板 UI（OAuth 認證、連線、展開工具詳情） |
+| `src/app/components/icons/mcp-icon.tsx` | MCP 官方 logo SVG 元件 |
+
+#### Chat API 整合
+- `/api/chat` 接受 `mcpServers: string[]` 參數
+- `buildMcpTools()` 動態從 KV cache 或即時連線取得工具，轉換為 Vercel AI SDK tool 格式
+- Tool key 格式：`tool_{serverId}_{toolName}`（例如 `tool_cf-docs_search_cloudflare_documentation`）
+
 ## 技術棧
 
 - **前端**: React 19 + Vite + Tailwind CSS 4 + shadcn (new-york style)
 - **後端**: Cloudflare Workers
 - **AI**: Workers AI via `workers-ai-provider` + Vercel AI SDK (`ai`) + AI Gateway
+- **MCP**: `@modelcontextprotocol/sdk` v1.29.0
 - **RAG**: AI Search (AutoRAG) 索引 R2 爬蟲資料
 - **路由**: React Router v7
 - **框架整合**: OpenNext for Cloudflare (`@opennextjs/cloudflare`)
