@@ -57,7 +57,8 @@
 - **AI**: Workers AI via `workers-ai-provider` + Vercel AI SDK (`ai`) + AI Gateway
 - **RAG**: AI Search (AutoRAG) 索引 R2 爬蟲資料
 - **路由**: React Router v7
-- **部署**: `wrangler deploy`
+- **框架整合**: OpenNext for Cloudflare (`@opennextjs/cloudflare`)
+- **部署**: Git push 觸發 CI/CD（見「部署注意事項」）
 
 ## UI/UX 規範
 
@@ -75,10 +76,25 @@
 
 ## 部署注意事項
 
-- `wrangler secret put CF_API_TOKEN` — Cloudflare API Token
-- `.dev.vars` 中存放本地開發用的 secrets
+### 部署流程
+- **正確部署方式**：`git commit` → `git push`，由 CI/CD 自動執行 `opennextjs-cloudflare build && opennextjs-cloudflare deploy`
+- **絕對不要**直接執行 `npx wrangler deploy` 或 `npm run deploy`，這會用本地舊的 `.open-next/` 產物覆蓋 CI/CD 部署的最新版本
+- 本地 `npm run build` 只是 `next build`，不會產生 `.open-next/` 產物；`opennextjs-cloudflare build` 才會
+
+### Secrets 管理
+- `.dev.vars` 中存放本地開發用的 secrets（`CF_API_TOKEN`, `CF_AIG_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`）
+- Production secrets 透過 `wrangler secret put <NAME>` 設定，與 `.dev.vars` 的值必須一致
+- 如果 production 出現 `Authentication error` (code 10000)，優先檢查 Worker secret 是否與 `.dev.vars` 一致，用 `wrangler secret put` 重新設定
+- `wrangler secret list` 可查看已設定的 secrets 清單
+
+### 環境設定
 - 確保 `account_id` 設定為 `5efa272dc28e4e3933324c44165b6dbe` (Neo-Cloudflare)
+- `wrangler.toml` 的 `[vars]` 放非敏感環境變數，secrets 絕不放在 `[vars]`
+- `wrangler.dev.toml` 用於本地開發，不含 `[ai]` binding（會影響 edge-preview proxy）
 
 ## 協作規範
 
 - **不要自動 push 到 remote**：除非使用者明確說「push」，否則只做本地 commit，不執行 `git push`
+- **不要直接 wrangler deploy**：部署只能透過 git push 觸發 CI/CD，禁止本地直接 `wrangler deploy` 或 `npm run deploy`
+- **不要建立不必要的檔案**：避免建立 debug endpoint、臨時測試檔等，如果建了必須立即清除
+- **修改後先驗證**：改完程式碼後，先在本地 `npm run dev` 測試，確認功能正常再 commit

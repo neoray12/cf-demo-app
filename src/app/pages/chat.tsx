@@ -5,8 +5,12 @@ import { MarkdownRenderer } from "../components/chat/markdown-renderer";
 import { ModelSelector } from "../components/chat/model-selector";
 import { ErrorDialog, type ChatErrorState } from "../components/chat/error-dialog";
 import { McpConnectionsPanel } from "../components/chat/mcp-panel";
+import { McpIcon } from "../components/icons/mcp-icon";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Plug, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 // ── Types ──
@@ -45,10 +49,37 @@ const SOURCE_LABELS: Record<string, string> = {
   searchKnowledge: "AI Search 知識庫",
 };
 
+// MCP server display names
+const MCP_SERVER_LABELS: Record<string, string> = {
+  "cf-docs": "Cloudflare Docs",
+  "cf-observability": "Workers Observability",
+  "cf-radar": "Radar",
+};
+
+// MCP tool display names
+const MCP_TOOL_LABELS: Record<string, string> = {
+  search_cloudflare_documentation: "搜尋文件",
+  migrate_pages_to_workers_guide: "Pages 遷移指南",
+};
+
+function parseMcpToolName(rawName: string): { isMcp: boolean; serverId: string; serverLabel: string; toolName: string; toolLabel: string } | null {
+  const match = rawName.match(/^tool_([a-zA-Z0-9-]+)_(.+)$/);
+  if (!match) return null;
+  const serverId = match[1];
+  const toolName = match[2];
+  return {
+    isMcp: true,
+    serverId,
+    serverLabel: MCP_SERVER_LABELS[serverId] || serverId,
+    toolName,
+    toolLabel: MCP_TOOL_LABELS[toolName] || toolName.replace(/_/g, " "),
+  };
+}
+
 function friendlyToolName(rawName: string): string {
   if (TOOL_LABELS[rawName]) return TOOL_LABELS[rawName];
-  const mcpMatch = rawName.match(/^tool_[a-zA-Z0-9]+_(.+)$/);
-  if (mcpMatch?.[1]) return mcpMatch[1].replace(/_/g, " ");
+  const mcp = parseMcpToolName(rawName);
+  if (mcp) return mcp.toolLabel;
   return rawName.replace(/_/g, " ");
 }
 
@@ -132,24 +163,38 @@ function MessageActions({ text, onRetry, showRetry }: { text: string; onRetry: (
 
 function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const [expanded, setExpanded] = useState(false);
+  const mcp = parseMcpToolName(toolCall.name);
   const label = friendlyToolName(toolCall.name);
+  const isCalling = toolCall.status === "calling";
 
   return (
     <div className="my-2">
       <button
-        onClick={() => toolCall.status === "done" && setExpanded(!expanded)}
-        className={`inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg transition-colors ${
-          toolCall.status === "calling"
-            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
-            : "bg-muted hover:bg-muted/80 text-muted-foreground cursor-pointer"
+        onClick={() => !isCalling && setExpanded(!expanded)}
+        className={`inline-flex items-center gap-1.5 text-xs rounded-lg transition-colors ${
+          isCalling
+            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 px-3 py-1.5"
+            : "bg-muted hover:bg-muted/80 text-muted-foreground cursor-pointer px-3 py-1.5"
         }`}
       >
-        <Wrench className="size-3" />
-        <span>{toolCall.status === "calling" ? `${label}...` : label}</span>
-        {toolCall.status === "calling" && (
+        {mcp ? (
+          <>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-semibold shrink-0">
+              MCP
+            </span>
+            <span className="text-muted-foreground/50 mx-0.5">{mcp.serverLabel}</span>
+            <span className="font-medium">{isCalling ? `${label}...` : label}</span>
+          </>
+        ) : (
+          <>
+            <Wrench className="size-3 shrink-0" />
+            <span>{isCalling ? `${label}...` : label}</span>
+          </>
+        )}
+        {isCalling && (
           <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
         )}
-        {toolCall.status === "done" && (
+        {!isCalling && (
           <ChevronRight className={`size-3 transition-transform ${expanded ? "rotate-90" : ""}`} />
         )}
       </button>
@@ -196,7 +241,12 @@ function SourcesDisplay({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
   const sources = [...new Set(
     toolCalls
       .filter((tc) => tc.status === "done")
-      .map((tc) => SOURCE_LABELS[tc.name] || friendlyToolName(tc.name))
+      .map((tc) => {
+        if (SOURCE_LABELS[tc.name]) return SOURCE_LABELS[tc.name];
+        const mcp = parseMcpToolName(tc.name);
+        if (mcp) return `MCP: ${mcp.serverLabel}`;
+        return friendlyToolName(tc.name);
+      })
   )];
   if (!sources.length) return null;
 
@@ -467,6 +517,7 @@ function DebugPanel({
 // ── Main component ──
 export function ChatPage() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
   const [toolsEnabled, setToolsEnabled] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{ open: boolean; error: ChatErrorState | null }>({
@@ -474,6 +525,7 @@ export function ChatPage() {
     error: null,
   });
   const [showMcpPanel, setShowMcpPanel] = useState(false);
+  const [connectedMcpServers, setConnectedMcpServers] = useState<string[]>([]);
   const [input, setInput] = useState("");
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -559,6 +611,7 @@ export function ChatPage() {
           model: modelId,
           provider,
           toolsEnabled,
+          mcpServers: connectedMcpServers,
         }),
         signal: controller.signal,
       });
@@ -778,7 +831,7 @@ export function ChatPage() {
         toolCallNames: debugToolNames,
       });
     }
-  }, [selectedModel, toolsEnabled]);
+  }, [selectedModel, toolsEnabled, connectedMcpServers]);
 
   const handleSend = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -870,25 +923,30 @@ export function ChatPage() {
             <ModelSelector selectedModel={selectedModel} onModelChange={setSelectedModel} />
             <button
               onClick={() => setToolsEnabled((v) => !v)}
-              className={`inline-flex items-center gap-1.5 h-8 px-2 rounded-lg transition-colors ${
+              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
                 toolsEnabled
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted/60"
               }`}
               title={toolsEnabled ? "工具已啟用 (AI Search / MCP)" : "啟用工具 (AI Search / MCP)"}
             >
-              <Zap className="size-4" />
+              <Zap className="size-3.5" />
+              <span className="hidden md:inline">工具</span>
             </button>
             <button
               onClick={() => setShowMcpPanel((v) => !v)}
-              className={`inline-flex items-center gap-1.5 h-8 px-2 rounded-lg transition-colors ${
+              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
                 showMcpPanel
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted/60"
               }`}
               title="MCP Connections"
             >
-              <Plug className="size-4" />
+              <McpIcon className="size-3.5" />
+              <span className="hidden md:inline">MCP</span>
+              {connectedMcpServers.length > 0 && (
+                <span className="size-4 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[10px] flex items-center justify-center">{connectedMcpServers.length}</span>
+              )}
             </button>
             {isDev && (
               <button
@@ -1028,11 +1086,29 @@ export function ChatPage() {
         </div>
       </div>
 
-      {/* ── MCP Panel ── */}
-      {showMcpPanel && (
-        <div className="w-72 shrink-0 hidden md:flex flex-col">
-          <McpConnectionsPanel onClose={() => setShowMcpPanel(false)} />
+      {/* ── MCP Panel: Desktop sidebar ── */}
+      {showMcpPanel && !isMobile && (
+        <div className="w-72 shrink-0 flex flex-col">
+          <McpConnectionsPanel
+            onClose={() => setShowMcpPanel(false)}
+            connectedServers={connectedMcpServers}
+            onServersChange={setConnectedMcpServers}
+          />
         </div>
+      )}
+
+      {/* ── MCP Panel: Mobile sheet ── */}
+      {isMobile && (
+        <Sheet open={showMcpPanel} onOpenChange={setShowMcpPanel}>
+          <SheetContent side="right" className="p-0 w-[85%] sm:max-w-sm [&>button]:hidden">
+            <VisuallyHidden><SheetTitle>MCP Servers</SheetTitle></VisuallyHidden>
+            <McpConnectionsPanel
+              onClose={() => setShowMcpPanel(false)}
+              connectedServers={connectedMcpServers}
+              onServersChange={setConnectedMcpServers}
+            />
+          </SheetContent>
+        </Sheet>
       )}
 
       <ErrorDialog

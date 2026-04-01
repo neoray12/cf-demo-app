@@ -3,7 +3,10 @@ import { streamText, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { cookies } from 'next/headers';
 import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
+import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
+import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
@@ -97,6 +100,108 @@ function buildSearchKnowledgeTool(env: Record<string, unknown>) {
   };
 }
 
+// Build MCP tools from connected servers for injection into streamText
+async function buildMcpTools(
+  env: Record<string, unknown>,
+  serverIds: string[],
+): Promise<Record<string, any>> {
+  const cookieStore = await cookies();
+  const sessionId = cookieStore.get('session_id')?.value || 'anonymous';
+  const kv = env.KV as KVNamespace;
+  const allServers = parseMcpServerUrls((env.MCP_SERVER_URLS as string) || '');
+
+  const mcpTools: Record<string, any> = {};
+
+  for (const serverId of serverIds) {
+    const server = allServers.find((s) => s.id === serverId);
+    if (!server) continue;
+
+    // Try cached tools first
+    let tools: McpToolInfo[] = [];
+    const cached = await kv.get(mcpToolCacheKey(sessionId, serverId));
+    if (cached) {
+      tools = JSON.parse(cached) as McpToolInfo[];
+    } else {
+      // Get access token for OAuth servers
+      let accessToken: string | undefined;
+      if (server.authType === 'oauth') {
+        const tokenDataRaw = await kv.get(mcpTokenKey(sessionId, serverId));
+        if (!tokenDataRaw) continue; // Skip unauthenticated OAuth servers
+        const tokenData = JSON.parse(tokenDataRaw) as { accessToken: string };
+        accessToken = tokenData.accessToken;
+      }
+      const result = await connectAndListTools(server, accessToken);
+      if (!result.success) continue;
+      tools = result.tools;
+      // Cache for next request
+      await kv.put(mcpToolCacheKey(sessionId, serverId), JSON.stringify(tools), { expirationTtl: 300 });
+    }
+
+    // Convert each MCP tool to Vercel AI SDK tool format
+    for (const tool of tools) {
+      const toolKey = `tool_${serverId}_${tool.name}`;
+      // Build zod-compatible schema description from MCP inputSchema
+      const inputSchema = tool.inputSchema || {};
+      const properties = (inputSchema as any).properties || {};
+      const required = (inputSchema as any).required || [];
+
+      // Build a zod object from the JSON Schema properties
+      const zodShape: Record<string, any> = {};
+      for (const [key, prop] of Object.entries(properties)) {
+        const p = prop as { type?: string; description?: string };
+        let zodField: any;
+        switch (p.type) {
+          case 'number':
+          case 'integer':
+            zodField = z.number();
+            break;
+          case 'boolean':
+            zodField = z.boolean();
+            break;
+          case 'array':
+            zodField = z.array(z.any());
+            break;
+          case 'object':
+            zodField = z.record(z.any());
+            break;
+          default:
+            zodField = z.string();
+        }
+        if (p.description) zodField = zodField.describe(p.description);
+        if (!required.includes(key)) zodField = zodField.optional();
+        zodShape[key] = zodField;
+      }
+
+      mcpTools[toolKey] = {
+        description: tool.description || `MCP tool: ${tool.name} (from ${server.name})`,
+        inputSchema: z.object(zodShape),
+        execute: safeTool(async (args: Record<string, unknown>) => {
+          try {
+            console.log(`[Chat API] MCP tool call: ${toolKey}`, args);
+            let accessToken: string | undefined;
+            if (server.authType === 'oauth') {
+              const tokenDataRaw = await kv.get(mcpTokenKey(sessionId, serverId));
+              if (tokenDataRaw) {
+                accessToken = (JSON.parse(tokenDataRaw) as { accessToken: string }).accessToken;
+              }
+            }
+            const result = await callMcpTool(server, tool.name, args, accessToken);
+            const textParts = result.content
+              .filter((c) => c.type === 'text' && c.text)
+              .map((c) => c.text);
+            return { source: server.name, result: textParts.join('\n') || JSON.stringify(result.content) };
+          } catch (err) {
+            console.error(`[Chat API] MCP tool error (${toolKey}):`, err);
+            return { error: `MCP tool failed: ${(err as Error).message}` };
+          }
+        }),
+      };
+    }
+  }
+
+  return mcpTools;
+}
+
 // Merge consecutive same-role messages (some providers reject them)
 function sanitizeMessages(
   messages: Array<{ role: string; content: string }>,
@@ -122,11 +227,13 @@ export async function POST(request: NextRequest) {
     model: modelIdFromClient,
     provider: rawProvider,
     toolsEnabled = false,
+    mcpServers: mcpServerIds = [],
   } = body as {
     messages: Array<{ role: string; content: string }>;
     model?: string;
     provider?: ModelProvider;
     toolsEnabled?: boolean;
+    mcpServers?: string[];
   };
 
   if (!messages || !Array.isArray(messages)) {
@@ -199,7 +306,18 @@ export async function POST(request: NextRequest) {
   const maxTokens = needsThinkParsing ? 16384 : 4096;
   const skipMaxTokens = usesMaxCompletionTokens(modelId);
 
-  const tools = useTools ? { searchKnowledge: buildSearchKnowledgeTool(env as any) } : undefined;
+  // Build tools: searchKnowledge + MCP tools
+  let tools: Record<string, any> | undefined;
+  if (useTools) {
+    tools = { searchKnowledge: buildSearchKnowledgeTool(env as any) };
+
+    // Inject MCP tools if any servers are specified
+    if (mcpServerIds.length > 0) {
+      const mcpTools = await buildMcpTools(env as any, mcpServerIds);
+      Object.assign(tools, mcpTools);
+      console.log(`[Chat API] Injected ${Object.keys(mcpTools).length} MCP tools from ${mcpServerIds.length} server(s)`);
+    }
+  }
 
   function createStream(attempt: number) {
     return streamText({
