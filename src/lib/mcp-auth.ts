@@ -60,38 +60,47 @@ export interface OAuthMetadata {
 
 export async function discoverOAuthMetadata(serverUrl: string): Promise<OAuthMetadata | null> {
   const base = new URL(serverUrl);
-  const wellKnownUrl = `${base.origin}/.well-known/oauth-authorization-server`;
-  try {
-    const res = await fetch(wellKnownUrl, {
-      headers: { Accept: 'application/json' },
-    });
-    if (res.ok) {
-      return await res.json() as OAuthMetadata;
-    }
-  } catch {
-    // Fallback: try the protected resource metadata
-  }
 
-  // Try RFC 9728 Protected Resource Metadata
+  // Always fetch RFC 9728 Protected Resource Metadata first to get the canonical resource URL
+  let resourceIdentifier: string | undefined;
+  let externalAuthServerUrl: string | undefined;
   const protectedUrl = `${base.origin}/.well-known/oauth-protected-resource`;
   try {
-    const res = await fetch(protectedUrl, {
-      headers: { Accept: 'application/json' },
-    });
+    const res = await fetch(protectedUrl, { headers: { Accept: 'application/json' } });
     if (res.ok) {
       const data = await res.json() as { resource?: string; authorization_servers?: string[] };
+      resourceIdentifier = data.resource || base.origin;
       if (data.authorization_servers?.[0]) {
-        const asUrl = `${data.authorization_servers[0]}/.well-known/oauth-authorization-server`;
-        const asRes = await fetch(asUrl, { headers: { Accept: 'application/json' } });
-        if (asRes.ok) {
-          const asMeta = await asRes.json() as OAuthMetadata;
-          // Attach the resource identifier from protected resource metadata
-          return { ...asMeta, resource: data.resource || base.origin };
-        }
+        externalAuthServerUrl = `${data.authorization_servers[0]}/.well-known/oauth-authorization-server`;
       }
     }
   } catch {
-    // No OAuth metadata available
+    // ignore
+  }
+
+  // Try the server's own /.well-known/oauth-authorization-server
+  const wellKnownUrl = `${base.origin}/.well-known/oauth-authorization-server`;
+  try {
+    const res = await fetch(wellKnownUrl, { headers: { Accept: 'application/json' } });
+    if (res.ok) {
+      const meta = await res.json() as OAuthMetadata;
+      return { ...meta, resource: resourceIdentifier || base.origin };
+    }
+  } catch {
+    // ignore
+  }
+
+  // Try an external authorization server (e.g. CF Access as IdP)
+  if (externalAuthServerUrl) {
+    try {
+      const asRes = await fetch(externalAuthServerUrl, { headers: { Accept: 'application/json' } });
+      if (asRes.ok) {
+        const asMeta = await asRes.json() as OAuthMetadata;
+        return { ...asMeta, resource: resourceIdentifier || base.origin };
+      }
+    } catch {
+      // ignore
+    }
   }
 
   return null;

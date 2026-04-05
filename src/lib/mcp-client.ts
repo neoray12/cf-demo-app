@@ -95,11 +95,14 @@ export async function connectAndListTools(
       await client.connect(transport);
       connected = true;
     } catch (err: unknown) {
-      const error = err as { code?: number; message?: string };
+      const error = err as { code?: number; message?: string; status?: number };
       // 401 means OAuth required
-      if (error.code === 401 || (error.message && error.message.includes('401'))) {
+      const is401 = error.code === 401 || error.status === 401 || (error.message && error.message.includes('401'));
+      if (is401) {
+        console.error(`[MCP] StreamableHTTP 401 for ${server.id}:`, JSON.stringify(error));
         return { success: false, tools: [], requiresAuth: true };
       }
+      console.error(`[MCP] StreamableHTTP non-401 error for ${server.id}:`, JSON.stringify(error));
       // Try SSE transport as fallback
       try {
         const sseTransport = new SSEClientTransport(
@@ -109,10 +112,13 @@ export async function connectAndListTools(
         await client.connect(sseTransport);
         connected = true;
       } catch (sseErr: unknown) {
-        const sseError = sseErr as { code?: number; message?: string };
-        if (sseError.code === 401 || (sseError.message && sseError.message.includes('401'))) {
+        const sseError = sseErr as { code?: number; message?: string; status?: number };
+        const sseIs401 = sseError.code === 401 || sseError.status === 401 || (sseError.message && sseError.message.includes('401'));
+        if (sseIs401) {
+          console.error(`[MCP] SSE 401 for ${server.id}:`, JSON.stringify(sseError));
           return { success: false, tools: [], requiresAuth: true };
         }
+        console.error(`[MCP] SSE non-401 error for ${server.id}:`, JSON.stringify(sseError));
         throw sseErr;
       }
     }
