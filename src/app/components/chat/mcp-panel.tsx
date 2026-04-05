@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Plug, X, ExternalLink, LogIn, LogOut, RefreshCw, Wrench, Loader2, Check, AlertCircle, ChevronDown, ChevronRight, Code2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -152,6 +152,7 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
   const [authenticatingId, setAuthenticatingId] = useState<string | null>(null);
   const [serverTools, setServerTools] = useState<Record<string, McpTool[]>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const popupPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchServers = useCallback(async () => {
     try {
@@ -210,7 +211,20 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
       if (!popup) {
         setErrors((prev) => ({ ...prev, [serverId]: '無法開啟認證視窗，請允許彈出視窗' }));
         setAuthenticatingId(null);
+        return;
       }
+
+      // Poll for popup closure — auto-connect when user closes/completes auth
+      if (popupPollRef.current) clearInterval(popupPollRef.current);
+      popupPollRef.current = setInterval(() => {
+        if (popup.closed) {
+          if (popupPollRef.current) clearInterval(popupPollRef.current);
+          popupPollRef.current = null;
+          setAuthenticatingId(null);
+          // Try to connect regardless — token may have been stored via callback
+          handleConnect(serverId);
+        }
+      }, 800);
     } catch (err) {
       setErrors((prev) => ({ ...prev, [serverId]: `認證失敗: ${(err as Error).message}` }));
       setAuthenticatingId(null);
@@ -391,18 +405,34 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
                         </button>
                       </>
                     ) : server.authType === "oauth" && !server.connected ? (
-                      <button
-                        onClick={() => handleAuthenticate(server.id)}
-                        disabled={isAuthenticating}
-                        className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                      >
-                        {isAuthenticating ? (
-                          <Loader2 className="size-3 animate-spin" />
-                        ) : (
-                          <LogIn className="size-3" />
+                      <>
+                        <button
+                          onClick={() => handleAuthenticate(server.id)}
+                          disabled={isAuthenticating}
+                          className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          {isAuthenticating ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <LogIn className="size-3" />
+                          )}
+                          {isAuthenticating ? '認證中…' : '認證'}
+                        </button>
+                        {isAuthenticating && (
+                          <button
+                            onClick={() => {
+                              if (popupPollRef.current) clearInterval(popupPollRef.current);
+                              popupPollRef.current = null;
+                              setAuthenticatingId(null);
+                              handleConnect(server.id);
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border border-border/60 hover:bg-muted/60 transition-colors text-muted-foreground"
+                          >
+                            <Check className="size-3" />
+                            完成
+                          </button>
                         )}
-                        {isAuthenticating ? '認證中…' : '認證'}
-                      </button>
+                      </>
                     ) : (
                       <button
                         onClick={() => handleConnect(server.id)}
