@@ -221,8 +221,8 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
           if (popupPollRef.current) clearInterval(popupPollRef.current);
           popupPollRef.current = null;
           setAuthenticatingId(null);
-          // Try to connect regardless — token may have been stored via callback
-          handleConnect(serverId);
+          // Try to connect with skipAuth=true to avoid infinite re-auth loop
+          handleConnect(serverId, true);
         }
       }, 800);
     } catch (err) {
@@ -231,7 +231,7 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
     }
   };
 
-  const handleConnect = async (serverId: string) => {
+  const handleConnect = async (serverId: string, skipAuth = false) => {
     setConnectingId(serverId);
     setErrors((prev) => { const next = { ...prev }; delete next[serverId]; return next; });
 
@@ -244,8 +244,12 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
       const data = await res.json() as { connected?: boolean; tools?: McpTool[]; error?: string; requiresAuth?: boolean };
 
       if (data.requiresAuth) {
-        // Need to authenticate first
-        handleAuthenticate(serverId);
+        if (!skipAuth) {
+          handleAuthenticate(serverId);
+        } else {
+          // Called from popup-close poll: don't reopen popup, just show error
+          setErrors((prev) => ({ ...prev, [serverId]: '認證未完成，請重新認證' }));
+        }
         return;
       }
 
@@ -424,7 +428,7 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
                               if (popupPollRef.current) clearInterval(popupPollRef.current);
                               popupPollRef.current = null;
                               setAuthenticatingId(null);
-                              handleConnect(server.id);
+                              handleConnect(server.id, true);
                             }}
                             className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border border-border/60 hover:bg-muted/60 transition-colors text-muted-foreground"
                           >
