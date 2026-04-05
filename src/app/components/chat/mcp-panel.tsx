@@ -172,12 +172,15 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'mcp-auth-callback') {
+        // Clear popup poll to prevent double trigger
+        if (popupPollRef.current) {
+          clearInterval(popupPollRef.current);
+          popupPollRef.current = null;
+        }
         const { success, serverId, error } = event.data as { success: boolean; serverId?: string; error?: string };
         setAuthenticatingId(null);
         if (success && serverId) {
-          // Refresh server list to pick up new auth status
           fetchServers();
-          // Auto-connect after successful auth
           handleConnect(serverId);
         } else if (error) {
           setErrors((prev) => ({ ...prev, [authenticatingId || '']: error }));
@@ -221,8 +224,7 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
           if (popupPollRef.current) clearInterval(popupPollRef.current);
           popupPollRef.current = null;
           setAuthenticatingId(null);
-          // Try to connect with skipAuth=true to avoid infinite re-auth loop
-          handleConnect(serverId, true);
+          handleConnect(serverId);
         }
       }, 800);
     } catch (err) {
@@ -231,7 +233,7 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
     }
   };
 
-  const handleConnect = async (serverId: string, skipAuth = false) => {
+  const handleConnect = async (serverId: string) => {
     setConnectingId(serverId);
     setErrors((prev) => { const next = { ...prev }; delete next[serverId]; return next; });
 
@@ -241,15 +243,12 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ serverId }),
       });
-      const data = await res.json() as { connected?: boolean; tools?: McpTool[]; error?: string; requiresAuth?: boolean };
+      const data = await res.json() as { connected?: boolean; tools?: McpTool[]; error?: string; requiresAuth?: boolean; tokenCleared?: boolean };
 
       if (data.requiresAuth) {
-        if (!skipAuth) {
-          handleAuthenticate(serverId);
-        } else {
-          // Called from popup-close poll: don't reopen popup, just show error
-          setErrors((prev) => ({ ...prev, [serverId]: '認證未完成，請重新認證' }));
-        }
+        // Never auto-open popup — just show error and refresh server list
+        setErrors((prev) => ({ ...prev, [serverId]: data.error || 'Token 無效或已過期，請重新認證' }));
+        fetchServers();
         return;
       }
 
@@ -428,7 +427,7 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
                               if (popupPollRef.current) clearInterval(popupPollRef.current);
                               popupPollRef.current = null;
                               setAuthenticatingId(null);
-                              handleConnect(server.id, true);
+                              handleConnect(server.id);
                             }}
                             className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border border-border/60 hover:bg-muted/60 transition-colors text-muted-foreground"
                           >

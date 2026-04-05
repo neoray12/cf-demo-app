@@ -34,8 +34,9 @@ export async function POST(request: NextRequest) {
     }
     const tokenData = JSON.parse(tokenDataRaw) as { accessToken: string; expiresAt: number | null };
     if (tokenData.expiresAt && Date.now() > tokenData.expiresAt) {
+      await kv.delete(mcpTokenKey(sessionId, serverId));
       return Response.json(
-        { error: 'Token 已過期，請重新認證。', requiresAuth: true },
+        { error: 'Token 已過期，請重新認證。', requiresAuth: true, tokenCleared: true },
         { status: 401 },
       );
     }
@@ -46,8 +47,12 @@ export async function POST(request: NextRequest) {
   const result = await connectAndListTools(server, accessToken);
 
   if (result.requiresAuth) {
+    // Token was stored but rejected by MCP server — clear it
+    if (accessToken) {
+      await kv.delete(mcpTokenKey(sessionId, serverId));
+    }
     return Response.json(
-      { error: '此 MCP server 需要認證。', requiresAuth: true },
+      { error: 'Token 無效或已過期，請重新認證。', requiresAuth: true, tokenCleared: !!accessToken },
       { status: 401 },
     );
   }
