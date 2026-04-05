@@ -60,16 +60,19 @@ export interface OAuthMetadata {
 
 export async function discoverOAuthMetadata(serverUrl: string): Promise<OAuthMetadata | null> {
   const base = new URL(serverUrl);
+  // RFC 9728: path-specific protected resource metadata URL
+  // e.g. for /mcp → /.well-known/oauth-protected-resource/mcp
+  const pathSuffix = base.pathname === '/' ? '' : base.pathname;
 
-  // Always fetch RFC 9728 Protected Resource Metadata first to get the canonical resource URL
+  // 1. Fetch path-specific protected resource metadata (preferred, from workers-oauth-provider)
   let resourceIdentifier: string | undefined;
   let externalAuthServerUrl: string | undefined;
-  const protectedUrl = `${base.origin}/.well-known/oauth-protected-resource`;
+  const pathSpecificUrl = `${base.origin}/.well-known/oauth-protected-resource${pathSuffix}`;
   try {
-    const res = await fetch(protectedUrl, { headers: { Accept: 'application/json' } });
+    const res = await fetch(pathSpecificUrl, { headers: { Accept: 'application/json' } });
     if (res.ok) {
       const data = await res.json() as { resource?: string; authorization_servers?: string[] };
-      resourceIdentifier = data.resource || base.origin;
+      resourceIdentifier = data.resource;
       if (data.authorization_servers?.[0]) {
         externalAuthServerUrl = `${data.authorization_servers[0]}/.well-known/oauth-authorization-server`;
       }
@@ -78,25 +81,47 @@ export async function discoverOAuthMetadata(serverUrl: string): Promise<OAuthMet
     // ignore
   }
 
-  // Try the server's own /.well-known/oauth-authorization-server
+  // 2. Fallback: root-level protected resource metadata
+  if (!resourceIdentifier) {
+    const rootUrl = `${base.origin}/.well-known/oauth-protected-resource`;
+    try {
+      const res = await fetch(rootUrl, { headers: { Accept: 'application/json' } });
+      if (res.ok) {
+        const data = await res.json() as { resource?: string; authorization_servers?: string[] };
+        resourceIdentifier = data.resource || `${base.origin}${pathSuffix}`;
+        if (!externalAuthServerUrl && data.authorization_servers?.[0]) {
+          externalAuthServerUrl = `${data.authorization_servers[0]}/.well-known/oauth-authorization-server`;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Default resource to server URL (origin + path)
+  if (!resourceIdentifier) {
+    resourceIdentifier = `${base.origin}${pathSuffix}`;
+  }
+
+  // 3. Try the server's own /.well-known/oauth-authorization-server
   const wellKnownUrl = `${base.origin}/.well-known/oauth-authorization-server`;
   try {
     const res = await fetch(wellKnownUrl, { headers: { Accept: 'application/json' } });
     if (res.ok) {
       const meta = await res.json() as OAuthMetadata;
-      return { ...meta, resource: resourceIdentifier || base.origin };
+      return { ...meta, resource: resourceIdentifier };
     }
   } catch {
     // ignore
   }
 
-  // Try an external authorization server (e.g. CF Access as IdP)
+  // 4. Try external authorization server (e.g. CF Access as IdP)
   if (externalAuthServerUrl) {
     try {
       const asRes = await fetch(externalAuthServerUrl, { headers: { Accept: 'application/json' } });
       if (asRes.ok) {
         const asMeta = await asRes.json() as OAuthMetadata;
-        return { ...asMeta, resource: resourceIdentifier || base.origin };
+        return { ...asMeta, resource: resourceIdentifier };
       }
     } catch {
       // ignore
