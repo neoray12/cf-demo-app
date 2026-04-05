@@ -5,13 +5,14 @@ import { Plug, X, ExternalLink, LogIn, LogOut, RefreshCw, Wrench, Loader2, Check
 import { Badge } from "@/components/ui/badge";
 
 // Per-server custom icons
+const CfLogo = () => <img src="/CF_logomark.svg" alt="Cloudflare" className="h-5 w-auto object-contain" />;
+
 const SERVER_ICONS: Record<string, React.ReactNode> = {
-  'sap': (
-    <img src="/sap-logo.png" alt="SAP" className="h-6 w-auto object-contain" />
-  ),
-  'salesforce': (
-    <img src="/salesforce.svg" alt="Salesforce" className="h-6 w-auto object-contain" />
-  ),
+  'cf-docs': <CfLogo />,
+  'cf-observability': <CfLogo />,
+  'cf-radar': <CfLogo />,
+  'sap': <img src="/sap-logo.png" alt="SAP" className="h-6 w-auto object-contain" />,
+  'salesforce': <img src="/salesforce.svg" alt="Salesforce" className="h-9 w-auto object-contain" />,
 };
 
 interface McpServer {
@@ -349,11 +350,10 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
                 <div key={server.id} className="rounded-xl border bg-card p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      {SERVER_ICONS[server.id] ? (
+                      {SERVER_ICONS[server.id] && (
                         <span className="shrink-0 flex items-center">{SERVER_ICONS[server.id]}</span>
-                      ) : (
-                        <span className="text-sm font-medium truncate">{server.name}</span>
                       )}
+                      <span className="text-sm font-medium truncate">{server.name}</span>
                       {server.authType === "oauth" && (
                         <Badge variant="outline" className="h-4 px-1 text-[9px] shrink-0">OAuth</Badge>
                       )}
