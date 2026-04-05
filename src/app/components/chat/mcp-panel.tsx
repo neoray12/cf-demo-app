@@ -4,6 +4,21 @@ import { useState, useEffect, useCallback } from "react";
 import { Plug, X, ExternalLink, LogIn, LogOut, RefreshCw, Wrench, Loader2, Check, AlertCircle, ChevronDown, ChevronRight, Code2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
+// Per-server custom icons (SVG)
+const SERVER_ICONS: Record<string, React.ReactNode> = {
+  'sap': (
+    <svg viewBox="0 0 60 30" xmlns="http://www.w3.org/2000/svg" className="h-5 w-auto">
+      <rect width="60" height="30" rx="4" fill="#0070F2"/>
+      <text x="30" y="22" fontFamily="Arial,sans-serif" fontSize="17" fontWeight="bold" fill="white" textAnchor="middle">SAP</text>
+    </svg>
+  ),
+  'salesforce': (
+    <svg viewBox="0 0 128 88" xmlns="http://www.w3.org/2000/svg" className="h-5 w-auto">
+      <path d="M53.3 8.6C57.8 3.3 64.4 0 71.8 0c9.8 0 18.3 5.6 22.7 13.9 3.9-1.7 8.2-2.7 12.7-2.7 17.5 0 31.8 14.3 31.8 31.8 0 17.5-14.3 31.8-31.8 31.8-2.2 0-4.3-.2-6.4-.6C97.5 82.7 89.1 88 79.4 88c-4.1 0-8-.9-11.4-2.6C63.9 90.3 57.4 93 50.2 93H50c-1.4 0-2.7-.1-4-.3C41.7 95.2 36.5 97 30.9 97 13.8 97 0 83.2 0 66.1c0-11.1 5.7-20.9 14.3-26.6-.4-1.9-.6-3.8-.6-5.8C13.7 15 27.7 1 44.9 1c3.2 0 6.3.5 9.2 1.3l-.8 6.3z" fill="#00A1E0"/>
+    </svg>
+  ),
+};
+
 interface McpServer {
   id: string;
   url: string;
@@ -322,7 +337,11 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
                 <div key={server.id} className="rounded-xl border bg-card p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-sm font-medium truncate">{server.name}</span>
+                      {SERVER_ICONS[server.id] ? (
+                        <span className="shrink-0 flex items-center">{SERVER_ICONS[server.id]}</span>
+                      ) : (
+                        <span className="text-sm font-medium truncate">{server.name}</span>
+                      )}
                       {server.authType === "oauth" && (
                         <Badge variant="outline" className="h-4 px-1 text-[9px] shrink-0">OAuth</Badge>
                       )}
