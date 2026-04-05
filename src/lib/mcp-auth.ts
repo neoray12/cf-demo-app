@@ -55,6 +55,7 @@ export interface OAuthMetadata {
   scopes_supported?: string[];
   response_types_supported?: string[];
   code_challenge_methods_supported?: string[];
+  resource?: string;
 }
 
 export async function discoverOAuthMetadata(serverUrl: string): Promise<OAuthMetadata | null> {
@@ -78,12 +79,14 @@ export async function discoverOAuthMetadata(serverUrl: string): Promise<OAuthMet
       headers: { Accept: 'application/json' },
     });
     if (res.ok) {
-      const data = await res.json() as { authorization_servers?: string[] };
+      const data = await res.json() as { resource?: string; authorization_servers?: string[] };
       if (data.authorization_servers?.[0]) {
         const asUrl = `${data.authorization_servers[0]}/.well-known/oauth-authorization-server`;
         const asRes = await fetch(asUrl, { headers: { Accept: 'application/json' } });
         if (asRes.ok) {
-          return await asRes.json() as OAuthMetadata;
+          const asMeta = await asRes.json() as OAuthMetadata;
+          // Attach the resource identifier from protected resource metadata
+          return { ...asMeta, resource: data.resource || base.origin };
         }
       }
     }
@@ -142,6 +145,7 @@ export async function exchangeCodeForToken(
   codeVerifier: string,
   clientId: string,
   redirectUri: string,
+  resource?: string,
 ): Promise<TokenResponse> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -150,6 +154,9 @@ export async function exchangeCodeForToken(
     client_id: clientId,
     redirect_uri: redirectUri,
   });
+  if (resource) {
+    body.set('resource', resource);
+  }
 
   const res = await fetch(tokenEndpoint, {
     method: 'POST',
