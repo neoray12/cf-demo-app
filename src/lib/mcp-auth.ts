@@ -142,6 +142,7 @@ export async function exchangeCodeForToken(
   codeVerifier: string,
   clientId: string,
   redirectUri: string,
+  resource?: string,
 ): Promise<TokenResponse> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -150,6 +151,9 @@ export async function exchangeCodeForToken(
     client_id: clientId,
     redirect_uri: redirectUri,
   });
+  if (resource) {
+    body.set('resource', resource);
+  }
 
   const res = await fetch(tokenEndpoint, {
     method: 'POST',

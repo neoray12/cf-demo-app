@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
     callbackUrl: string;
     sessionId: string;
     tokenEndpoint: string;
+    resource?: string;
   };
 
   // Clean up state
@@ -55,6 +56,7 @@ export async function GET(request: NextRequest) {
       stateData.codeVerifier,
       stateData.clientId,
       stateData.callbackUrl,
+      stateData.resource,
     );
 
     // Store tokens in KV

@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
       callbackUrl,
       sessionId,
       tokenEndpoint: metadata.token_endpoint,
+      resource: server.url,
       createdAt: Date.now(),
     }),
     { expirationTtl: 600 },
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', codeChallenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
+  authUrl.searchParams.set('resource', server.url);
   if (metadata.scopes_supported?.length) {
     authUrl.searchParams.set('scope', metadata.scopes_supported.join(' '));
   }
