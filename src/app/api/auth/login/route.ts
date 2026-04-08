@@ -1,3 +1,5 @@
+import { getCloudflareContext } from '@opennextjs/cloudflare';
+
 const USERS = [
   { username: 'neo', name: 'Neo', email: 'neo@cloudflare.com' },
   { username: 'vera', name: 'Vera', email: 'vera@cloudflare.com' },
@@ -12,27 +14,26 @@ export async function POST(request: Request) {
     turnstileToken: string;
   };
 
-  const secret = process.env.TURNSTILE_SECRET_KEY;
+  const { env } = await getCloudflareContext();
+  const secret = (env as any).TURNSTILE_SECRET_KEY as string | undefined;
   if (!secret) {
     return Response.json({ error: 'Server misconfiguration' }, { status: 500 });
   }
 
-  if (turnstileToken) {
-    try {
-      const formData = new FormData();
-      formData.append('secret', secret);
-      formData.append('response', turnstileToken);
-      const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-        method: 'POST',
-        body: formData,
-      });
-      const verifyData = await verifyRes.json() as { success: boolean };
-      if (!verifyData.success) {
-        console.warn('[login] Turnstile validation failed (soft)', verifyData);
-      }
-    } catch (e) {
-      console.warn('[login] Turnstile siteverify error (soft)', e);
-    }
+  if (!turnstileToken) {
+    return Response.json({ error: '請完成人機驗證' }, { status: 400 });
+  }
+
+  const formData = new FormData();
+  formData.append('secret', secret);
+  formData.append('response', turnstileToken);
+  const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    body: formData,
+  });
+  const verifyData = await verifyRes.json() as { success: boolean };
+  if (!verifyData.success) {
+    return Response.json({ error: '人機驗證失敗，請重試' }, { status: 400 });
   }
 
   const user = USERS.find(u => u.username === username && password === username);
