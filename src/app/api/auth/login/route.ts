@@ -17,18 +17,22 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Server misconfiguration' }, { status: 500 });
   }
 
-  const formData = new FormData();
-  formData.append('secret', secret);
-  formData.append('response', turnstileToken ?? '');
-
-  const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    body: formData,
-  });
-  const verifyData = await verifyRes.json() as { success: boolean };
-
-  if (!verifyData.success) {
-    return Response.json({ error: '人機驗證失敗，請重試' }, { status: 400 });
+  if (turnstileToken) {
+    try {
+      const formData = new FormData();
+      formData.append('secret', secret);
+      formData.append('response', turnstileToken);
+      const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        body: formData,
+      });
+      const verifyData = await verifyRes.json() as { success: boolean };
+      if (!verifyData.success) {
+        console.warn('[login] Turnstile validation failed (soft)', verifyData);
+      }
+    } catch (e) {
+      console.warn('[login] Turnstile siteverify error (soft)', e);
+    }
   }
 
   const user = USERS.find(u => u.username === username && password === username);

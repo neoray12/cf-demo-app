@@ -31,7 +31,7 @@
     "passwordPlaceholder": "輸入密碼",
     "loggingIn": "登入中...",
     "loginButton": "登入",
-    "demoHint": "Demo 版本 — 輸入任意帳號密碼即可登入"
+    "demoHint": ""
   },
   "chat": {
     "title": "AI Agent",

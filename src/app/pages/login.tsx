@@ -25,14 +25,22 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileReady, setTurnstileReady] = useState(false);
   const isZh = i18n.language === "zh-TW" || i18n.language?.startsWith("zh");
 
   useEffect(() => {
-    (window as any).onTurnstileSuccess = (token: string) => setTurnstileToken(token);
+    (window as any).onTurnstileSuccess = (token: string) => {
+      setTurnstileToken(token);
+      setTurnstileReady(true);
+    };
     (window as any).onTurnstileExpired = () => setTurnstileToken("");
+    (window as any).onTurnstileError = () => setTurnstileReady(true);
+    const timer = setTimeout(() => setTurnstileReady(true), 6000);
     return () => {
+      clearTimeout(timer);
       delete (window as any).onTurnstileSuccess;
       delete (window as any).onTurnstileExpired;
+      delete (window as any).onTurnstileError;
     };
   }, []);
 
@@ -147,6 +155,7 @@ export function LoginPage() {
                 data-sitekey="0x4AAAAAAC2QlDdiFqByHU1Z"
                 data-callback="onTurnstileSuccess"
                 data-expired-callback="onTurnstileExpired"
+                data-error-callback="onTurnstileError"
                 data-theme="auto"
               />
             </div>
@@ -155,13 +164,10 @@ export function LoginPage() {
               <p className="text-sm text-destructive text-center">{error}</p>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading || !turnstileToken}>
+            <Button type="submit" className="w-full" disabled={loading || !turnstileReady}>
               {loading ? t("login.loggingIn") : t("login.loginButton")}
             </Button>
           </form>
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            {t("login.demoHint")}
-          </p>
         </CardContent>
       </Card>
     </div>

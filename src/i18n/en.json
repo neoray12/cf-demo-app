@@ -31,7 +31,7 @@
     "passwordPlaceholder": "Enter password",
     "loggingIn": "Signing in...",
     "loginButton": "Sign In",
-    "demoHint": "Demo version — enter any username and password to sign in"
+    "demoHint": ""
   },
   "chat": {
     "title": "AI Agent",
