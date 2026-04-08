@@ -288,13 +288,15 @@ export async function POST(request: NextRequest) {
   const department = userEmail && TECH_EMAILS.has(userEmail) ? '技術' : '業務';
 
   // Build metadata header for AI Gateway analytics
-  const metadata = JSON.stringify({
+  // encodeURIComponent ensures non-ASCII chars (e.g. Chinese) are percent-encoded
+  // so the header value stays within ByteString range (0-255)
+  const metadata = encodeURIComponent(JSON.stringify({
     tools_enabled: toolsEnabled,
     name: userName ?? 'anonymous',
     email: userEmail ?? 'unknown',
     usertier,
     department,
-  });
+  }));
 
   const openai = createOpenAI({
     apiKey: isExternal ? 'aig-managed' : (cfApiToken || 'dummy'),
