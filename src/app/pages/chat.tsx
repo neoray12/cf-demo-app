@@ -603,6 +603,13 @@ export function ChatPage() {
       let gotError = false;
       let hasToolResults = false;
 
+      let userName: string | undefined;
+      let userEmail: string | undefined;
+      try {
+        const raw = localStorage.getItem("cf-demo-user");
+        if (raw) { const u = JSON.parse(raw); userName = u.name; userEmail = u.email; }
+      } catch {}
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -612,6 +619,8 @@ export function ChatPage() {
           provider,
           toolsEnabled,
           mcpServers: connectedMcpServers,
+          userName,
+          userEmail,
         }),
         signal: controller.signal,
       });

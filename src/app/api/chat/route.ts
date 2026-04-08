@@ -228,12 +228,16 @@ export async function POST(request: NextRequest) {
     provider: rawProvider,
     toolsEnabled = false,
     mcpServers: mcpServerIds = [],
+    userName,
+    userEmail,
   } = body as {
     messages: Array<{ role: string; content: string }>;
     model?: string;
     provider?: ModelProvider;
     toolsEnabled?: boolean;
     mcpServers?: string[];
+    userName?: string;
+    userEmail?: string;
   };
 
   if (!messages || !Array.isArray(messages)) {
@@ -275,11 +279,17 @@ export async function POST(request: NextRequest) {
   // Workers AI: CF_API_TOKEN as Authorization header
   // External providers: strip Authorization so AI Gateway uses stored credentials
   const isExternal = provider !== 'workers-ai';
+  // usertier: vera & kevin(menghsien) are VIP, others are regular
+  const VIP_EMAILS = new Set(['vera@cloudflare.com', 'menghsien@cloudflare.com']);
+  const usertier = userEmail && VIP_EMAILS.has(userEmail) ? 'VIP' : 'regular';
+
   // Build metadata header for AI Gateway analytics
   const metadata = JSON.stringify({
-    model: compatModelId,
     provider,
     tools_enabled: toolsEnabled,
+    name: userName ?? 'anonymous',
+    email: userEmail ?? 'unknown',
+    usertier,
   });
 
   const openai = createOpenAI({
