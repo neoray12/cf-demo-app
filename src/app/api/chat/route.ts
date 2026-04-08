@@ -289,22 +289,22 @@ export async function POST(request: NextRequest) {
   const department = userEmail && TECH_EMAILS.has(userEmail) ? '技術' : '業務';
 
   // Build metadata header for AI Gateway analytics
-  // encodeURIComponent ensures non-ASCII chars (e.g. Chinese) are percent-encoded
-  // so the header value stays within ByteString range (0-255)
-  const metadata = encodeURIComponent(JSON.stringify({
+  // Use \uXXXX escape for non-ASCII chars (e.g. Chinese) to keep header Latin-1/ByteString safe
+  // AI Gateway parses unicode escapes correctly — do NOT encodeURIComponent
+  const metadataJson = JSON.stringify({
     tools_enabled: toolsEnabled,
     name: userName ?? 'anonymous',
     email: userEmail ?? 'unknown',
     usertier,
     department,
-  }));
+  }).replace(/[^\x20-\x7E]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
 
   const openai = createOpenAI({
     apiKey: isExternal ? 'aig-managed' : (cfApiToken || 'dummy'),
     baseURL,
     headers: {
       ...(aigToken ? { 'cf-aig-authorization': `Bearer ${aigToken}` } : {}),
-      'cf-aig-metadata': metadata,
+      'cf-aig-metadata': metadataJson,
     },
     fetch: isExternal
       ? (url, init) => {
