@@ -283,13 +283,17 @@ export async function POST(request: NextRequest) {
   const VIP_EMAILS = new Set(['vera@cloudflare.com', 'menghsien@cloudflare.com']);
   const usertier = userEmail && VIP_EMAILS.has(userEmail) ? 'VIP' : 'regular';
 
+  // department: neo=技術, others=業務
+  const TECH_EMAILS = new Set(['neo@cloudflare.com']);
+  const department = userEmail && TECH_EMAILS.has(userEmail) ? '技術' : '業務';
+
   // Build metadata header for AI Gateway analytics
   const metadata = JSON.stringify({
-    provider,
     tools_enabled: toolsEnabled,
     name: userName ?? 'anonymous',
     email: userEmail ?? 'unknown',
     usertier,
+    department,
   });
 
   const openai = createOpenAI({
