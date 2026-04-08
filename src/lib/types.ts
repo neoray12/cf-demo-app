@@ -7,6 +7,7 @@ export interface AIModel {
   workersAiModel?: string;
   providerModelId?: string;
   reasoning?: boolean;
+  iconUrl?: string;
 }
 
 export const AI_MODELS: AIModel[] = [
@@ -40,6 +41,22 @@ export const AI_MODELS: AIModel[] = [
     name: "GPT OSS 20B",
     provider: "workers-ai",
     workersAiModel: "@cf/openai/gpt-oss-20b",
+  },
+  {
+    id: "kimi-k2.5",
+    name: "Kimi K2.5",
+    provider: "workers-ai",
+    workersAiModel: "@cf/moonshotai/kimi-k2.5",
+    reasoning: true,
+    iconUrl: "/moonshotai.svg",
+  },
+  {
+    id: "gemma-4-26b",
+    name: "Gemma 4 26B A4B",
+    provider: "workers-ai",
+    workersAiModel: "@cf/google/gemma-4-26b-a4b-it",
+    reasoning: true,
+    iconUrl: "/google.svg",
   },
   // OpenAI
   {

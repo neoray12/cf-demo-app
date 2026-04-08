@@ -46,7 +46,8 @@ function ClaudeIcon({ className }: { className?: string }) {
   );
 }
 
-function ProviderIcon({ provider, className }: { provider: ModelProvider; reasoning?: boolean; className?: string }) {
+function ProviderIcon({ provider, iconUrl, className }: { provider: ModelProvider; iconUrl?: string; className?: string }) {
+  if (iconUrl) return <img src={iconUrl} alt="" className={className} style={{ objectFit: "contain" }} />;
   if (provider === "openai") return <OpenAIIcon className={className} />;
   if (provider === "perplexity") return <PerplexityIcon className={className} />;
   if (provider === "anthropic") return <ClaudeIcon className={className} />;
@@ -84,7 +85,7 @@ export function ModelSelector({ selectedModel, onModelChange }: ModelSelectorPro
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
-          <ProviderIcon provider={current.provider} reasoning={current.reasoning} className="size-3.5" />
+          <ProviderIcon provider={current.provider} iconUrl={current.iconUrl} className="size-3.5" />
           <span className="hidden sm:inline">{current.name}</span>
           <ChevronDown className="size-3" />
         </Button>
@@ -105,7 +106,7 @@ export function ModelSelector({ selectedModel, onModelChange }: ModelSelectorPro
                   onClick={() => onModelChange(model.id)}
                   className={selectedModel === model.id ? "bg-accent" : ""}
                 >
-                  <ProviderIcon provider={model.provider} reasoning={model.reasoning} className="size-4 mr-2 shrink-0" />
+                  <ProviderIcon provider={model.provider} iconUrl={model.iconUrl} className="size-4 mr-2 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate">{model.name}</div>
                     {model.reasoning && (

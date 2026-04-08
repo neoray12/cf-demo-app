@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../cf-demo-mcp-proxy-sap"
+		},
+		{
+			"path": "../cf-demo-mcp-proxy-salesforce"
 		}
 	],
 	"settings": {}

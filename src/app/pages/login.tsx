@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,14 +9,32 @@ import { Eye, EyeOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 
+const DEMO_USERS = [
+  { username: 'neo', name: 'Neo', email: 'neo@cloudflare.com' },
+  { username: 'vera', name: 'Vera', email: 'vera@cloudflare.com' },
+  { username: 'menghsien', name: 'Kevin', email: 'menghsien@cloudflare.com' },
+  { username: 'demo', name: 'Demo', email: 'demo@cloudflare.com' },
+];
+
 export function LoginPage() {
   const router = useRouter();
   const { t } = useTranslation();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("neo");
+  const [password, setPassword] = useState("neo");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
   const isZh = i18n.language === "zh-TW" || i18n.language?.startsWith("zh");
+
+  useEffect(() => {
+    (window as any).onTurnstileSuccess = (token: string) => setTurnstileToken(token);
+    (window as any).onTurnstileExpired = () => setTurnstileToken("");
+    return () => {
+      delete (window as any).onTurnstileSuccess;
+      delete (window as any).onTurnstileExpired;
+    };
+  }, []);
 
   const toggleLanguage = () => {
     const next = isZh ? "en" : "zh-TW";
@@ -25,11 +43,35 @@ export function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+
+    if (!turnstileToken) {
+      setError("請完成人機驗證");
+      return;
+    }
+
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 500));
-    localStorage.setItem("cf-demo-auth", "true");
-    setLoading(false);
-    router.push("/");
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, turnstileToken }),
+      });
+      const data = await res.json() as { name?: string; email?: string; error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "登入失敗");
+        if ((window as any).turnstile) (window as any).turnstile.reset();
+        setTurnstileToken("");
+        return;
+      }
+      localStorage.setItem("cf-demo-auth", "true");
+      localStorage.setItem("cf-demo-user", JSON.stringify({ name: data.name, email: data.email }));
+      router.push("/");
+    } catch {
+      setError("登入失敗，請稍後再試");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -97,7 +139,23 @@ export function LoginPage() {
                 </button>
               </div>
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+
+            {/* Turnstile widget */}
+            <div className="flex justify-center">
+              <div
+                className="cf-turnstile"
+                data-sitekey="0x4AAAAAAC2QlDdiFqByHU1Z"
+                data-callback="onTurnstileSuccess"
+                data-expired-callback="onTurnstileExpired"
+                data-theme="auto"
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm text-destructive text-center">{error}</p>
+            )}
+
+            <Button type="submit" className="w-full" disabled={loading || !turnstileToken}>
               {loading ? t("login.loggingIn") : t("login.loginButton")}
             </Button>
           </form>

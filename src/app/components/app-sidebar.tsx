@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bot,
@@ -79,6 +79,7 @@ export function AppSidebar() {
   const { setOpenMobile, isMobile } = useSidebar();
   const { theme, toggleTheme } = useTheme();
   const { t, i18n } = useTranslation();
+  const [currentUser, setCurrentUser] = useState<{ name: string; email: string } | null>(null);
 
   const isCrawlerActive = pathname.startsWith("/crawler");
   const isLogsActive = pathname === "/logs";
@@ -93,6 +94,13 @@ export function AppSidebar() {
     toggleNode,
     selectFile,
   } = useLogExplorer();
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("cf-demo-user");
+      if (raw) setCurrentUser(JSON.parse(raw));
+    } catch {}
+  }, []);
 
   // Load buckets when entering /logs
   useEffect(() => {
@@ -287,9 +295,9 @@ export function AppSidebar() {
                       <Bot className="size-4" />
                     </div>
                     <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-semibold">{t("common.demoUser")}</span>
+                      <span className="truncate font-semibold">{currentUser?.name ?? t("common.demoUser")}</span>
                       <span className="truncate text-xs text-muted-foreground">
-                        {t("common.demoEmail")}
+                        {currentUser?.email ?? t("common.demoEmail")}
                       </span>
                     </div>
                     <ChevronUp className="ml-auto size-4" />
@@ -444,9 +452,9 @@ export function AppSidebar() {
                     <Bot className="size-4" />
                   </div>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">{t("common.demoUser")}</span>
+                    <span className="truncate font-semibold">{currentUser?.name ?? t("common.demoUser")}</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      {t("common.demoEmail")}
+                      {currentUser?.email ?? t("common.demoEmail")}
                     </span>
                   </div>
                   <ChevronUp className="ml-auto size-4" />
