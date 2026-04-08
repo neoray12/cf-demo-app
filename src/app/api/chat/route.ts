@@ -16,9 +16,10 @@ const TOOL_CAPABLE_WORKERS_AI = [
   /llama.*instruct/i,
   /llama.*function/i,
   /gpt-oss/i,
-  /gemma.*instruct/i,
+  /gemma/i,
   /qwen.*instruct/i,
   /mistral.*instruct/i,
+  /kimi/i,
 ];
 
 function modelSupportsTools(provider: ModelProvider, modelId: string): boolean {
