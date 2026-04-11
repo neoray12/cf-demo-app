@@ -52,7 +52,7 @@ export async function GET(request: Request) {
 
 // POST /api/openclaw/instances — create a new instance
 export async function POST(request: Request) {
-  const { env } = await getCloudflareContext();
+  const { env, ctx } = await getCloudflareContext();
   const kv = (env as any).KV as KVNamespace;
 
   const body = await request.json() as {
@@ -160,8 +160,7 @@ export async function POST(request: Request) {
     }
   })();
 
-  // Use waitUntil if available (Cloudflare Workers), otherwise just fire-and-forget
-  const ctx = (env as any).ctx;
+  // Use waitUntil so the provision task survives after the HTTP response is sent
   if (ctx?.waitUntil) {
     ctx.waitUntil(provisionPromise);
   }
