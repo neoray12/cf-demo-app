@@ -35,7 +35,7 @@ export default function OpenClawViewPage({ instanceId }: { instanceId: string })
         }
 
         // Redirect to companion worker directly — supports both HTTP and WebSocket
-        const sandboxUrl = 'https://cf-openclaw-sandbox.neo-cloudflare.workers.dev';
+        const sandboxUrl = 'https://saas-cfclaw.neokung.work';
         window.location.replace(`${sandboxUrl}/api/proxy/${instanceId}/?token=${inst.gatewayToken}`);
       } catch {
         setError('載入失敗');

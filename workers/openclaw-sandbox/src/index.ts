@@ -411,7 +411,8 @@ async function proxyHandler(c: any) {
     const contentType = containerRes.headers.get('content-type') || '';
     if (contentType.includes('text/html') && (proxyPath === '/' || proxyPath === '')) {
       const html = await containerRes.text();
-      const wsUrl = `wss://cf-openclaw-sandbox.neo-cloudflare.workers.dev/api/proxy/${instanceId}`;
+      const proxyHost = request.headers.get('host') || 'cf-openclaw-sandbox.neo-cloudflare.workers.dev';
+      const wsUrl = `wss://${proxyHost}/api/proxy/${instanceId}`;
       const inject = `<script>
 (function(){
   try {
