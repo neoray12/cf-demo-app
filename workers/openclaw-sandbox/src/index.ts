@@ -57,19 +57,6 @@ app.use('/api/*', async (c, next) => {
 // Health check (no auth)
 app.get('/health', (c) => c.json({ ok: true, service: 'openclaw-sandbox' }));
 
-// Diagnostic endpoint (temporary) — exec a command inside a running container
-app.post('/api/exec/:instanceId', async (c) => {
-  const instanceId = c.req.param('instanceId');
-  const { command } = await c.req.json<{ command: string }>();
-  try {
-    const sandbox = getSandbox(c.env.Sandbox, instanceId, { containerTimeouts: CONTAINER_TIMEOUTS });
-    const result = await sandbox.exec(command || 'echo ok', { timeout: 30_000 });
-    return c.json({ instanceId, result });
-  } catch (error) {
-    return c.json({ instanceId, error: (error as Error).message }, 500);
-  }
-});
-
 /**
  * POST /api/provision/:instanceId
  * Create and start a sandbox container for a tenant.
@@ -152,14 +139,14 @@ app.get('/api/status/:instanceId', async (c) => {
       containerTimeouts: CONTAINER_TIMEOUTS,
     });
 
-    // Try to check if gateway is responding
+    // Try to check if gateway is responding (OpenClaw serves UI at /)
     let gatewayReady = false;
     try {
       const statusRes = await Promise.race([
-        sandbox.containerFetch(new Request('http://localhost/api/status'), GATEWAY_PORT),
+        sandbox.containerFetch(new Request('http://localhost/'), GATEWAY_PORT),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
       ]);
-      gatewayReady = statusRes !== null && (statusRes as Response).ok;
+      gatewayReady = statusRes !== null && (statusRes as Response).status < 500;
     } catch {
       // Container may be sleeping or not started
     }
