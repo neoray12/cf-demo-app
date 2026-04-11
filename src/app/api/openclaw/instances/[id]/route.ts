@@ -6,8 +6,8 @@ const KV_PREFIX = 'openclaw:';
 
 function getSandboxEnv(env: any) {
   return {
-    OPENCLAW_SANDBOX_URL: env.OPENCLAW_SANDBOX_URL as string | undefined,
-    OPENCLAW_SANDBOX_SECRET: env.OPENCLAW_SANDBOX_SECRET as string | undefined,
+    OPENCLAW_SANDBOX_URL: (env.OPENCLAW_SANDBOX_URL || process.env.OPENCLAW_SANDBOX_URL) as string | undefined,
+    OPENCLAW_SANDBOX_SECRET: (env.OPENCLAW_SANDBOX_SECRET || process.env.OPENCLAW_SANDBOX_SECRET) as string | undefined,
   };
 }
 

@@ -114,9 +114,10 @@ export async function POST(request: Request) {
   await kv.put(`${KV_PREFIX}${id}`, JSON.stringify(instance));
 
   // Provision real Sandbox container via companion worker
+  // Fall back to process.env for local Next.js dev (npm run dev doesn't read .dev.vars)
   const sandboxEnv = {
-    OPENCLAW_SANDBOX_URL: (env as any).OPENCLAW_SANDBOX_URL as string | undefined,
-    OPENCLAW_SANDBOX_SECRET: (env as any).OPENCLAW_SANDBOX_SECRET as string | undefined,
+    OPENCLAW_SANDBOX_URL: ((env as any).OPENCLAW_SANDBOX_URL || process.env.OPENCLAW_SANDBOX_URL) as string | undefined,
+    OPENCLAW_SANDBOX_SECRET: ((env as any).OPENCLAW_SANDBOX_SECRET || process.env.OPENCLAW_SANDBOX_SECRET) as string | undefined,
   };
 
   // Fire-and-forget: provision sandbox in background, update KV on completion
