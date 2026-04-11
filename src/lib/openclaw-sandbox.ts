@@ -74,12 +74,13 @@ export async function startSandbox(
   env: SandboxEnv,
   instanceId: string,
   gatewayToken: string,
-  sleepAfter?: string
+  sleepAfter?: string,
+  aiConfig?: { aiProvider?: string; aiModel?: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const res = await sandboxFetch(env, `/api/start/${instanceId}`, {
       method: 'POST',
-      body: JSON.stringify({ gatewayToken, sleepAfter }),
+      body: JSON.stringify({ gatewayToken, sleepAfter, ...aiConfig }),
     });
     const data = await res.json() as Record<string, unknown>;
     if (!res.ok) {
@@ -112,12 +113,13 @@ export async function stopSandbox(
 export async function restartSandbox(
   env: SandboxEnv,
   instanceId: string,
-  gatewayToken: string
+  gatewayToken: string,
+  aiConfig?: { aiProvider?: string; aiModel?: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const res = await sandboxFetch(env, `/api/restart/${instanceId}`, {
       method: 'POST',
-      body: JSON.stringify({ gatewayToken }),
+      body: JSON.stringify({ gatewayToken, ...aiConfig }),
     });
     const data = await res.json() as Record<string, unknown>;
     if (!res.ok) {

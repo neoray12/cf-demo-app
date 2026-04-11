@@ -212,7 +212,7 @@ app.get('/api/status/:instanceId', async (c) => {
  */
 app.post('/api/start/:instanceId', async (c) => {
   const instanceId = c.req.param('instanceId');
-  const body = await c.req.json<{ gatewayToken: string; sleepAfter?: string }>();
+  const body = await c.req.json<{ gatewayToken: string; sleepAfter?: string; aiProvider?: string; aiModel?: string }>();
 
   try {
     const sleepAfter = body.sleepAfter || '10m';
@@ -236,12 +236,17 @@ app.post('/api/start/:instanceId', async (c) => {
     const envVars: Record<string, string> = {
       OPENCLAW_GATEWAY_TOKEN: body.gatewayToken,
     };
-    if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY) {
+    if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY && c.env.CF_AI_GATEWAY_ACCOUNT_ID && c.env.CF_AI_GATEWAY_GATEWAY_ID) {
       envVars.CLOUDFLARE_AI_GATEWAY_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
-      envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID || '';
-      envVars.CF_AI_GATEWAY_GATEWAY_ID = c.env.CF_AI_GATEWAY_GATEWAY_ID || '';
+      envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID;
+      envVars.CF_AI_GATEWAY_GATEWAY_ID = c.env.CF_AI_GATEWAY_GATEWAY_ID;
+      if (body.aiModel) {
+        envVars.CF_AI_GATEWAY_MODEL = `${body.aiProvider || 'anthropic'}/${body.aiModel}`;
+      }
     } else if (c.env.ANTHROPIC_API_KEY) {
       envVars.ANTHROPIC_API_KEY = c.env.ANTHROPIC_API_KEY;
+    } else if (c.env.OPENAI_API_KEY) {
+      envVars.OPENAI_API_KEY = c.env.OPENAI_API_KEY;
     }
 
     await sandbox.startProcess('/usr/local/bin/start-openclaw.sh', { env: envVars });
@@ -283,7 +288,7 @@ app.post('/api/stop/:instanceId', async (c) => {
  */
 app.post('/api/restart/:instanceId', async (c) => {
   const instanceId = c.req.param('instanceId');
-  const body = await c.req.json<{ gatewayToken: string }>();
+  const body = await c.req.json<{ gatewayToken: string; aiProvider?: string; aiModel?: string }>();
 
   try {
     const sandbox = getSandbox(c.env.Sandbox, instanceId, {
@@ -305,13 +310,17 @@ app.post('/api/restart/:instanceId', async (c) => {
     const envVars: Record<string, string> = {
       OPENCLAW_GATEWAY_TOKEN: body.gatewayToken,
     };
-    if (c.env.ANTHROPIC_API_KEY) {
-      envVars.ANTHROPIC_API_KEY = c.env.ANTHROPIC_API_KEY;
-    }
-    if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY) {
+    if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY && c.env.CF_AI_GATEWAY_ACCOUNT_ID && c.env.CF_AI_GATEWAY_GATEWAY_ID) {
       envVars.CLOUDFLARE_AI_GATEWAY_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
-      envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID || '';
-      envVars.CF_AI_GATEWAY_GATEWAY_ID = c.env.CF_AI_GATEWAY_GATEWAY_ID || '';
+      envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID;
+      envVars.CF_AI_GATEWAY_GATEWAY_ID = c.env.CF_AI_GATEWAY_GATEWAY_ID;
+      if (body.aiModel) {
+        envVars.CF_AI_GATEWAY_MODEL = `${body.aiProvider || 'anthropic'}/${body.aiModel}`;
+      }
+    } else if (c.env.ANTHROPIC_API_KEY) {
+      envVars.ANTHROPIC_API_KEY = c.env.ANTHROPIC_API_KEY;
+    } else if (c.env.OPENAI_API_KEY) {
+      envVars.OPENAI_API_KEY = c.env.OPENAI_API_KEY;
     }
 
     await sandbox.startProcess('/usr/local/bin/start-openclaw.sh', { env: envVars });

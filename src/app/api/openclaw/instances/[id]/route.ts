@@ -78,7 +78,10 @@ export async function PATCH(
 
     // Resume → start sandbox
     if (newStatus === 'active' && (oldStatus === 'suspended' || oldStatus === 'sleeping')) {
-      const result = await startSandbox(sandboxEnv, id, instance.gatewayToken, instance.config.sleepAfter);
+      const result = await startSandbox(sandboxEnv, id, instance.gatewayToken, instance.config.sleepAfter, {
+        aiProvider: instance.config.aiProvider,
+        aiModel: instance.config.aiModel,
+      });
       if (!result.success) {
         console.error(`[OpenClaw] Start failed for ${id}:`, result.error);
       }
