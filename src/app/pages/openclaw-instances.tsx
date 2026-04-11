@@ -427,7 +427,7 @@ export function OpenClawInstancesPage() {
                           size="sm"
                           className="h-7 text-xs flex-1"
                           onClick={() => {
-                            window.open(`/openclaw/view/${instance.id}`, '_blank');
+                            window.open(`/api/openclaw/proxy/${instance.id}?token=${instance.gatewayToken}`, '_blank');
                           }}
                         >
                           <ExternalLink className="size-3 mr-1" />

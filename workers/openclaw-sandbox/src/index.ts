@@ -266,11 +266,19 @@ app.post('/api/restart/:instanceId', async (c) => {
 });
 
 /**
- * ALL /api/proxy/:instanceId/*
+ * ALL /api/proxy/:instanceId{/*}?
  * Proxy HTTP requests to the OpenClaw gateway inside the sandbox container.
  * Also handles WebSocket upgrade for real-time communication.
  */
+app.all('/api/proxy/:instanceId', async (c) => {
+  // Handle root path (no trailing path) — redirect to handler below
+  return proxyHandler(c);
+});
 app.all('/api/proxy/:instanceId/*', async (c) => {
+  return proxyHandler(c);
+});
+
+async function proxyHandler(c: any) {
   const instanceId = c.req.param('instanceId');
   const request = c.req.raw;
   const url = new URL(request.url);
@@ -338,6 +346,6 @@ app.all('/api/proxy/:instanceId/*', async (c) => {
       502
     );
   }
-});
+}
 
 export default app;
