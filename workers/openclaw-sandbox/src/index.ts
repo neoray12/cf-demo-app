@@ -14,6 +14,11 @@ export { Sandbox };
 
 const GATEWAY_PORT = 18789;
 
+// Default sleepAfter for ALL getSandbox() calls.
+// Without this, the SDK uses ~30s default which destroys the container (wipes filesystem)
+// after just 30s of no requests. Always pass this to preserve the container state.
+const DEFAULT_SLEEP_AFTER = '30m';
+
 // Container cold start with Node.js 22 + OpenClaw needs more time than SDK defaults
 const CONTAINER_TIMEOUTS = {
   instanceGetTimeoutMS: 120_000, // 2 min for provisioning (default 30s)
@@ -162,6 +167,7 @@ app.get('/api/status/:instanceId', async (c) => {
   try {
     const sandbox = getSandbox(c.env.Sandbox, instanceId, {
       containerTimeouts: CONTAINER_TIMEOUTS,
+      sleepAfter: DEFAULT_SLEEP_AFTER,
     });
 
     // Try to check if gateway is responding (OpenClaw serves UI at /)
@@ -169,7 +175,7 @@ app.get('/api/status/:instanceId', async (c) => {
     try {
       const statusRes = await Promise.race([
         sandbox.containerFetch(new Request('http://localhost/'), GATEWAY_PORT),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)),
       ]);
       gatewayReady = statusRes !== null && (statusRes as Response).status < 500;
     } catch {
@@ -270,11 +276,17 @@ app.post('/api/restart/:instanceId', async (c) => {
   try {
     const sandbox = getSandbox(c.env.Sandbox, instanceId, {
       containerTimeouts: CONTAINER_TIMEOUTS,
+      sleepAfter: DEFAULT_SLEEP_AFTER,
     });
 
     // Kill existing gateway processes
     await sandbox.exec('pkill -f "openclaw gateway" || true');
     await new Promise((r) => setTimeout(r, 1000));
+
+    // Patch dangerouslyDisableDeviceAuth into config before restarting
+    try {
+      await sandbox.exec(`node -e "const fs=require('fs'),p='/root/.openclaw/openclaw.json';try{let c=JSON.parse(fs.readFileSync(p,'utf8'));c.gateway=c.gateway||{};c.gateway.controlUi=c.gateway.controlUi||{};c.gateway.controlUi.dangerouslyDisableDeviceAuth=true;fs.writeFileSync(p,JSON.stringify(c,null,2));}catch(e){fs.mkdirSync('/root/.openclaw',{recursive:true});fs.writeFileSync(p,JSON.stringify({gateway:{controlUi:{dangerouslyDisableDeviceAuth:true}}},null,2));}"`);
+    } catch {}
 
     // Restart
     const envVars: Record<string, string> = {
@@ -282,6 +294,11 @@ app.post('/api/restart/:instanceId', async (c) => {
     };
     if (c.env.ANTHROPIC_API_KEY) {
       envVars.ANTHROPIC_API_KEY = c.env.ANTHROPIC_API_KEY;
+    }
+    if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY) {
+      envVars.CLOUDFLARE_AI_GATEWAY_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
+      envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID || '';
+      envVars.CF_AI_GATEWAY_GATEWAY_ID = c.env.CF_AI_GATEWAY_GATEWAY_ID || '';
     }
 
     await sandbox.startProcess('/usr/local/bin/start-openclaw.sh', { env: envVars });
@@ -304,7 +321,7 @@ app.post('/api/exec/:instanceId', async (c) => {
   const body = await c.req.json<{ command: string }>();
   if (!body.command) return c.json({ error: 'command required' }, 400);
 
-  const sandbox = getSandbox(c.env.Sandbox, instanceId, { containerTimeouts: CONTAINER_TIMEOUTS });
+  const sandbox = getSandbox(c.env.Sandbox, instanceId, { containerTimeouts: CONTAINER_TIMEOUTS, sleepAfter: DEFAULT_SLEEP_AFTER });
   try {
     const result = await sandbox.exec(body.command);
     return c.json({ output: result });
@@ -339,6 +356,7 @@ async function proxyHandler(c: any) {
 
   const sandbox = getSandbox(c.env.Sandbox, instanceId, {
     containerTimeouts: CONTAINER_TIMEOUTS,
+    sleepAfter: DEFAULT_SLEEP_AFTER,
   });
   const isWebSocket = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
 
