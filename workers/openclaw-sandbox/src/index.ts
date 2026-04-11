@@ -79,6 +79,7 @@ app.post('/api/provision/:instanceId', async (c) => {
     // Build environment variables for the OpenClaw gateway
     const envVars: Record<string, string> = {
       OPENCLAW_GATEWAY_TOKEN: body.gatewayToken,
+      OPENCLAW_INSTANCE_ID: instanceId,
     };
 
     // AI provider configuration

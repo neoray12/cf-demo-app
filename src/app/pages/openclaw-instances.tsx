@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Plus, ExternalLink, Pause, Play, Trash2, Loader2, Boxes, RefreshCw } from 'lucide-react';
+import { Plus, ExternalLink, Pause, Play, Trash2, Loader2, Boxes, RefreshCw, Settings } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -79,6 +79,13 @@ export function OpenClawInstancesPage() {
   const [formModel, setFormModel] = useState('claude-sonnet-4-20250514');
   const [formSleep, setFormSleep] = useState('10m');
 
+  // Settings dialog
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInstance, setSettingsInstance] = useState<OpenClawInstance | null>(null);
+  const [channelTelegram, setChannelTelegram] = useState('');
+  const [channelDiscord, setChannelDiscord] = useState('');
+  const [channelSlack, setChannelSlack] = useState('');
+
   const currentUser = (() => {
     try {
       const raw = localStorage.getItem('cf-demo-user');
@@ -113,6 +120,60 @@ export function OpenClawInstancesPage() {
     const interval = setInterval(fetchInstances, 3000);
     return () => clearInterval(interval);
   }, [instances, fetchInstances]);
+
+  // Auto-status polling: check real container status every 30s for active instances
+  useEffect(() => {
+    const hasActive = instances.some((i) => i.status === 'active');
+    if (!hasActive) return;
+    const interval = setInterval(async () => {
+      for (const inst of instances.filter((i) => i.status === 'active')) {
+        try {
+          const res = await fetch(`/api/openclaw/instances/${inst.id}?check_status=true`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.instance.status !== inst.status) {
+              fetchInstances();
+              break;
+            }
+          }
+        } catch {}
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [instances, fetchInstances]);
+
+  const openSettings = (inst: OpenClawInstance) => {
+    setSettingsInstance(inst);
+    setChannelTelegram(inst.config.channels?.find(c => c.startsWith('telegram:'))?.replace('telegram:', '') || '');
+    setChannelDiscord(inst.config.channels?.find(c => c.startsWith('discord:'))?.replace('discord:', '') || '');
+    setChannelSlack(inst.config.channels?.find(c => c.startsWith('slack:'))?.replace('slack:', '') || '');
+    setSettingsOpen(true);
+  };
+
+  const saveSettings = async () => {
+    if (!settingsInstance) return;
+    const channels: string[] = [];
+    if (channelTelegram.trim()) channels.push(`telegram:${channelTelegram.trim()}`);
+    if (channelDiscord.trim()) channels.push(`discord:${channelDiscord.trim()}`);
+    if (channelSlack.trim()) channels.push(`slack:${channelSlack.trim()}`);
+    try {
+      const res = await fetch(`/api/openclaw/instances/${settingsInstance.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: { channels } }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(t('openclaw.error', { message: data.error }));
+        return;
+      }
+      toast.success(t('openclaw.updateSuccess'));
+      setSettingsOpen(false);
+      fetchInstances();
+    } catch (err) {
+      toast.error(t('openclaw.error', { message: (err as Error).message }));
+    }
+  };
 
   // Auto-generate slug from name
   useEffect(() => {
@@ -406,14 +467,24 @@ export function OpenClawInstancesPage() {
                       </Button>
                     )}
                     {instance.status !== 'provisioning' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs text-red-500 hover:text-red-600"
-                        onClick={() => handleDelete(instance.id)}
-                      >
-                        <Trash2 className="size-3" />
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => openSettings(instance)}
+                        >
+                          <Settings className="size-3" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs text-red-500 hover:text-red-600"
+                          onClick={() => handleDelete(instance.id)}
+                        >
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </CardContent>
@@ -422,6 +493,51 @@ export function OpenClawInstancesPage() {
           </div>
         )}
       </div>
+      {/* Settings Dialog */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>頻道設定</DialogTitle>
+            <DialogDescription>
+              設定 {settingsInstance?.name} 的聊天頻道整合
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Telegram Bot Token</label>
+              <Input
+                placeholder="123456:ABC-DEF..."
+                value={channelTelegram}
+                onChange={(e) => setChannelTelegram(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Discord Webhook URL</label>
+              <Input
+                placeholder="https://discord.com/api/webhooks/..."
+                value={channelDiscord}
+                onChange={(e) => setChannelDiscord(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Slack Webhook URL</label>
+              <Input
+                placeholder="https://hooks.slack.com/services/..."
+                value={channelSlack}
+                onChange={(e) => setChannelSlack(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSettingsOpen(false)}>
+              {t('openclaw.cancel')}
+            </Button>
+            <Button onClick={saveSettings}>
+              儲存設定
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

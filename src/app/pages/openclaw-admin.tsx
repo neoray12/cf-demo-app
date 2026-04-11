@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Pause, Play, Trash2, Loader2, Boxes, Activity, Moon, CalendarPlus, RefreshCw, Search } from 'lucide-react';
+import { Pause, Play, Trash2, Loader2, Boxes, Activity, Moon, CalendarPlus, RefreshCw, Search, BarChart3 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface OpenClawInstance {
   id: string;
@@ -170,6 +171,87 @@ export function OpenClawAdminPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+
+        {/* Charts */}
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+          {/* Status Distribution Pie */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">狀態分佈</CardTitle>
+              <BarChart3 className="size-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {stats.total === 0 ? (
+                <div className="flex items-center justify-center h-[180px] text-muted-foreground text-sm">尚無資料</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: '運行中', value: stats.active, color: '#22c55e' },
+                        { name: '休眠中', value: stats.sleeping, color: '#3b82f6' },
+                        { name: '已暫停', value: Math.max(0, stats.total - stats.active - stats.sleeping), color: '#ef4444' },
+                      ].filter(d => d.value > 0)}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={70}
+                      paddingAngle={3}
+                      dataKey="value"
+                      label={({ name, value }) => `${name} ${value}`}
+                    >
+                      {[
+                        { name: '運行中', value: stats.active, color: '#22c55e' },
+                        { name: '休眠中', value: stats.sleeping, color: '#3b82f6' },
+                        { name: '已暫停', value: Math.max(0, stats.total - stats.active - stats.sleeping), color: '#ef4444' },
+                      ].filter(d => d.value > 0).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Daily Creation Bar */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">近 7 天建立趨勢</CardTitle>
+              <CalendarPlus className="size-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {instances.length === 0 ? (
+                <div className="flex items-center justify-center h-[180px] text-muted-foreground text-sm">尚無資料</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={(() => {
+                    const days: { date: string; count: number }[] = [];
+                    for (let i = 6; i >= 0; i--) {
+                      const d = new Date();
+                      d.setDate(d.getDate() - i);
+                      const dateStr = d.toISOString().slice(5, 10);
+                      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                      const dayEnd = dayStart + 86400000;
+                      const count = instances.filter(inst => {
+                        const t = new Date(inst.createdAt).getTime();
+                        return t >= dayStart && t < dayEnd;
+                      }).length;
+                      days.push({ date: dateStr, count });
+                    }
+                    return days;
+                  })()}>
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={30} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} name="建立數" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Filters */}
