@@ -57,6 +57,19 @@ app.use('/api/*', async (c, next) => {
 // Health check (no auth)
 app.get('/health', (c) => c.json({ ok: true, service: 'openclaw-sandbox' }));
 
+// Diagnostic endpoint (temporary) — exec a command inside a running container
+app.post('/api/exec/:instanceId', async (c) => {
+  const instanceId = c.req.param('instanceId');
+  const { command } = await c.req.json<{ command: string }>();
+  try {
+    const sandbox = getSandbox(c.env.Sandbox, instanceId, { containerTimeouts: CONTAINER_TIMEOUTS });
+    const result = await sandbox.exec(command || 'echo ok', { timeout: 30_000 });
+    return c.json({ instanceId, result });
+  } catch (error) {
+    return c.json({ instanceId, error: (error as Error).message }, 500);
+  }
+});
+
 /**
  * POST /api/provision/:instanceId
  * Create and start a sandbox container for a tenant.
