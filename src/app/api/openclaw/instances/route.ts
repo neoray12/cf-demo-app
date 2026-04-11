@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { provisionSandbox } from '@/lib/openclaw-sandbox';
 
 export interface OpenClawInstance {
   id: string;
@@ -112,21 +113,57 @@ export async function POST(request: Request) {
 
   await kv.put(`${KV_PREFIX}${id}`, JSON.stringify(instance));
 
-  // Simulate provisioning → active after a short delay
-  // In Phase 2, this will trigger actual Sandbox creation
-  setTimeout(async () => {
+  // Provision real Sandbox container via companion worker
+  const sandboxEnv = {
+    OPENCLAW_SANDBOX_URL: (env as any).OPENCLAW_SANDBOX_URL as string | undefined,
+    OPENCLAW_SANDBOX_SECRET: (env as any).OPENCLAW_SANDBOX_SECRET as string | undefined,
+  };
+
+  // Fire-and-forget: provision sandbox in background, update KV on completion
+  const provisionPromise = (async () => {
     try {
+      const result = await provisionSandbox(sandboxEnv, id, {
+        gatewayToken,
+        aiProvider: instance.config.aiProvider,
+        aiModel: instance.config.aiModel,
+        sleepAfter: instance.config.sleepAfter,
+      });
+
       const raw = await kv.get(`${KV_PREFIX}${id}`);
       if (raw) {
         const inst = JSON.parse(raw) as OpenClawInstance;
         if (inst.status === 'provisioning') {
-          inst.status = 'active';
+          inst.status = result.success ? 'active' : 'suspended';
           inst.updatedAt = new Date().toISOString();
           await kv.put(`${KV_PREFIX}${id}`, JSON.stringify(inst));
         }
       }
-    } catch {}
-  }, 3000);
+
+      if (!result.success) {
+        console.error(`[OpenClaw] Provision failed for ${id}:`, result.error);
+      }
+    } catch (err) {
+      console.error(`[OpenClaw] Provision error for ${id}:`, err);
+      // Mark as active anyway so user can retry — sandbox may still be starting
+      try {
+        const raw = await kv.get(`${KV_PREFIX}${id}`);
+        if (raw) {
+          const inst = JSON.parse(raw) as OpenClawInstance;
+          if (inst.status === 'provisioning') {
+            inst.status = 'active';
+            inst.updatedAt = new Date().toISOString();
+            await kv.put(`${KV_PREFIX}${id}`, JSON.stringify(inst));
+          }
+        }
+      } catch {}
+    }
+  })();
+
+  // Use waitUntil if available (Cloudflare Workers), otherwise just fire-and-forget
+  const ctx = (env as any).ctx;
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(provisionPromise);
+  }
 
   return Response.json({ instance }, { status: 201 });
 }

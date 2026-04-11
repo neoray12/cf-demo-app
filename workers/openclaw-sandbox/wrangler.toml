@@ -1,0 +1,42 @@
+name = "openclaw-sandbox"
+account_id = "5efa272dc28e4e3933324c44165b6dbe"
+compatibility_date = "2025-12-01"
+compatibility_flags = ["nodejs_compat"]
+main = "src/index.ts"
+
+[observability]
+enabled = true
+
+# Container configuration for OpenClaw sandboxes
+[[containers]]
+class_name = "Sandbox"
+image = "./Dockerfile"
+instance_type = "standard-1"
+max_instances = 5
+
+[durable_objects]
+bindings = [
+  { class_name = "Sandbox", name = "Sandbox" }
+]
+
+[[migrations]]
+new_sqlite_classes = ["Sandbox"]
+tag = "v1"
+
+# R2 bucket for Sandbox SDK backup/restore (squashfs snapshots)
+# The binding name BACKUP_BUCKET is required by @cloudflare/sandbox
+[[r2_buckets]]
+binding = "BACKUP_BUCKET"
+bucket_name = "cf-demo-openclaw"
+
+# Browser Rendering binding for CDP proxy
+[browser]
+binding = "BROWSER"
+
+[vars]
+CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
+
+# Secrets (set via wrangler secret put):
+# - SANDBOX_API_SECRET: shared secret for authenticating requests from cf-demo-app
+# - ANTHROPIC_API_KEY: for OpenClaw AI provider (or use AI Gateway)
+# - CLOUDFLARE_AI_GATEWAY_API_KEY + CF_AI_GATEWAY_ACCOUNT_ID + CF_AI_GATEWAY_GATEWAY_ID

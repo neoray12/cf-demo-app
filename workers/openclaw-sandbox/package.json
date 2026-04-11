@@ -1,0 +1,21 @@
+{
+  "name": "openclaw-sandbox",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Companion Worker for OpenClaw multi-tenant Sandbox management",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types"
+  },
+  "dependencies": {
+    "hono": "^4.11.6"
+  },
+  "devDependencies": {
+    "@cloudflare/sandbox": "^0.7.20",
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.78.0"
+  }
+}

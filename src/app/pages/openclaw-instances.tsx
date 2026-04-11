@@ -362,7 +362,15 @@ export function OpenClawInstancesPage() {
                   <div className="flex items-center gap-1.5 mt-4 pt-3 border-t">
                     {instance.status === 'active' && (
                       <>
-                        <Button variant="outline" size="sm" className="h-7 text-xs flex-1" disabled>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs flex-1"
+                          onClick={() => {
+                            const url = `https://openclaw-sandbox.neo-cloudflare.workers.dev/?token=${instance.gatewayToken}`;
+                            window.open(url, '_blank');
+                          }}
+                        >
                           <ExternalLink className="size-3 mr-1" />
                           {t('openclaw.actions.openUI')}
                         </Button>
