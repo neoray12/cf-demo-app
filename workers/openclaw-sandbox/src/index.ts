@@ -114,17 +114,43 @@ app.post('/api/provision/:instanceId', async (c) => {
       console.warn(`[PROVISION] Config pre-write failed for ${instanceId}:`, cfgErr);
     }
 
+    // Write auth-profiles.json for the OpenClaw agent so it can call the AI provider.
+    // OpenClaw agent reads credentials from this file (not from gateway env vars).
+    // Path: /home/openclaw/.openclaw/agents/main/agent/auth-profiles.json
+    try {
+      const agentApiKey = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY || c.env.ANTHROPIC_API_KEY || '';
+      const accountId = c.env.CF_AI_GATEWAY_ACCOUNT_ID || '5efa272dc28e4e3933324c44165b6dbe';
+      const gatewayId = c.env.CF_AI_GATEWAY_GATEWAY_ID || 'nkcf-gateway-01';
+      const anthropicBaseUrl = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY
+        ? `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/anthropic`
+        : 'https://api.anthropic.com';
+      if (agentApiKey) {
+        const authProfiles = JSON.stringify({ anthropic: { apiKey: agentApiKey, baseUrl: anthropicBaseUrl } });
+        const safeAuth = authProfiles.replace(/'/g, "'\\''")
+        const agentDir = '/home/openclaw/.openclaw/agents/main/agent';
+        await sandbox.exec(`mkdir -p '${agentDir}' && printf '%s' '${safeAuth}' > '${agentDir}/auth-profiles.json'`);
+        console.log(`[PROVISION] auth-profiles.json written for ${instanceId}`);
+      }
+    } catch (authErr) {
+      console.warn(`[PROVISION] auth-profiles.json write failed for ${instanceId}:`, authErr);
+    }
+
     // Build environment variables for the OpenClaw gateway
     const envVars: Record<string, string> = {
       OPENCLAW_GATEWAY_TOKEN: body.gatewayToken,
       OPENCLAW_INSTANCE_ID: instanceId,
     };
 
-    // AI provider configuration
+    // AI provider configuration — pass both CF AI Gateway vars AND standard SDK vars
     if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY && c.env.CF_AI_GATEWAY_ACCOUNT_ID && c.env.CF_AI_GATEWAY_GATEWAY_ID) {
+      const accountId = c.env.CF_AI_GATEWAY_ACCOUNT_ID;
+      const gatewayId = c.env.CF_AI_GATEWAY_GATEWAY_ID;
       envVars.CLOUDFLARE_AI_GATEWAY_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
-      envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID;
-      envVars.CF_AI_GATEWAY_GATEWAY_ID = c.env.CF_AI_GATEWAY_GATEWAY_ID;
+      envVars.CF_AI_GATEWAY_ACCOUNT_ID = accountId;
+      envVars.CF_AI_GATEWAY_GATEWAY_ID = gatewayId;
+      // Standard Anthropic SDK env vars so the agent picks them up without auth-profiles.json
+      envVars.ANTHROPIC_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
+      envVars.ANTHROPIC_BASE_URL = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/anthropic`;
       if (body.aiModel) {
         envVars.CF_AI_GATEWAY_MODEL = `${body.aiProvider || 'anthropic'}/${body.aiModel}`;
       }
@@ -220,14 +246,38 @@ app.post('/api/start/:instanceId', async (c) => {
       await sandbox.exec(`node -e "const fs=require('fs'),p='/root/.openclaw/openclaw.json';try{let c=JSON.parse(fs.readFileSync(p,'utf8'));c.gateway=c.gateway||{};c.gateway.controlUi=c.gateway.controlUi||{};c.gateway.controlUi.dangerouslyDisableDeviceAuth=true;fs.writeFileSync(p,JSON.stringify(c,null,2));}catch(e){fs.mkdirSync('/root/.openclaw',{recursive:true});fs.writeFileSync(p,JSON.stringify({gateway:{controlUi:{dangerouslyDisableDeviceAuth:true}}},null,2));}"`)
     } catch {}
 
+    // Re-write auth-profiles.json on wake-up (container may be fresh after sleep/destroy)
+    try {
+      const agentApiKey = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY || c.env.ANTHROPIC_API_KEY || '';
+      const accountId = c.env.CF_AI_GATEWAY_ACCOUNT_ID || '5efa272dc28e4e3933324c44165b6dbe';
+      const gatewayId = c.env.CF_AI_GATEWAY_GATEWAY_ID || 'nkcf-gateway-01';
+      const anthropicBaseUrl = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY
+        ? `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/anthropic`
+        : 'https://api.anthropic.com';
+      if (agentApiKey) {
+        const authProfiles = JSON.stringify({ anthropic: { apiKey: agentApiKey, baseUrl: anthropicBaseUrl } });
+        const safeAuth = authProfiles.replace(/'/g, "'\\''")
+        const agentDir = '/home/openclaw/.openclaw/agents/main/agent';
+        await sandbox.exec(`mkdir -p '${agentDir}' && printf '%s' '${safeAuth}' > '${agentDir}/auth-profiles.json'`);
+        console.log(`[START] auth-profiles.json written for ${instanceId}`);
+      }
+    } catch (authErr) {
+      console.warn(`[START] auth-profiles.json write failed for ${instanceId}:`, authErr);
+    }
+
     // Re-start the gateway process
     const envVars: Record<string, string> = {
       OPENCLAW_GATEWAY_TOKEN: body.gatewayToken,
     };
     if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY) {
+      const accountId = c.env.CF_AI_GATEWAY_ACCOUNT_ID || '';
+      const gatewayId = c.env.CF_AI_GATEWAY_GATEWAY_ID || '';
       envVars.CLOUDFLARE_AI_GATEWAY_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
-      envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID || '';
-      envVars.CF_AI_GATEWAY_GATEWAY_ID = c.env.CF_AI_GATEWAY_GATEWAY_ID || '';
+      envVars.CF_AI_GATEWAY_ACCOUNT_ID = accountId;
+      envVars.CF_AI_GATEWAY_GATEWAY_ID = gatewayId;
+      // Standard Anthropic SDK vars
+      envVars.ANTHROPIC_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
+      envVars.ANTHROPIC_BASE_URL = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/anthropic`;
     } else if (c.env.ANTHROPIC_API_KEY) {
       envVars.ANTHROPIC_API_KEY = c.env.ANTHROPIC_API_KEY;
     }
