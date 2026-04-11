@@ -308,6 +308,24 @@ app.post('/api/restart/:instanceId', async (c) => {
 });
 
 /**
+ * POST /api/exec/:instanceId
+ * Run a shell command inside the sandbox container (admin only).
+ */
+app.post('/api/exec/:instanceId', async (c) => {
+  const instanceId = c.req.param('instanceId');
+  const body = await c.req.json<{ command: string }>();
+  if (!body.command) return c.json({ error: 'command required' }, 400);
+
+  const sandbox = getSandbox(c.env.Sandbox, instanceId, { containerTimeouts: CONTAINER_TIMEOUTS });
+  try {
+    const result = await sandbox.exec(body.command);
+    return c.json({ output: result });
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 500);
+  }
+});
+
+/**
  * ALL /api/proxy/:instanceId{/*}?
  * Proxy HTTP requests to the OpenClaw gateway inside the sandbox container.
  * Also handles WebSocket upgrade for real-time communication.
