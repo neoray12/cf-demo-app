@@ -3,11 +3,13 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Pause, Play, Trash2, Loader2, Boxes, Activity, Moon, CalendarPlus, RefreshCw, Search, BarChart3 } from 'lucide-react';
+import { Pause, Play, Trash2, Loader2, Boxes, Activity, Moon, CalendarPlus, RefreshCw, Search, BarChart3, Eye, Copy, CheckCheck, Server, Database, HardDrive, Globe, Key, Box } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Separator } from '@/components/ui/separator';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface OpenClawInstance {
@@ -50,6 +52,15 @@ export function OpenClawAdminPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [detailInstance, setDetailInstance] = useState<OpenClawInstance | null>(null);
+  const [copiedKey, setCopiedKey] = useState('');
+
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(''), 2000);
+    });
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -58,8 +69,8 @@ export function OpenClawAdminPage() {
         fetch('/api/openclaw/instances'),
         fetch('/api/openclaw/admin/stats'),
       ]);
-      const instancesData = await instancesRes.json();
-      const statsData = await statsRes.json();
+      const instancesData = await instancesRes.json() as { instances: OpenClawInstance[] };
+      const statsData = await statsRes.json() as Stats;
       setInstances(instancesData.instances || []);
       setStats(statsData);
     } catch (err) {
@@ -81,7 +92,7 @@ export function OpenClawAdminPage() {
         body: JSON.stringify({ status }),
       });
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json() as { error: string };
         toast.error(t('openclaw.error', { message: data.error }));
         return;
       }
@@ -97,7 +108,7 @@ export function OpenClawAdminPage() {
     try {
       const res = await fetch(`/api/openclaw/instances/${id}`, { method: 'DELETE' });
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json() as { error: string };
         toast.error(t('openclaw.error', { message: data.error }));
         return;
       }
@@ -139,6 +150,51 @@ export function OpenClawAdminPage() {
     { key: 'active', value: stats.active, icon: Activity, color: 'text-green-500' },
     { key: 'sleeping', value: stats.sleeping, icon: Moon, color: 'text-blue-500' },
     { key: 'today', value: stats.today, icon: CalendarPlus, color: 'text-orange-500' },
+  ];
+
+  const cfInfraItems = (inst: OpenClawInstance) => [
+    {
+      icon: Box,
+      label: 'Durable Object',
+      sublabel: 'Sandbox DO namespace',
+      value: inst.id,
+      description: `cf-openclaw-sandbox / Sandbox`,
+    },
+    {
+      icon: Globe,
+      label: 'Proxy URL',
+      sublabel: '自訂域名入口',
+      value: `https://saas-cfclaw.neokung.work/api/proxy/${inst.id}`,
+      mono: true,
+    },
+    {
+      icon: HardDrive,
+      label: 'R2 Bucket',
+      sublabel: '備份與 Logpush 存儲',
+      value: 'cf-demo-openclaw',
+      description: 'binding: BACKUP_BUCKET',
+    },
+    {
+      icon: Database,
+      label: 'KV Namespace',
+      sublabel: 'Instance metadata 存儲',
+      value: `openclaw:${inst.id}`,
+      description: 'binding: KV (SESSIONS namespace)',
+    },
+    {
+      icon: Server,
+      label: 'Companion Worker',
+      sublabel: '管理 Container 生命週期',
+      value: 'cf-openclaw-sandbox',
+      description: 'saas-cfclaw.neokung.work',
+    },
+    {
+      icon: Key,
+      label: 'Gateway Token',
+      sublabel: 'OpenClaw 閘道認證 token',
+      value: inst.gatewayToken,
+      masked: true,
+    },
   ];
 
   return (
@@ -305,7 +361,7 @@ export function OpenClawAdminPage() {
                 </thead>
                 <tbody>
                   {filteredInstances.map((inst) => (
-                    <tr key={inst.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                    <tr key={inst.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setDetailInstance(inst)}>
                       <td className="px-4 py-3 font-medium">{inst.name}</td>
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{inst.slug}</td>
                       <td className="px-4 py-3">
@@ -327,6 +383,15 @@ export function OpenClawAdminPage() {
                       <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(inst.createdAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={(e) => { e.stopPropagation(); setDetailInstance(inst); }}
+                            title="詳細資訊"
+                          >
+                            <Eye className="size-3.5" />
+                          </Button>
                           {inst.status === 'active' && (
                             <Button
                               variant="ghost"
@@ -370,6 +435,106 @@ export function OpenClawAdminPage() {
           </div>
         )}
       </div>
+
+      {/* Detail Sheet */}
+      <Sheet open={!!detailInstance} onOpenChange={(open) => !open && setDetailInstance(null)}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+          {detailInstance && (
+            <>
+              <SheetHeader className="mb-4">
+                <SheetTitle className="flex items-center gap-2">
+                  <Boxes className="size-4" />
+                  {detailInstance.name}
+                </SheetTitle>
+                <SheetDescription>
+                  <Badge variant="outline" className={`text-[10px] ${STATUS_COLORS[detailInstance.status] || ''}`}>
+                    {detailInstance.status === 'provisioning' && <Loader2 className="size-3 mr-1 animate-spin" />}
+                    {t(`openclaw.status.${detailInstance.status}`)}
+                  </Badge>
+                  <span className="ml-2 font-mono text-xs">{detailInstance.id}</span>
+                </SheetDescription>
+              </SheetHeader>
+
+              {/* CF Infrastructure */}
+              <div className="space-y-4">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cloudflare 基礎設施</h3>
+                <div className="space-y-3">
+                  {cfInfraItems(detailInstance).map((item) => {
+                    const Icon = item.icon;
+                    const displayValue = item.masked
+                      ? `${item.value.slice(0, 8)}…${item.value.slice(-4)}`
+                      : item.value;
+                    return (
+                      <div key={item.label} className="flex items-start gap-3 p-3 rounded-lg border bg-muted/20">
+                        <Icon className="size-4 text-muted-foreground mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium">{item.label}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 w-5 p-0 shrink-0"
+                              onClick={() => copyToClipboard(item.value, item.label)}
+                            >
+                              {copiedKey === item.label
+                                ? <CheckCheck className="size-3 text-green-500" />
+                                : <Copy className="size-3" />}
+                            </Button>
+                          </div>
+                          <p className={`text-xs break-all mt-0.5 ${item.mono ? 'font-mono' : ''}`}>{displayValue}</p>
+                          {item.sublabel && <p className="text-[10px] text-muted-foreground mt-0.5">{item.sublabel}</p>}
+                          {item.description && <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{item.description}</p>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <Separator />
+
+                {/* Config */}
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">AI 設定</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Provider', value: detailInstance.config.aiProvider },
+                    { label: 'Model', value: detailInstance.config.aiModel.split('/').pop() || detailInstance.config.aiModel },
+                    { label: 'Sleep After', value: detailInstance.config.sleepAfter },
+                    { label: 'Channels', value: detailInstance.config.channels.length ? detailInstance.config.channels.join(', ') : '無' },
+                  ].map((item) => (
+                    <div key={item.label} className="p-2 rounded-md border bg-muted/20">
+                      <p className="text-[10px] text-muted-foreground">{item.label}</p>
+                      <p className="text-xs font-mono mt-0.5 truncate" title={item.value}>{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <Separator />
+
+                {/* Owner & Time */}
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">擁有者與時間</h3>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">擁有者</span>
+                    <span>{detailInstance.owner.name} ({detailInstance.owner.email})</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">建立時間</span>
+                    <span>{formatDate(detailInstance.createdAt)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">更新時間</span>
+                    <span>{formatDate(detailInstance.updatedAt)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Slug</span>
+                    <span className="font-mono">{detailInstance.slug}</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
