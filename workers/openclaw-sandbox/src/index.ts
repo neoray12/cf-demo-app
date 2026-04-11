@@ -346,7 +346,37 @@ async function proxyHandler(c: any) {
       body: request.body,
     });
 
-    return await sandbox.containerFetch(proxyRequest, GATEWAY_PORT);
+    const containerRes = await sandbox.containerFetch(proxyRequest, GATEWAY_PORT);
+
+    // For HTML responses at the root, inject a script to clear stale localStorage
+    // so the OpenClaw UI always uses the correct WebSocket URL for this instance.
+    const contentType = containerRes.headers.get('content-type') || '';
+    if (contentType.includes('text/html') && (proxyPath === '/' || proxyPath === '')) {
+      const html = await containerRes.text();
+      const wsUrl = `wss://cf-openclaw-sandbox.neo-cloudflare.workers.dev/api/proxy/${instanceId}`;
+      const inject = `<script>
+(function(){
+  try {
+    // Clear all keys that might contain a stale WebSocket URL
+    for(var i=localStorage.length-1;i>=0;i--){
+      var k=localStorage.key(i);
+      if(k&&(k.toLowerCase().includes('ws')||k.toLowerCase().includes('url')||k.toLowerCase().includes('gateway')||k.toLowerCase().includes('connect'))){
+        localStorage.removeItem(k);
+      }
+    }
+    // Store the correct URL for this instance
+    window.__OC_WS_URL__='${wsUrl}';
+  } catch(e){}
+})();
+</script>`;
+      const patched = html.replace(/<head([^>]*)>/, `<head$1>${inject}`);
+      const headers = new Headers(containerRes.headers);
+      headers.delete('content-encoding');
+      headers.delete('content-length');
+      return new Response(patched, { status: containerRes.status, headers });
+    }
+
+    return containerRes;
   } catch (error) {
     console.error(`[PROXY HTTP] ${instanceId}:`, error);
     return c.json(
