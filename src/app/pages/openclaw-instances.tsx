@@ -100,7 +100,13 @@ export function OpenClawInstancesPage() {
       const email = currentUser?.email || '';
       const res = await fetch(`/api/openclaw/instances?email=${encodeURIComponent(email)}`);
       const data = await res.json();
-      setInstances(data.instances || []);
+      const serverInstances: OpenClawInstance[] = data.instances || [];
+      // Merge: keep any locally-optimistic provisioning instances not yet in KV
+      setInstances((prev) => {
+        const serverIds = new Set(serverInstances.map((i) => i.id));
+        const localOnly = prev.filter((i) => i.status === 'provisioning' && !serverIds.has(i.id));
+        return [...localOnly, ...serverInstances];
+      });
     } catch (err) {
       toast.error(t('openclaw.error', { message: (err as Error).message }));
     } finally {
