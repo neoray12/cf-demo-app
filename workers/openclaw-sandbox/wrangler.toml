@@ -1,4 +1,4 @@
-name = "openclaw-sandbox"
+name = "cf-openclaw-sandbox"
 account_id = "5efa272dc28e4e3933324c44165b6dbe"
 compatibility_date = "2025-12-01"
 compatibility_flags = ["nodejs_compat"]
