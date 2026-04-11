@@ -92,6 +92,28 @@ app.post('/api/provision/:instanceId', async (c) => {
     // Start the container
     await sandbox.start();
 
+    // Pre-write gateway config so it binds on LAN (not just loopback) and
+    // skips device pairing — required for browser access via our proxy.
+    const gatewayConfig = JSON.stringify({
+      gateway: {
+        bind: 'lan',
+        auth: {
+          mode: 'token',
+          token: body.gatewayToken,
+        },
+        controlUi: {
+          allowedOrigins: ['*'],
+          dangerouslyDisableDeviceAuth: true,
+        },
+      },
+    });
+    try {
+      await sandbox.exec(`mkdir -p /root/.openclaw && printf '%s' '${gatewayConfig.replace(/'/g, "'\\''")}' > /root/.openclaw/config.json`);
+      console.log(`[PROVISION] Gateway config written for ${instanceId}`);
+    } catch (cfgErr) {
+      console.warn(`[PROVISION] Config pre-write failed for ${instanceId}:`, cfgErr);
+    }
+
     // Build environment variables for the OpenClaw gateway
     const envVars: Record<string, string> = {
       OPENCLAW_GATEWAY_TOKEN: body.gatewayToken,
@@ -191,6 +213,18 @@ app.post('/api/start/:instanceId', async (c) => {
 
     const sandbox = getSandbox(c.env.Sandbox, instanceId, options);
     await sandbox.start();
+
+    // Re-write gateway config on wake-up (same LAN + no-pairing settings)
+    const gatewayConfig = JSON.stringify({
+      gateway: {
+        bind: 'lan',
+        auth: { mode: 'token', token: body.gatewayToken },
+        controlUi: { allowedOrigins: ['*'], dangerouslyDisableDeviceAuth: true },
+      },
+    });
+    try {
+      await sandbox.exec(`mkdir -p /root/.openclaw && printf '%s' '${gatewayConfig.replace(/'/g, "'\\''")}' > /root/.openclaw/config.json`);
+    } catch {}
 
     // Re-start the gateway process
     const envVars: Record<string, string> = {
