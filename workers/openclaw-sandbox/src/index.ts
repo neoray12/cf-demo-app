@@ -260,4 +260,77 @@ app.post('/api/restart/:instanceId', async (c) => {
   }
 });
 
+/**
+ * ALL /api/proxy/:instanceId/*
+ * Proxy HTTP requests to the OpenClaw gateway inside the sandbox container.
+ * Also handles WebSocket upgrade for real-time communication.
+ */
+app.all('/api/proxy/:instanceId/*', async (c) => {
+  const instanceId = c.req.param('instanceId');
+  const request = c.req.raw;
+  const url = new URL(request.url);
+
+  // Extract the path after /api/proxy/:instanceId
+  const proxyPath = url.pathname.replace(`/api/proxy/${instanceId}`, '') || '/';
+  const targetUrl = new URL(`http://localhost${proxyPath}${url.search}`);
+
+  console.log(`[PROXY] ${instanceId}: ${request.method} ${proxyPath}`);
+
+  const sandbox = getSandbox(c.env.Sandbox, instanceId);
+  const isWebSocket = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
+
+  if (isWebSocket) {
+    // WebSocket proxy
+    try {
+      const containerResponse = await sandbox.wsConnect(request, GATEWAY_PORT);
+      const containerWs = containerResponse.webSocket;
+
+      if (!containerWs) {
+        return containerResponse;
+      }
+
+      const [clientWs, serverWs] = Object.values(new WebSocketPair());
+      serverWs.accept();
+      containerWs.accept();
+
+      // Relay messages bidirectionally
+      serverWs.addEventListener('message', (event) => {
+        if (containerWs.readyState === WebSocket.OPEN) containerWs.send(event.data);
+      });
+      containerWs.addEventListener('message', (event) => {
+        if (serverWs.readyState === WebSocket.OPEN) serverWs.send(event.data);
+      });
+      serverWs.addEventListener('close', (event) => containerWs.close(event.code, event.reason));
+      containerWs.addEventListener('close', (event) => {
+        const reason = event.reason.length > 123 ? event.reason.slice(0, 120) + '...' : event.reason;
+        serverWs.close(event.code, reason);
+      });
+      serverWs.addEventListener('error', () => containerWs.close(1011, 'Client error'));
+      containerWs.addEventListener('error', () => serverWs.close(1011, 'Container error'));
+
+      return new Response(null, { status: 101, webSocket: clientWs });
+    } catch (error) {
+      console.error(`[PROXY WS] ${instanceId}:`, error);
+      return new Response('WebSocket proxy error', { status: 502 });
+    }
+  }
+
+  // HTTP proxy
+  try {
+    const proxyRequest = new Request(targetUrl.toString(), {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+    });
+
+    return await sandbox.containerFetch(proxyRequest, GATEWAY_PORT);
+  } catch (error) {
+    console.error(`[PROXY HTTP] ${instanceId}:`, error);
+    return c.json(
+      { error: 'Container not reachable', details: (error as Error).message },
+      502
+    );
+  }
+});
+
 export default app;

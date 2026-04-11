@@ -367,8 +367,7 @@ export function OpenClawInstancesPage() {
                           size="sm"
                           className="h-7 text-xs flex-1"
                           onClick={() => {
-                            const url = `https://cf-openclaw-sandbox.neo-cloudflare.workers.dev/?token=${instance.gatewayToken}`;
-                            window.open(url, '_blank');
+                            window.open(`/openclaw/view/${instance.id}`, '_blank');
                           }}
                         >
                           <ExternalLink className="size-3 mr-1" />
