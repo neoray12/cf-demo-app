@@ -86,14 +86,13 @@ export function OpenClawInstancesPage() {
   const [channelDiscord, setChannelDiscord] = useState('');
   const [channelSlack, setChannelSlack] = useState('');
 
-  const currentUser = (() => {
+  const [currentUser, setCurrentUser] = useState<{ name: string; email: string } | null>(null);
+  useEffect(() => {
     try {
       const raw = localStorage.getItem('cf-demo-user');
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  })();
+      if (raw) setCurrentUser(JSON.parse(raw));
+    } catch {}
+  }, []);
 
   const fetchInstances = useCallback(async () => {
     setLoading(true);
