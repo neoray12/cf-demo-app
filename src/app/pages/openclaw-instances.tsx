@@ -214,12 +214,16 @@ export function OpenClawInstancesPage() {
         toast.error(t('openclaw.createError', { message: data.error }));
         return;
       }
+      const newInstance = (data as { instance: OpenClawInstance }).instance;
       toast.success(t('openclaw.createSuccess'));
       setDialogOpen(false);
       setFormName('');
       setFormSlug('');
       setFormProvider('anthropic');
       setFormModel('claude-sonnet-4-20250514');
+      // Optimistically insert the new instance immediately (KV may lag)
+      setInstances((prev) => [newInstance, ...prev]);
+      // Then sync from server to get latest status
       fetchInstances();
     } catch (err) {
       toast.error(t('openclaw.createError', { message: (err as Error).message }));
