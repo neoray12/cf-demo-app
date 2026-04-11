@@ -17,6 +17,9 @@
     "overview": "Overview",
     "tools": "Tools",
     "logExplorer": "Log Explorer",
+    "openclaw": "OpenClaw",
+    "openclawInstances": "My Instances",
+    "openclawAdmin": "Instance Admin",
     "backToHome": "Back to Home",
     "lightMode": "Light Mode",
     "darkMode": "Dark Mode",
@@ -159,6 +162,66 @@
       "noText": "(no text)",
       "pagesCount": "{{count}} pages"
     }
+  },
+  "openclaw": {
+    "title": "OpenClaw",
+    "myInstances": "My Instances",
+    "myInstancesDesc": "Create and manage your OpenClaw AI assistant instances",
+    "adminTitle": "Instance Admin",
+    "adminDesc": "View and manage all users' OpenClaw instances",
+    "createInstance": "Create Instance",
+    "createInstanceTitle": "Create OpenClaw Instance",
+    "createInstanceDesc": "Set up your AI assistant name and configuration",
+    "instanceName": "Instance Name",
+    "instanceNamePlaceholder": "e.g. My AI Assistant",
+    "instanceSlug": "Slug (URL identifier)",
+    "instanceSlugPlaceholder": "e.g. my-assistant",
+    "aiProvider": "AI Provider",
+    "aiModel": "AI Model",
+    "sleepAfter": "Sleep After Idle",
+    "creating": "Creating...",
+    "create": "Create",
+    "cancel": "Cancel",
+    "noInstances": "No instances yet",
+    "noInstancesHint": "Click \"Create Instance\" above to get started with OpenClaw",
+    "status": {
+      "provisioning": "Provisioning",
+      "active": "Active",
+      "sleeping": "Sleeping",
+      "suspended": "Suspended",
+      "deleted": "Deleted"
+    },
+    "actions": {
+      "openUI": "Open UI",
+      "suspend": "Suspend",
+      "resume": "Resume",
+      "delete": "Delete",
+      "confirmDelete": "Are you sure you want to delete this instance?"
+    },
+    "stats": {
+      "total": "Total Instances",
+      "active": "Active",
+      "sleeping": "Sleeping",
+      "today": "Created Today"
+    },
+    "table": {
+      "name": "Name",
+      "slug": "Slug",
+      "owner": "Owner",
+      "status": "Status",
+      "model": "AI Model",
+      "createdAt": "Created At",
+      "actions": "Actions"
+    },
+    "filter": {
+      "allStatus": "All Status",
+      "searchPlaceholder": "Search by name or owner..."
+    },
+    "createSuccess": "Instance created successfully",
+    "createError": "Failed to create: {{message}}",
+    "deleteSuccess": "Instance deleted",
+    "updateSuccess": "Status updated",
+    "error": "Operation failed: {{message}}"
   },
   "logs": {
     "title": "Log Explorer",

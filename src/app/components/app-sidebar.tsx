@@ -29,6 +29,9 @@ import {
   Loader2,
   RefreshCw,
   ArrowLeft,
+  Boxes,
+  Layers,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -83,6 +86,7 @@ export function AppSidebar() {
 
   const isCrawlerActive = pathname.startsWith("/crawler");
   const isLogsActive = pathname === "/logs";
+  const isOpenClawActive = pathname.startsWith("/openclaw");
 
   const {
     buckets,
@@ -411,6 +415,56 @@ export function AppSidebar() {
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ))}
+                    </SidebarMenu>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* OpenClaw */}
+        <SidebarGroup>
+          <SidebarGroupLabel>{t("sidebar.openclaw")}</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <Collapsible defaultOpen={isOpenClawActive} className="group/openclaw">
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      isActive={pathname === "/openclaw/instances"}
+                      tooltip={t("sidebar.openclaw")}
+                      onClick={() => handleNavClick("/openclaw/instances")}
+                    >
+                      <Boxes />
+                      <span>{t("sidebar.openclawInstances")}</span>
+                      <ChevronRight className="ml-auto size-4 transition-transform group-data-[state=open]/openclaw:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenu className="ml-4 border-l pl-2">
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={pathname === "/openclaw/instances"}
+                          onClick={() => handleNavClick("/openclaw/instances")}
+                          tooltip={t("sidebar.openclawInstances")}
+                          size="sm"
+                        >
+                          <Layers className="size-3.5" />
+                          <span>{t("sidebar.openclawInstances")}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={pathname === "/openclaw/admin"}
+                          onClick={() => handleNavClick("/openclaw/admin")}
+                          tooltip={t("sidebar.openclawAdmin")}
+                          size="sm"
+                        >
+                          <ShieldCheck className="size-3.5" />
+                          <span>{t("sidebar.openclawAdmin")}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
                     </SidebarMenu>
                   </CollapsibleContent>
                 </SidebarMenuItem>

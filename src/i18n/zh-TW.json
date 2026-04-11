@@ -17,6 +17,9 @@
     "overview": "總覽",
     "tools": "工具",
     "logExplorer": "Log 瀏覽器",
+    "openclaw": "OpenClaw",
+    "openclawInstances": "我的實例",
+    "openclawAdmin": "實例管理",
     "backToHome": "返回首頁",
     "lightMode": "淺色模式",
     "darkMode": "深色模式",
@@ -159,6 +162,66 @@
       "noText": "(無文字)",
       "pagesCount": "{{count}} 頁"
     }
+  },
+  "openclaw": {
+    "title": "OpenClaw",
+    "myInstances": "我的實例",
+    "myInstancesDesc": "建立並管理你的 OpenClaw AI 助理實例",
+    "adminTitle": "實例管理",
+    "adminDesc": "查看並管理所有用戶的 OpenClaw 實例",
+    "createInstance": "建立實例",
+    "createInstanceTitle": "建立 OpenClaw 實例",
+    "createInstanceDesc": "設定你的 AI 助理名稱和基本配置",
+    "instanceName": "實例名稱",
+    "instanceNamePlaceholder": "例如：我的 AI 助理",
+    "instanceSlug": "Slug（URL 識別碼）",
+    "instanceSlugPlaceholder": "例如：my-assistant",
+    "aiProvider": "AI 服務商",
+    "aiModel": "AI 模型",
+    "sleepAfter": "閒置休眠",
+    "creating": "建立中...",
+    "create": "確認建立",
+    "cancel": "取消",
+    "noInstances": "尚未建立任何實例",
+    "noInstancesHint": "點擊上方「建立實例」開始使用 OpenClaw",
+    "status": {
+      "provisioning": "建立中",
+      "active": "運行中",
+      "sleeping": "休眠中",
+      "suspended": "已暫停",
+      "deleted": "已刪除"
+    },
+    "actions": {
+      "openUI": "開啟 UI",
+      "suspend": "暫停",
+      "resume": "恢復",
+      "delete": "刪除",
+      "confirmDelete": "確定要刪除此實例嗎？"
+    },
+    "stats": {
+      "total": "總實例數",
+      "active": "運行中",
+      "sleeping": "休眠中",
+      "today": "今日新增"
+    },
+    "table": {
+      "name": "名稱",
+      "slug": "Slug",
+      "owner": "擁有者",
+      "status": "狀態",
+      "model": "AI 模型",
+      "createdAt": "建立時間",
+      "actions": "操作"
+    },
+    "filter": {
+      "allStatus": "所有狀態",
+      "searchPlaceholder": "搜尋實例名稱或擁有者..."
+    },
+    "createSuccess": "實例建立成功",
+    "createError": "建立失敗: {{message}}",
+    "deleteSuccess": "實例已刪除",
+    "updateSuccess": "狀態已更新",
+    "error": "操作失敗: {{message}}"
   },
   "logs": {
     "title": "Log 瀏覽器",
