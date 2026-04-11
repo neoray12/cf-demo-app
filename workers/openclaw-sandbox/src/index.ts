@@ -39,7 +39,15 @@ type AppEnv = { Bindings: Env; Variables: { sandbox: ReturnType<typeof getSandbo
 const app = new Hono<AppEnv>();
 
 // Auth middleware — validate shared secret
+// Skip for /api/proxy/* routes: those are accessed directly from the browser
+// (including WebSocket), and the container's OpenClaw gateway validates the
+// gateway token itself.
 app.use('/api/*', async (c, next) => {
+  // Proxy routes are public — gateway token auth handled by the container
+  if (c.req.path.startsWith('/api/proxy/')) {
+    return next();
+  }
+
   const authHeader = c.req.header('Authorization');
   const secret = c.env.SANDBOX_API_SECRET;
 

@@ -34,8 +34,9 @@ export default function OpenClawViewPage({ instanceId }: { instanceId: string })
           return;
         }
 
-        // Redirect to the proxy URL directly — renders OpenClaw UI as a full page
-        window.location.replace(`/api/openclaw/proxy/${instanceId}?token=${inst.gatewayToken}`);
+        // Redirect to companion worker directly — supports both HTTP and WebSocket
+        const sandboxUrl = 'https://cf-openclaw-sandbox.neo-cloudflare.workers.dev';
+        window.location.replace(`${sandboxUrl}/api/proxy/${instanceId}/?token=${inst.gatewayToken}`);
       } catch {
         setError('載入失敗');
         setLoading(false);
