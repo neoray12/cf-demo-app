@@ -92,24 +92,19 @@ app.post('/api/provision/:instanceId', async (c) => {
     // Start the container
     await sandbox.start();
 
-    // Pre-write gateway config so it binds on LAN (not just loopback) and
-    // skips device pairing — required for browser access via our proxy.
+    // Pre-write openclaw.json so the start script's Node.js patch preserves
+    // dangerouslyDisableDeviceAuth (the patch keeps other controlUi keys intact).
+    // Using the correct filename that start-openclaw.sh checks for.
     const gatewayConfig = JSON.stringify({
       gateway: {
-        bind: 'lan',
-        auth: {
-          mode: 'token',
-          token: body.gatewayToken,
-        },
         controlUi: {
-          allowedOrigins: ['*'],
           dangerouslyDisableDeviceAuth: true,
         },
       },
     });
     try {
-      await sandbox.exec(`mkdir -p /root/.openclaw && printf '%s' '${gatewayConfig.replace(/'/g, "'\\''")}' > /root/.openclaw/config.json`);
-      console.log(`[PROVISION] Gateway config written for ${instanceId}`);
+      await sandbox.exec(`mkdir -p /root/.openclaw && printf '%s' '${gatewayConfig.replace(/'/g, "'\\''")}' > /root/.openclaw/openclaw.json`);
+      console.log(`[PROVISION] Gateway config pre-written for ${instanceId}`);
     } catch (cfgErr) {
       console.warn(`[PROVISION] Config pre-write failed for ${instanceId}:`, cfgErr);
     }
@@ -214,16 +209,9 @@ app.post('/api/start/:instanceId', async (c) => {
     const sandbox = getSandbox(c.env.Sandbox, instanceId, options);
     await sandbox.start();
 
-    // Re-write gateway config on wake-up (same LAN + no-pairing settings)
-    const gatewayConfig = JSON.stringify({
-      gateway: {
-        bind: 'lan',
-        auth: { mode: 'token', token: body.gatewayToken },
-        controlUi: { allowedOrigins: ['*'], dangerouslyDisableDeviceAuth: true },
-      },
-    });
+    // Patch dangerouslyDisableDeviceAuth into existing config on wake-up.
     try {
-      await sandbox.exec(`mkdir -p /root/.openclaw && printf '%s' '${gatewayConfig.replace(/'/g, "'\\''")}' > /root/.openclaw/config.json`);
+      await sandbox.exec(`node -e "const fs=require('fs'),p='/root/.openclaw/openclaw.json';try{let c=JSON.parse(fs.readFileSync(p,'utf8'));c.gateway=c.gateway||{};c.gateway.controlUi=c.gateway.controlUi||{};c.gateway.controlUi.dangerouslyDisableDeviceAuth=true;fs.writeFileSync(p,JSON.stringify(c,null,2));}catch(e){fs.mkdirSync('/root/.openclaw',{recursive:true});fs.writeFileSync(p,JSON.stringify({gateway:{controlUi:{dangerouslyDisableDeviceAuth:true}}},null,2));}"`)
     } catch {}
 
     // Re-start the gateway process
