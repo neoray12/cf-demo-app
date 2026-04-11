@@ -466,15 +466,12 @@ async function proxyHandler(c: any) {
       const inject = `<script>
 (function(){
   try {
-    // Clear all keys that might contain a stale WebSocket URL
-    for(var i=localStorage.length-1;i>=0;i--){
-      var k=localStorage.key(i);
-      if(k&&(k.toLowerCase().includes('ws')||k.toLowerCase().includes('url')||k.toLowerCase().includes('gateway')||k.toLowerCase().includes('connect'))){
-        localStorage.removeItem(k);
-      }
-    }
-    // Store the correct URL for this instance
+    // Multiple instances share the same origin → clear ALL localStorage to prevent
+    // stale gateway tokens from a previous instance causing "token mismatch" errors.
+    localStorage.clear();
+    sessionStorage.clear();
     window.__OC_WS_URL__='${wsUrl}';
+    window.__OC_INSTANCE_ID__='${instanceId}';
   } catch(e){}
 })();
 </script>`;
