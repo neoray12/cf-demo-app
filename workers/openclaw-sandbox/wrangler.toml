@@ -35,6 +35,9 @@ binding = "BROWSER"
 
 [vars]
 CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
+# Sandbox SDK logging — use debug to diagnose container startup issues
+SANDBOX_LOG_LEVEL = "debug"
+SANDBOX_LOG_FORMAT = "pretty"
 
 # Secrets (set via wrangler secret put):
 # - SANDBOX_API_SECRET: shared secret for authenticating requests from cf-demo-app

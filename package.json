@@ -9,7 +9,9 @@
     "start": "next start",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv env.d.ts"
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv env.d.ts",
+    "test:e2e": "vitest run --config vitest.config.e2e.ts --no-file-parallelism",
+    "test:e2e:watch": "vitest --config vitest.config.e2e.ts --no-file-parallelism"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.48",
@@ -55,6 +57,7 @@
     "@types/react-dom": "^19.1.5",
     "tailwindcss": "^4.1.7",
     "typescript": "^5.8.3",
+    "vitest": "^3.2.4",
     "wrangler": "^4.16.0"
   }
 }

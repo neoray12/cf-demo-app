@@ -9,13 +9,19 @@
  */
 
 import { Hono } from 'hono';
-import { getSandbox, type SandboxOptions } from '@cloudflare/sandbox';
-export { Sandbox } from '@cloudflare/sandbox';
+import { getSandbox, Sandbox, type SandboxOptions } from '@cloudflare/sandbox';
+export { Sandbox };
 
 const GATEWAY_PORT = 18789;
 
+// Container cold start with Node.js 22 + OpenClaw needs more time than SDK defaults
+const CONTAINER_TIMEOUTS = {
+  instanceGetTimeoutMS: 120_000, // 2 min for provisioning (default 30s)
+  portReadyTimeoutMS: 180_000,   // 3 min for SDK API ready (default 90s)
+};
+
 interface Env {
-  Sandbox: DurableObjectNamespace;
+  Sandbox: DurableObjectNamespace<Sandbox>;
   BACKUP_BUCKET: R2Bucket;
   BROWSER: Fetcher;
   SANDBOX_API_SECRET: string;
@@ -67,8 +73,10 @@ app.post('/api/provision/:instanceId', async (c) => {
   console.log(`[PROVISION] Starting sandbox for instance: ${instanceId}`);
 
   const sleepAfter = body.sleepAfter || '10m';
-  const options: SandboxOptions =
-    sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter };
+  const options: SandboxOptions = {
+    ...(sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter }),
+    containerTimeouts: CONTAINER_TIMEOUTS,
+  };
 
   const sandbox = getSandbox(c.env.Sandbox, instanceId, options);
 
@@ -96,17 +104,13 @@ app.post('/api/provision/:instanceId', async (c) => {
       envVars.OPENAI_API_KEY = c.env.OPENAI_API_KEY;
     }
 
-    // Start OpenClaw gateway inside the container
-    const envString = Object.entries(envVars)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(' ');
-
-    const result = await sandbox.exec(
-      `${envString} /usr/local/bin/start-openclaw.sh`,
-      { background: true }
+    // Start OpenClaw gateway as a background process (SDK 0.8+ API)
+    const process = await sandbox.startProcess(
+      '/usr/local/bin/start-openclaw.sh',
+      { env: envVars, processId: `gateway-${instanceId}` }
     );
 
-    console.log(`[PROVISION] Gateway started for ${instanceId}:`, result);
+    console.log(`[PROVISION] Gateway started for ${instanceId}: pid=${process.id}`);
 
     return c.json({
       success: true,
@@ -131,7 +135,9 @@ app.get('/api/status/:instanceId', async (c) => {
   const instanceId = c.req.param('instanceId');
 
   try {
-    const sandbox = getSandbox(c.env.Sandbox, instanceId);
+    const sandbox = getSandbox(c.env.Sandbox, instanceId, {
+      containerTimeouts: CONTAINER_TIMEOUTS,
+    });
 
     // Try to check if gateway is responding
     let gatewayReady = false;
@@ -170,8 +176,10 @@ app.post('/api/start/:instanceId', async (c) => {
 
   try {
     const sleepAfter = body.sleepAfter || '10m';
-    const options: SandboxOptions =
-      sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter };
+    const options: SandboxOptions = {
+      ...(sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter }),
+      containerTimeouts: CONTAINER_TIMEOUTS,
+    };
 
     const sandbox = getSandbox(c.env.Sandbox, instanceId, options);
     await sandbox.start();
@@ -188,11 +196,7 @@ app.post('/api/start/:instanceId', async (c) => {
       envVars.ANTHROPIC_API_KEY = c.env.ANTHROPIC_API_KEY;
     }
 
-    const envString = Object.entries(envVars)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(' ');
-
-    await sandbox.exec(`${envString} /usr/local/bin/start-openclaw.sh`, { background: true });
+    await sandbox.startProcess('/usr/local/bin/start-openclaw.sh', { env: envVars });
 
     return c.json({ success: true, instanceId, status: 'starting' });
   } catch (error) {
@@ -211,7 +215,9 @@ app.post('/api/stop/:instanceId', async (c) => {
   const instanceId = c.req.param('instanceId');
 
   try {
-    const sandbox = getSandbox(c.env.Sandbox, instanceId);
+    const sandbox = getSandbox(c.env.Sandbox, instanceId, {
+      containerTimeouts: CONTAINER_TIMEOUTS,
+    });
     await sandbox.destroy();
 
     return c.json({ success: true, instanceId, status: 'stopped' });
@@ -232,9 +238,11 @@ app.post('/api/restart/:instanceId', async (c) => {
   const body = await c.req.json<{ gatewayToken: string }>();
 
   try {
-    const sandbox = getSandbox(c.env.Sandbox, instanceId);
+    const sandbox = getSandbox(c.env.Sandbox, instanceId, {
+      containerTimeouts: CONTAINER_TIMEOUTS,
+    });
 
-    // Kill existing gateway
+    // Kill existing gateway processes
     await sandbox.exec('pkill -f "openclaw gateway" || true');
     await new Promise((r) => setTimeout(r, 1000));
 
@@ -246,11 +254,7 @@ app.post('/api/restart/:instanceId', async (c) => {
       envVars.ANTHROPIC_API_KEY = c.env.ANTHROPIC_API_KEY;
     }
 
-    const envString = Object.entries(envVars)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(' ');
-
-    await sandbox.exec(`${envString} /usr/local/bin/start-openclaw.sh`, { background: true });
+    await sandbox.startProcess('/usr/local/bin/start-openclaw.sh', { env: envVars });
 
     return c.json({ success: true, instanceId, status: 'restarting' });
   } catch (error) {
@@ -277,7 +281,9 @@ app.all('/api/proxy/:instanceId/*', async (c) => {
 
   console.log(`[PROXY] ${instanceId}: ${request.method} ${proxyPath}`);
 
-  const sandbox = getSandbox(c.env.Sandbox, instanceId);
+  const sandbox = getSandbox(c.env.Sandbox, instanceId, {
+    containerTimeouts: CONTAINER_TIMEOUTS,
+  });
   const isWebSocket = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
 
   if (isWebSocket) {

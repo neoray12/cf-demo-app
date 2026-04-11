@@ -1,4 +1,4 @@
-FROM docker.io/cloudflare/sandbox:0.7.20
+FROM docker.io/cloudflare/sandbox:0.8.9
 
 # Install Node.js 22 (required by OpenClaw)
 ENV NODE_VERSION=22.22.1
