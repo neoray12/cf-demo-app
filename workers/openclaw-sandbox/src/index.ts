@@ -132,6 +132,26 @@ app.all('*', async (c, next) => {
   }
 
   // HTTP proxy — pass through directly, no HTML injection needed
+  // Auto-start gateway on root page load with token (handles wake-from-sleep).
+  // When a container wakes up, filesystem is preserved but processes are not.
+  // We restart the gateway so port 18789 becomes available before containerFetch waits for it.
+  const token = url.searchParams.get('token');
+  const isRootLoad = request.method === 'GET' && (url.pathname === '/' || url.pathname === '');
+  if (token && isRootLoad) {
+    try {
+      const envVars: Record<string, string> = { __OPENCLAW_TOKEN: token };
+      if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY) envVars.CLOUDFLARE_AI_GATEWAY_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
+      if (c.env.CF_AI_GATEWAY_ACCOUNT_ID) envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID;
+      if (c.env.CF_AI_GATEWAY_GATEWAY_ID) envVars.CF_AI_GATEWAY_GATEWAY_ID = c.env.CF_AI_GATEWAY_GATEWAY_ID;
+      await sandbox.start();
+      await sandbox.startProcess(ATOMIC_MERGE_START_CMD, { env: envVars, processId: `gateway-${instanceId}` });
+      console.log(`[SUBDOMAIN] Gateway auto-started for ${instanceId}`);
+    } catch (err) {
+      // Gateway may already be running — log and continue
+      console.log(`[SUBDOMAIN] Gateway start skipped for ${instanceId}: ${(err as Error).message}`);
+    }
+  }
+
   try {
     const proxyRequest = new Request(targetUrl.toString(), {
       method: request.method,
