@@ -437,22 +437,38 @@ async function proxyHandler(c: any) {
 
     const containerRes = await sandbox.containerFetch(proxyRequest, GATEWAY_PORT);
 
-    // For HTML responses at the root, inject a script to clear stale localStorage
-    // so the OpenClaw UI always uses the correct WebSocket URL for this instance.
+    // For HTML responses, inject scripts to:
+    // 1. Clear stale localStorage (multiple instances share same origin)
+    // 2. Monkey-patch WebSocket to include /api/proxy/:instanceId prefix
+    //    (OpenClaw UI derives WS URL from window.location, which misses the prefix)
     const contentType = containerRes.headers.get('content-type') || '';
-    if (contentType.includes('text/html') && (proxyPath === '/' || proxyPath === '')) {
+    if (contentType.includes('text/html')) {
       const html = await containerRes.text();
-      const proxyHost = request.headers.get('host') || 'cf-openclaw-sandbox.neo-cloudflare.workers.dev';
-      const wsUrl = `wss://${proxyHost}/api/proxy/${instanceId}`;
+      const proxyPrefix = `/api/proxy/${instanceId}`;
       const inject = `<script>
 (function(){
   try {
-    // Multiple instances share the same origin → clear ALL localStorage to prevent
-    // stale gateway tokens from a previous instance causing "token mismatch" errors.
     localStorage.clear();
     sessionStorage.clear();
-    window.__OC_WS_URL__='${wsUrl}';
-    window.__OC_INSTANCE_ID__='${instanceId}';
+    // Monkey-patch WebSocket so OpenClaw UI connections include the proxy prefix.
+    // The UI constructs ws://host/... but needs ws://host/api/proxy/:id/...
+    var _WS = window.WebSocket;
+    var pfx = '${proxyPrefix}';
+    window.WebSocket = function(url, protocols) {
+      try {
+        var u = new URL(url, window.location.href);
+        if (u.host === window.location.host && u.pathname.indexOf(pfx) !== 0) {
+          u.pathname = pfx + u.pathname;
+        }
+        url = u.toString();
+      } catch(e){}
+      return protocols !== undefined ? new _WS(url, protocols) : new _WS(url);
+    };
+    window.WebSocket.prototype = _WS.prototype;
+    window.WebSocket.CONNECTING = _WS.CONNECTING;
+    window.WebSocket.OPEN = _WS.OPEN;
+    window.WebSocket.CLOSING = _WS.CLOSING;
+    window.WebSocket.CLOSED = _WS.CLOSED;
   } catch(e){}
 })();
 </script>`;
