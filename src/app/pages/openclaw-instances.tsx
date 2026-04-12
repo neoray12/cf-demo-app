@@ -438,7 +438,8 @@ export function OpenClawInstancesPage() {
                           className="h-7 text-xs flex-1"
                           onClick={() => {
                             const sub = instance.id.replace('_', '-'); // oc_xxx → oc-xxx (DNS labels disallow underscores)
-                            window.open(`https://${sub}.saas-cfclaw.neokung.work/?token=${instance.gatewayToken}`, '_blank');
+                            const model = encodeURIComponent(`${instance.config.aiProvider}/${instance.config.aiModel}`);
+                            window.open(`https://${sub}.saas-cfclaw.neokung.work/?token=${instance.gatewayToken}&_m=${model}`, '_blank');
                           }}
                         >
                           <ExternalLink className="size-3 mr-1" />

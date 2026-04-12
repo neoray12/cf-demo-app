@@ -143,6 +143,10 @@ app.all('*', async (c, next) => {
       if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY) envVars.CLOUDFLARE_AI_GATEWAY_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
       if (c.env.CF_AI_GATEWAY_ACCOUNT_ID) envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID;
       if (c.env.CF_AI_GATEWAY_GATEWAY_ID) envVars.CF_AI_GATEWAY_GATEWAY_ID = c.env.CF_AI_GATEWAY_GATEWAY_ID;
+      // _m carries "aiProvider/aiModel" (e.g. "anthropic/claude-sonnet-4-20250514")
+      // Needed so start-openclaw.sh can configure the AI provider auth-profiles.json
+      const aiModel = url.searchParams.get('_m');
+      if (aiModel) envVars.CF_AI_GATEWAY_MODEL = aiModel;
       await sandbox.start();
       await sandbox.startProcess(ATOMIC_MERGE_START_CMD, { env: envVars, processId: `gateway-${instanceId}` });
       console.log(`[SUBDOMAIN] Gateway auto-started for ${instanceId}`);
