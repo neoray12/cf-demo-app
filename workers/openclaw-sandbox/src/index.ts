@@ -72,6 +72,83 @@ type AppEnv = { Bindings: Env; Variables: { sandbox: ReturnType<typeof getSandbo
 
 const app = new Hono<AppEnv>();
 
+const SUBDOMAIN_BASE = 'saas-cfclaw.neokung.work';
+
+// Subdomain proxy — oc-xxx.saas-cfclaw.neokung.work → instance oc_xxx
+// Each instance subdomain is its own browser Origin → localStorage isolated.
+// No HTML injection needed; WebSocket URLs are naturally correct.
+app.all('*', async (c, next) => {
+  const host = c.req.header('host') || '';
+  if (!host.endsWith(`.${SUBDOMAIN_BASE}`)) return next();
+
+  const subdomain = host.slice(0, host.length - SUBDOMAIN_BASE.length - 1); // 'oc-xxx'
+  if (!subdomain || subdomain.includes('.')) return next(); // unexpected depth
+
+  // DNS labels disallow underscores; map oc-xxx back to oc_xxx (first hyphen only)
+  const instanceId = subdomain.replace('-', '_'); // 'oc_xxx'
+
+  const request = c.req.raw;
+  const url = new URL(request.url);
+  const targetUrl = new URL(`http://localhost${url.pathname}${url.search}`);
+
+  console.log(`[SUBDOMAIN] ${instanceId}: ${request.method} ${url.pathname}`);
+
+  const sandbox = getSandbox(c.env.Sandbox, instanceId, {
+    containerTimeouts: CONTAINER_TIMEOUTS,
+    sleepAfter: DEFAULT_SLEEP_AFTER,
+  });
+
+  const isWebSocket = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
+
+  if (isWebSocket) {
+    try {
+      const containerResponse = await sandbox.wsConnect(request, GATEWAY_PORT);
+      const containerWs = containerResponse.webSocket;
+      if (!containerWs) return containerResponse;
+
+      const [clientWs, serverWs] = Object.values(new WebSocketPair());
+      serverWs.accept();
+      containerWs.accept();
+
+      serverWs.addEventListener('message', (event) => {
+        if (containerWs.readyState === WebSocket.OPEN) containerWs.send(event.data);
+      });
+      containerWs.addEventListener('message', (event) => {
+        if (serverWs.readyState === WebSocket.OPEN) serverWs.send(event.data);
+      });
+      serverWs.addEventListener('close', (event) => containerWs.close(event.code, event.reason));
+      containerWs.addEventListener('close', (event) => {
+        const reason = event.reason.length > 123 ? event.reason.slice(0, 120) + '...' : event.reason;
+        serverWs.close(event.code, reason);
+      });
+      serverWs.addEventListener('error', () => containerWs.close(1011, 'Client error'));
+      containerWs.addEventListener('error', () => serverWs.close(1011, 'Container error'));
+
+      return new Response(null, { status: 101, webSocket: clientWs });
+    } catch (error) {
+      console.error(`[SUBDOMAIN WS] ${instanceId}:`, error);
+      return new Response('WebSocket proxy error', { status: 502 });
+    }
+  }
+
+  // HTTP proxy — pass through directly, no HTML injection needed
+  try {
+    const proxyRequest = new Request(targetUrl.toString(), {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+    });
+    const containerRes = await sandbox.containerFetch(proxyRequest, GATEWAY_PORT);
+    const headers = new Headers(containerRes.headers);
+    headers.delete('content-encoding');
+    headers.delete('content-length');
+    return new Response(containerRes.body, { status: containerRes.status, headers });
+  } catch (error) {
+    console.error(`[SUBDOMAIN HTTP] ${instanceId}:`, error);
+    return c.json({ error: 'Container not reachable', details: (error as Error).message }, 502);
+  }
+});
+
 // Auth middleware — validate shared secret
 // Skip for /api/proxy/* routes: those are accessed directly from the browser
 // (including WebSocket), and the container's OpenClaw gateway validates the

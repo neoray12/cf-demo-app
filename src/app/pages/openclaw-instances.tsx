@@ -437,8 +437,8 @@ export function OpenClawInstancesPage() {
                           size="sm"
                           className="h-7 text-xs flex-1"
                           onClick={() => {
-                            const sandboxUrl = 'https://cf-openclaw-sandbox.neo-cloudflare.workers.dev';
-                            window.open(`${sandboxUrl}/api/proxy/${instance.id}/?token=${instance.gatewayToken}`, '_blank');
+                            const sub = instance.id.replace('_', '-'); // oc_xxx → oc-xxx (DNS labels disallow underscores)
+                            window.open(`https://${sub}.saas-cfclaw.neokung.work/?token=${instance.gatewayToken}`, '_blank');
                           }}
                         >
                           <ExternalLink className="size-3 mr-1" />

@@ -4,6 +4,13 @@ compatibility_date = "2025-12-01"
 compatibility_flags = ["nodejs_compat"]
 main = "src/index.ts"
 
+# Wildcard subdomain route: oc-xxx.saas-cfclaw.neokung.work → this Worker
+# Each OpenClaw instance gets its own subdomain for localStorage origin isolation.
+# DNS prerequisite: *.saas-cfclaw CNAME → cf-openclaw-sandbox.neo-cloudflare.workers.dev (proxied)
+[[routes]]
+pattern = "*.saas-cfclaw.neokung.work/*"
+zone_name = "neokung.work"
+
 [observability]
 enabled = true
 
