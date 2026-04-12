@@ -458,7 +458,8 @@ async function proxyHandler(c: any) {
       try {
         var u = new URL(url, window.location.href);
         if (u.host === window.location.host && u.pathname.indexOf(pfx) !== 0) {
-          u.pathname = pfx + u.pathname;
+          var cleanPath = u.pathname.replace(/^\/api\/proxy\/?/, '/');
+          u.pathname = pfx + cleanPath;
         }
         url = u.toString();
       } catch(e){}
