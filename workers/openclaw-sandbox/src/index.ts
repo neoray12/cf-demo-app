@@ -19,6 +19,35 @@ const GATEWAY_PORT = 18789;
 // after just 30s of no requests. Always pass this to preserve the container state.
 const DEFAULT_SLEEP_AFTER = '30m';
 
+// Atomic start command: write pre-config from env var then exec into start-openclaw.sh.
+// Combining config-write + gateway-start into ONE process avoids the race condition
+// where a separate sandbox.exec() can fail silently, leaving no config file.
+// Uses Node.js (available in the container) to write JSON from process.env safely.
+const ATOMIC_START_CMD = [
+  'node -e "',
+  "const fs=require('fs');",
+  "fs.mkdirSync('/root/.openclaw',{recursive:true});",
+  "fs.writeFileSync('/root/.openclaw/openclaw.json',process.env.__OPENCLAW_PRE_CONFIG);",
+  "console.log('Config written:',process.env.__OPENCLAW_PRE_CONFIG.length,'bytes');",
+  '" && exec /usr/local/bin/start-openclaw.sh',
+].join('');
+
+// Atomic merge-and-start: patch gateway.auth.token + dangerouslyDisableDeviceAuth into
+// an existing openclaw.json (preserving models/providers), then exec start script.
+// Used for restart (container still running, config on disk) and start (wake from sleep).
+const ATOMIC_MERGE_START_CMD = [
+  'node -e "',
+  "const fs=require('fs'),p='/root/.openclaw/openclaw.json';",
+  "let c={};try{c=JSON.parse(fs.readFileSync(p,'utf8'));}catch(e){fs.mkdirSync('/root/.openclaw',{recursive:true});}",
+  "c.gateway=c.gateway||{};c.gateway.auth=c.gateway.auth||{};",
+  "c.gateway.auth.token=process.env.__OPENCLAW_TOKEN;",
+  "c.gateway.controlUi=c.gateway.controlUi||{};",
+  "c.gateway.controlUi.dangerouslyDisableDeviceAuth=true;",
+  "fs.writeFileSync(p,JSON.stringify(c,null,2));",
+  "console.log('Config merged, token set');",
+  '" && exec /usr/local/bin/start-openclaw.sh',
+].join('');
+
 // Container cold start with Node.js 22 + OpenClaw needs more time than SDK defaults
 const CONTAINER_TIMEOUTS = {
   instanceGetTimeoutMS: 120_000, // 2 min for provisioning (default 30s)
@@ -97,26 +126,6 @@ app.post('/api/provision/:instanceId', async (c) => {
     // Start the container
     await sandbox.start();
 
-    // Pre-write openclaw.json so the start script's Node.js patch preserves
-    // dangerouslyDisableDeviceAuth (the patch keeps other controlUi keys intact).
-    // Using the correct filename that start-openclaw.sh checks for.
-    const gatewayConfig = JSON.stringify({
-      gateway: {
-        auth: {
-          token: body.gatewayToken,
-        },
-        controlUi: {
-          dangerouslyDisableDeviceAuth: true,
-        },
-      },
-    });
-    try {
-      await sandbox.exec(`mkdir -p /root/.openclaw && printf '%s' '${gatewayConfig.replace(/'/g, "'\\''")}' > /root/.openclaw/openclaw.json`);
-      console.log(`[PROVISION] Gateway config pre-written for ${instanceId}`);
-    } catch (cfgErr) {
-      console.warn(`[PROVISION] Config pre-write failed for ${instanceId}:`, cfgErr);
-    }
-
     // Build environment variables for the OpenClaw gateway
     const envVars: Record<string, string> = {
       OPENCLAW_GATEWAY_TOKEN: body.gatewayToken,
@@ -125,11 +134,6 @@ app.post('/api/provision/:instanceId', async (c) => {
 
     // AI provider configuration: pass CF AI Gateway vars so OpenClaw's native
     // Gateway integration can use CLOUDFLARE_AI_GATEWAY_API_KEY as cf-aig-authorization.
-    // Do NOT set ANTHROPIC_API_KEY to the CF token — they are different things:
-    //   CF token → cf-aig-authorization (authenticates with the Gateway)
-    //   Anthropic key → x-api-key (authenticates with Anthropic directly)
-    // The nkcf-gateway-01 gateway has Provider Credentials configured, so the
-    // CF token alone is sufficient and no Anthropic key is needed client-side.
     if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY && c.env.CF_AI_GATEWAY_ACCOUNT_ID && c.env.CF_AI_GATEWAY_GATEWAY_ID) {
       envVars.CLOUDFLARE_AI_GATEWAY_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
       envVars.CF_AI_GATEWAY_ACCOUNT_ID = c.env.CF_AI_GATEWAY_ACCOUNT_ID;
@@ -143,9 +147,19 @@ app.post('/api/provision/:instanceId', async (c) => {
       envVars.OPENAI_API_KEY = c.env.OPENAI_API_KEY;
     }
 
-    // Start OpenClaw gateway as a background process (SDK 0.8+ API)
+    // Pre-write openclaw.json with gateway.auth.token + dangerouslyDisableDeviceAuth,
+    // then start the gateway — all in ONE startProcess call to avoid the race condition
+    // where a separate sandbox.exec() pre-write can fail silently.
+    // The config is passed via env var to avoid shell quoting issues with JSON.
+    envVars.__OPENCLAW_PRE_CONFIG = JSON.stringify({
+      gateway: {
+        auth: { token: body.gatewayToken },
+        controlUi: { dangerouslyDisableDeviceAuth: true },
+      },
+    });
+
     const process = await sandbox.startProcess(
-      '/usr/local/bin/start-openclaw.sh',
+      ATOMIC_START_CMD,
       { env: envVars, processId: `gateway-${instanceId}` }
     );
 
@@ -224,15 +238,7 @@ app.post('/api/start/:instanceId', async (c) => {
     const sandbox = getSandbox(c.env.Sandbox, instanceId, options);
     await sandbox.start();
 
-    // Patch auth token + dangerouslyDisableDeviceAuth into config on wake-up.
-    // gateway.auth.token must match the KV-stored gatewayToken — OpenClaw reads
-    // the token from openclaw.json, NOT from the OPENCLAW_GATEWAY_TOKEN env var.
-    const tok = body.gatewayToken.replace(/'/g, "'\\''");
-    try {
-      await sandbox.exec(`node -e "const fs=require('fs'),p='/root/.openclaw/openclaw.json';try{let c=JSON.parse(fs.readFileSync(p,'utf8'));c.gateway=c.gateway||{};c.gateway.auth=c.gateway.auth||{};c.gateway.auth.token='${tok}';c.gateway.controlUi=c.gateway.controlUi||{};c.gateway.controlUi.dangerouslyDisableDeviceAuth=true;fs.writeFileSync(p,JSON.stringify(c,null,2));}catch(e){fs.mkdirSync('/root/.openclaw',{recursive:true});fs.writeFileSync(p,JSON.stringify({gateway:{auth:{token:'${tok}'},controlUi:{dangerouslyDisableDeviceAuth:true}}},null,2));}"`)
-    } catch {}
-
-    // Re-start the gateway process
+    // Build env vars — same as provision (wake from sleep = fresh container)
     const envVars: Record<string, string> = {
       OPENCLAW_GATEWAY_TOKEN: body.gatewayToken,
     };
@@ -249,7 +255,15 @@ app.post('/api/start/:instanceId', async (c) => {
       envVars.OPENAI_API_KEY = c.env.OPENAI_API_KEY;
     }
 
-    await sandbox.startProcess('/usr/local/bin/start-openclaw.sh', { env: envVars });
+    // Atomic: write config + start gateway in ONE process (same as provision)
+    envVars.__OPENCLAW_PRE_CONFIG = JSON.stringify({
+      gateway: {
+        auth: { token: body.gatewayToken },
+        controlUi: { dangerouslyDisableDeviceAuth: true },
+      },
+    });
+
+    await sandbox.startProcess(ATOMIC_START_CMD, { env: envVars });
 
     return c.json({ success: true, instanceId, status: 'starting' });
   } catch (error) {
@@ -300,15 +314,10 @@ app.post('/api/restart/:instanceId', async (c) => {
     await sandbox.exec('pkill -f "openclaw gateway" || true');
     await new Promise((r) => setTimeout(r, 1000));
 
-    // Patch auth token + dangerouslyDisableDeviceAuth into config before restarting
-    const restartTok = body.gatewayToken.replace(/'/g, "'\\''");
-    try {
-      await sandbox.exec(`node -e "const fs=require('fs'),p='/root/.openclaw/openclaw.json';try{let c=JSON.parse(fs.readFileSync(p,'utf8'));c.gateway=c.gateway||{};c.gateway.auth=c.gateway.auth||{};c.gateway.auth.token='${restartTok}';c.gateway.controlUi=c.gateway.controlUi||{};c.gateway.controlUi.dangerouslyDisableDeviceAuth=true;fs.writeFileSync(p,JSON.stringify(c,null,2));}catch(e){fs.mkdirSync('/root/.openclaw',{recursive:true});fs.writeFileSync(p,JSON.stringify({gateway:{auth:{token:'${restartTok}'},controlUi:{dangerouslyDisableDeviceAuth:true}}},null,2));}"`);
-    } catch {}
-
-    // Restart
+    // Restart with atomic merge: patch token into existing config, then start
     const envVars: Record<string, string> = {
       OPENCLAW_GATEWAY_TOKEN: body.gatewayToken,
+      __OPENCLAW_TOKEN: body.gatewayToken,
     };
     if (c.env.CLOUDFLARE_AI_GATEWAY_API_KEY && c.env.CF_AI_GATEWAY_ACCOUNT_ID && c.env.CF_AI_GATEWAY_GATEWAY_ID) {
       envVars.CLOUDFLARE_AI_GATEWAY_API_KEY = c.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
@@ -323,7 +332,7 @@ app.post('/api/restart/:instanceId', async (c) => {
       envVars.OPENAI_API_KEY = c.env.OPENAI_API_KEY;
     }
 
-    await sandbox.startProcess('/usr/local/bin/start-openclaw.sh', { env: envVars });
+    await sandbox.startProcess(ATOMIC_MERGE_START_CMD, { env: envVars });
 
     return c.json({ success: true, instanceId, status: 'restarting' });
   } catch (error) {
