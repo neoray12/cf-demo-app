@@ -448,9 +448,42 @@ async function proxyHandler(c: any) {
       const inject = `<script>
 (function(){
   try {
-    localStorage.clear();
-    sessionStorage.clear();
-    // Monkey-patch WebSocket so OpenClaw UI connections include the proxy prefix.
+    // --- Namespaced localStorage ---
+    // All instances share the same origin, so we prefix every key with
+    // the instance ID to prevent cross-tab interference.
+    var ns = '__oc_${instanceId}:';
+    var _ls = window.localStorage;
+    var _proto = Storage.prototype;
+    var nsObj = {
+      getItem:    function(k){ return _proto.getItem.call(_ls, ns+k); },
+      setItem:    function(k,v){ _proto.setItem.call(_ls, ns+k, v); },
+      removeItem: function(k){ _proto.removeItem.call(_ls, ns+k); },
+      clear: function(){
+        var rm=[];
+        for(var i=0;i<_ls.length;i++){var k=_proto.key.call(_ls,i);if(k&&k.indexOf(ns)===0)rm.push(k);}
+        rm.forEach(function(k){_proto.removeItem.call(_ls,k);});
+      },
+      key: function(idx){
+        var c=0;
+        for(var i=0;i<_ls.length;i++){var k=_proto.key.call(_ls,i);if(k&&k.indexOf(ns)===0){if(c===idx)return k.slice(ns.length);c++;}}
+        return null;
+      },
+      get length(){
+        var c=0;
+        for(var i=0;i<_ls.length;i++){var k=_proto.key.call(_ls,i);if(k&&k.indexOf(ns)===0)c++;}
+        return c;
+      }
+    };
+    var lsProxy = new Proxy(nsObj, {
+      get: function(t,p){ if(p in t) return typeof t[p]==='function'?t[p].bind(t):t[p]; if(typeof p==='string') return t.getItem(p); },
+      set: function(t,p,v){ t.setItem(p,String(v)); return true; },
+      deleteProperty: function(t,p){ t.removeItem(p); return true; }
+    });
+    Object.defineProperty(window,'localStorage',{get:function(){return lsProxy;},configurable:true});
+    // Clear stale keys for THIS instance only (fresh start on page load)
+    nsObj.clear();
+
+    // --- Monkey-patch WebSocket ---
     // The UI constructs ws://host/... but needs ws://host/api/proxy/:id/...
     var _WS = window.WebSocket;
     var pfx = '${proxyPrefix}';
@@ -458,7 +491,7 @@ async function proxyHandler(c: any) {
       try {
         var u = new URL(url, window.location.href);
         if (u.host === window.location.host && u.pathname.indexOf(pfx) !== 0) {
-          var cleanPath = u.pathname.replace(/^\/api\/proxy\/?/, '/');
+          var cleanPath = u.pathname.replace(/^\\/api\\/proxy\\/?/, '/');
           u.pathname = pfx + cleanPath;
         }
         url = u.toString();
