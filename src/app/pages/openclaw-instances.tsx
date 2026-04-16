@@ -52,7 +52,8 @@ const AI_PROVIDERS = [
 
 const AI_MODELS: Record<string, { id: string; label: string }[]> = {
   anthropic: [
-    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+    { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
     { id: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
   ],
   openai: [
@@ -76,7 +77,7 @@ export function OpenClawInstancesPage() {
   const [formName, setFormName] = useState('');
   const [formSlug, setFormSlug] = useState('');
   const [formProvider, setFormProvider] = useState('anthropic');
-  const [formModel, setFormModel] = useState('claude-sonnet-4-20250514');
+  const [formModel, setFormModel] = useState('claude-sonnet-4-6');
   const [formSleep, setFormSleep] = useState('10m');
 
   // Settings dialog
@@ -226,7 +227,7 @@ export function OpenClawInstancesPage() {
       setFormName('');
       setFormSlug('');
       setFormProvider('anthropic');
-      setFormModel('claude-sonnet-4-20250514');
+      setFormModel('claude-sonnet-4-6');
       // Optimistically insert the new instance immediately (KV may lag)
       setInstances((prev) => [newInstance, ...prev]);
       // Then sync from server to get latest status

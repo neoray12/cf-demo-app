@@ -80,16 +80,22 @@ export const AI_MODELS: AIModel[] = [
   },
   // Anthropic
   {
-    id: "claude-sonnet-4",
-    name: "Claude Sonnet 4",
+    id: "claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6",
     provider: "anthropic",
-    providerModelId: "claude-sonnet-4-20250514",
+    providerModelId: "claude-sonnet-4-6",
   },
   {
-    id: "claude-opus-4",
-    name: "Claude Opus 4",
+    id: "claude-sonnet-4-5",
+    name: "Claude Sonnet 4.5",
     provider: "anthropic",
-    providerModelId: "claude-opus-4-20250514",
+    providerModelId: "claude-sonnet-4-5",
+  },
+  {
+    id: "claude-opus-4-6",
+    name: "Claude Opus 4.6",
+    provider: "anthropic",
+    providerModelId: "claude-opus-4-6",
   },
   {
     id: "claude-3-haiku",
@@ -99,7 +105,7 @@ export const AI_MODELS: AIModel[] = [
   },
 ];
 
-export const DEFAULT_MODEL_ID = "claude-sonnet-4";
+export const DEFAULT_MODEL_ID = "claude-sonnet-4-6";
 
 export interface BrowserRenderingEndpoint {
   id: string;

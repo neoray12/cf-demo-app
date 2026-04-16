@@ -103,7 +103,7 @@ export async function POST(request: Request) {
     sandboxId: id,
     config: {
       aiProvider: body.aiProvider || 'anthropic',
-      aiModel: body.aiModel || 'claude-sonnet-4-20250514',
+      aiModel: body.aiModel || 'claude-sonnet-4-6',
       sleepAfter: body.sleepAfter || '10m',
       channels: [],
     },

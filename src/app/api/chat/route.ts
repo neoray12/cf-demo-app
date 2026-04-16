@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
   const provider: ModelProvider = rawProvider || 'workers-ai';
   const defaultModels: Record<string, string> = {
     openai: 'gpt-3.5-turbo',
-    anthropic: 'claude-sonnet-4-20250514',
+    anthropic: 'claude-sonnet-4-6',
     perplexity: 'sonar',
     'workers-ai': '@cf/meta/llama-3.1-8b-instruct',
   };
