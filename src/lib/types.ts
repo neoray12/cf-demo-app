@@ -43,12 +43,33 @@ export const AI_MODELS: AIModel[] = [
     workersAiModel: "@cf/openai/gpt-oss-20b",
   },
   {
-    id: "kimi-k2.5",
-    name: "Kimi K2.5",
+    id: "kimi-k2.6",
+    name: "Kimi K2.6",
     provider: "workers-ai",
-    workersAiModel: "@cf/moonshotai/kimi-k2.5",
+    workersAiModel: "@cf/moonshotai/kimi-k2.6",
     reasoning: true,
     iconUrl: "/moonshotai.svg",
+  },
+  {
+    id: "kimi-k2.7-code",
+    name: "Kimi K2.7 Code",
+    provider: "workers-ai",
+    workersAiModel: "@cf/moonshotai/kimi-k2.7-code",
+    reasoning: true,
+    iconUrl: "/moonshotai.svg",
+  },
+  {
+    id: "glm-4.7-flash",
+    name: "GLM 4.7 Flash",
+    provider: "workers-ai",
+    workersAiModel: "@cf/zai-org/glm-4.7-flash",
+  },
+  {
+    id: "glm-5.2",
+    name: "GLM 5.2",
+    provider: "workers-ai",
+    workersAiModel: "@cf/zai-org/glm-5.2",
+    reasoning: true,
   },
   {
     id: "gemma-4-26b",
@@ -105,7 +126,7 @@ export const AI_MODELS: AIModel[] = [
   },
 ];
 
-export const DEFAULT_MODEL_ID = "claude-sonnet-4-6";
+export const DEFAULT_MODEL_ID = "glm-5.2";
 
 export interface BrowserRenderingEndpoint {
   id: string;
