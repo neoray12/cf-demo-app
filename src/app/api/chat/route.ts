@@ -300,6 +300,45 @@ export async function POST(request: NextRequest) {
     department,
   }).replace(/[^\x20-\x7E]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
 
+  // Sanitize SSE stream: some Workers AI models (e.g. llama-3.2-3b) return
+  // delta.content as a number instead of string, causing AI_TypeValidationError.
+  // This wrapper intercepts the response body and coerces content to string.
+  function sanitizeSseFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const headers = new Headers(init?.headers as HeadersInit);
+    if (isExternal) headers.delete('Authorization');
+    return fetch(url, { ...init, headers }).then((res) => {
+      if (!res.body || !res.headers.get('content-type')?.includes('text/event-stream')) return res;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      const encoder2 = new TextEncoder();
+      const transformed = new ReadableStream({
+        async pull(controller) {
+          const { done, value } = await reader.read();
+          if (done) { controller.close(); return; }
+          const chunk = decoder.decode(value, { stream: true });
+          const fixed = chunk.replace(/^data: ({.+})$/mg, (_, json) => {
+            try {
+              const obj = JSON.parse(json);
+              if (obj?.choices) {
+                for (const choice of obj.choices) {
+                  if (choice?.delta && typeof choice.delta.content !== 'string' && choice.delta.content != null) {
+                    choice.delta.content = String(choice.delta.content);
+                  }
+                }
+              }
+              return `data: ${JSON.stringify(obj)}`;
+            } catch {
+              return `data: ${json}`;
+            }
+          });
+          controller.enqueue(encoder2.encode(fixed));
+        },
+        cancel() { reader.cancel(); },
+      });
+      return new Response(transformed, { status: res.status, headers: res.headers });
+    });
+  }
+
   const openai = createOpenAI({
     apiKey: isExternal ? 'aig-managed' : (cfApiToken || 'dummy'),
     baseURL,
@@ -307,13 +346,7 @@ export async function POST(request: NextRequest) {
       ...(aigToken ? { 'cf-aig-authorization': `Bearer ${aigToken}` } : {}),
       'cf-aig-metadata': metadataJson,
     },
-    fetch: isExternal
-      ? (url, init) => {
-          const headers = new Headers(init?.headers as HeadersInit);
-          headers.delete('Authorization');
-          return fetch(url, { ...init, headers });
-        }
-      : undefined,
+    fetch: sanitizeSseFetch,
   });
 
   const useTools = toolsEnabled && modelSupportsTools(provider, modelId);
