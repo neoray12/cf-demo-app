@@ -1,0 +1,41 @@
+workers/chat-sandbox/package-lock.json
+  s_bdc04ccd4a8c6f::t_c0f793da694ea6 1-1629
+.github/workflows/deploy-chat-sandbox.yml
+  s_bdc04ccd4a8c6f::t_f68a7b21608369 1-32
+src/app/api/chat/route.ts
+  s_bdc04ccd4a8c6f::t_5d7fe6e423ab06 10,106-157,413,415,419-429,436-437,440-441,445
+src/app/pages/chat.tsx
+  s_bdc04ccd4a8c6f::t_3aeb1e1012c6f1 13,46-47,52-53,166-310,316-318
+src/lib/chat-sandbox.ts
+  s_bdc04ccd4a8c6f::t_797c2889755a2d 1-108
+workers/chat-sandbox/Dockerfile
+  s_bdc04ccd4a8c6f::t_d2578acfda9647 1-9
+workers/chat-sandbox/package.json
+  s_bdc04ccd4a8c6f::t_c018cdd38b2ca9 1-21
+workers/chat-sandbox/src/index.ts
+  s_bdc04ccd4a8c6f::t_6d28e8b77171e8 1-215
+workers/chat-sandbox/tsconfig.json
+  s_bdc04ccd4a8c6f::t_a81b0b1fe1c735 1-16
+workers/chat-sandbox/wrangler.dev.toml
+  s_bdc04ccd4a8c6f::t_f4d765b22eeb2a 1-29
+workers/chat-sandbox/wrangler.toml
+  s_bdc04ccd4a8c6f::t_4a5b4a9647e053 1-46
+wrangler.toml
+  s_bdc04ccd4a8c6f::t_80afdf2f6216f2 28-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "dfefb4afc169b4cbf623c0c722018fb08d2e09fa",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "claude-fable-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
