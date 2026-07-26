@@ -1,0 +1,19 @@
+workers/chat-sandbox/src/index.ts
+  s_bdc04ccd4a8c6f::t_3741ddb4ad9811 266-280
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "42d1b813d87b071a7ca6724dd9fb524ebd3b6f02",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
