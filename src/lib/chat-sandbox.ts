@@ -47,11 +47,16 @@ export interface SandboxTelemetry {
   coldStart: boolean | null;
 }
 
+export interface CodeExecutionOutput {
+  text: string | null;
+  image: string | null;
+}
+
 export interface CodeExecutionResult {
   success: boolean;
   stdout: string;
   stderr: string;
-  results: string[];
+  results: CodeExecutionOutput[];
   error: string | null;
   sandbox: SandboxTelemetry | null;
 }
@@ -117,5 +122,30 @@ export async function createPreview(
       ? '沙箱啟動中或部署逾時，請稍後再試一次。'
       : message;
     return { error: friendly, sandbox: null };
+  }
+}
+
+export async function uploadFile(
+  env: SandboxEnv,
+  sessionId: string,
+  fileName: string,
+  contentBase64: string
+): Promise<{ path?: string; size?: number; error?: string }> {
+  try {
+    const res = await sandboxFetch(env, '/api/upload', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, fileName, contentBase64 }),
+    });
+    const data = (await res.json()) as { path?: string; size?: number; error?: string };
+    if (!res.ok || !data.path) {
+      return { error: data.error || `HTTP ${res.status}` };
+    }
+    return { path: data.path, size: data.size };
+  } catch (err) {
+    const message = (err as Error).message || String(err);
+    const friendly = /timeout|timed out|abort/i.test(message)
+      ? '沙箱啟動中或上傳逾時，請稍後再試一次。'
+      : message;
+    return { error: friendly };
   }
 }

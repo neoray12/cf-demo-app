@@ -74,12 +74,27 @@ export function SandboxInfoBar({ sandbox }: { sandbox: SandboxTelemetry | null |
   );
 }
 
+// Cropped to APAC, not the whole globe — the chat-sandbox container is
+// pinned to constraints.regions=["APAC"] (wrangler.toml) and demo traffic
+// is Taiwan-based, so a full world map is mostly empty ocean. Bounds cover
+// India through Japan with margin (Oceania is a separate Containers region
+// from APAC, so it's deliberately excluded).
+const MAP_MIN_LON = 65;
+const MAP_MAX_LON = 150;
+const MAP_MIN_LAT = -15;
+const MAP_MAX_LAT = 48;
+
 function project(lat: number, lon: number) {
   return { x: lon, y: -lat };
 }
 
 function projectPct(lat: number, lon: number) {
-  return { xPct: ((lon + 180) / 360) * 100, yPct: ((90 - lat) / 180) * 100 };
+  const xPct = ((lon - MAP_MIN_LON) / (MAP_MAX_LON - MAP_MIN_LON)) * 100;
+  const yPct = ((MAP_MAX_LAT - lat) / (MAP_MAX_LAT - MAP_MIN_LAT)) * 100;
+  // Clamp so a colo outside the APAC crop (shouldn't happen given the
+  // region pin, but cheap insurance) still renders at the map's edge
+  // instead of drifting off the visible card.
+  return { xPct: Math.min(100, Math.max(0, xPct)), yPct: Math.min(100, Math.max(0, yPct)) };
 }
 
 function PopPin({
@@ -135,13 +150,16 @@ export function PopMap({
   const sameLocation = Boolean(edge && sandbox && edge.code === sandbox.code);
 
   return (
-    <div className="relative mt-2 ml-3 w-full max-w-sm aspect-[2/1] rounded-lg overflow-hidden bg-zinc-950 border border-zinc-700/50">
+    <div className="relative mt-2 ml-3 w-full max-w-sm aspect-[4/3] rounded-lg overflow-hidden bg-zinc-950 border border-zinc-700/50">
       <svg
-        viewBox="-180 -90 360 180"
+        viewBox={`${MAP_MIN_LON} ${-MAP_MAX_LAT} ${MAP_MAX_LON - MAP_MIN_LON} ${MAP_MAX_LAT - MAP_MIN_LAT}`}
         preserveAspectRatio="xMidYMid slice"
         className="absolute inset-0 w-full h-full"
       >
-        <path d={WORLD_MAP_PATH} fill="#27272a" stroke="#3f3f46" strokeWidth={0.5} />
+        {/* Stroke widths are in viewBox degrees — thinner than the old
+            full-world map since the same width now covers far fewer
+            degrees (85° vs 360°), so a naive 0.5 would render ~4x thicker. */}
+        <path d={WORLD_MAP_PATH} fill="#27272a" stroke="#3f3f46" strokeWidth={0.15} />
         {edge && sandbox && !sameLocation && (
           <line
             x1={project(edge.lat, edge.lon).x}
@@ -150,8 +168,8 @@ export function PopMap({
             y2={project(sandbox.lat, sandbox.lon).y}
             stroke="#38bdf8"
             strokeOpacity={0.6}
-            strokeWidth={0.6}
-            strokeDasharray="2,1.5"
+            strokeWidth={0.2}
+            strokeDasharray="0.7,0.5"
           />
         )}
       </svg>

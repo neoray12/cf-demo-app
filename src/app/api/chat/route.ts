@@ -7,7 +7,7 @@ import { cookies } from 'next/headers';
 import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
-import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview } from '@/lib/chat-sandbox';
+import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview, uploadFile as sandboxUploadFile } from '@/lib/chat-sandbox';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
@@ -106,12 +106,26 @@ function buildSearchKnowledgeTool(env: Record<string, unknown>) {
 // Extra system prompt guidance when the sandbox tools are available
 const SANDBOX_PROMPT = `
 
-當問題需要精確計算（數學、統計、日期、資料處理）時，使用 executeCode 工具執行 Python 程式碼取得真實結果，不要憑空心算。當使用者要求製作或展示網頁時，使用 createWebPreview 工具產生預覽網址，並在回覆中附上該網址。`;
+當問題需要精確計算（數學、統計、日期、資料處理）時，使用 executeCode 工具執行 Python 程式碼取得真實結果，不要憑空心算。當使用者要求製作或展示網頁時，使用 createWebPreview 工具產生預覽網址，並在回覆中附上該網址。當使用者上傳 CSV/XLSX 檔案時，使用 executeCode 搭配 pandas 讀取分析，沙箱已安裝 pandas、openpyxl、matplotlib；若適合可用 matplotlib 畫圖，圖表會直接顯示給使用者。`;
 
-function buildExecuteCodeTool(env: Record<string, unknown>, sessionId: string, edgeColo: string | null) {
+interface UploadedFileInfo {
+  name: string;
+  path: string;
+}
+
+function buildExecuteCodeTool(
+  env: Record<string, unknown>,
+  sessionId: string,
+  edgeColo: string | null,
+  uploadedFiles: UploadedFileInfo[]
+) {
+  const filesNote = uploadedFiles.length
+    ? `\n\n使用者已上傳以下檔案，可直接用 pandas 讀取：${uploadedFiles.map((f) => `${f.name} → ${f.path}`).join('；')}`
+    : '';
   return {
     description:
-      '在安全的沙箱環境中執行 Python 程式碼並回傳真實輸出。適用於數學計算、統計、日期運算、字串與資料處理等需要精確結果的問題。程式碼必須用 print() 輸出最終結果。',
+      '在安全的沙箱環境中執行 Python 程式碼並回傳真實輸出。適用於數學計算、統計、日期運算、字串與資料處理等需要精確結果的問題。沙箱已安裝 pandas、openpyxl、matplotlib，可用於讀取 CSV/XLSX 並繪圖。程式碼必須用 print() 輸出文字結果；若用 matplotlib 畫圖，呼叫 plt.show() 讓圖表被擷取回傳。' +
+      filesNote,
     inputSchema: z.object({
       code: z.string().describe('要執行的 Python 程式碼，必須用 print() 輸出最終結果'),
     }),
@@ -290,6 +304,7 @@ export async function POST(request: NextRequest) {
     mcpServers: mcpServerIds = [],
     userName,
     userEmail,
+    attachments = [],
   } = body as {
     messages: Array<{ role: string; content: string }>;
     model?: string;
@@ -298,6 +313,7 @@ export async function POST(request: NextRequest) {
     mcpServers?: string[];
     userName?: string;
     userEmail?: string;
+    attachments?: Array<{ name: string; contentBase64: string }>;
   };
 
   if (!messages || !Array.isArray(messages)) {
@@ -435,7 +451,22 @@ export async function POST(request: NextRequest) {
         .slice(0, 24)
         .replace(/^-+|-+$/g, '');
       const sandboxSessionId = `sbx-${sanitizedSessionId || 'anon'}`;
-      tools.executeCode = buildExecuteCodeTool(env as any, sandboxSessionId, edgeColo);
+
+      // Upload any attached CSV/XLSX into the sandbox before registering the
+      // tool, so its description can tell the model exactly where to find
+      // them — the model can't discover files on its own inside the sandbox.
+      const uploadedFiles: UploadedFileInfo[] = [];
+      for (const att of attachments) {
+        if (!att?.name || !att?.contentBase64) continue;
+        const uploaded = await sandboxUploadFile(env as any, sandboxSessionId, att.name, att.contentBase64);
+        if (uploaded.path) {
+          uploadedFiles.push({ name: att.name, path: uploaded.path });
+        } else {
+          console.error('[Chat API] File upload failed:', att.name, uploaded.error);
+        }
+      }
+
+      tools.executeCode = buildExecuteCodeTool(env as any, sandboxSessionId, edgeColo, uploadedFiles);
       tools.createWebPreview = buildWebPreviewTool(env as any, sandboxSessionId, edgeColo);
       sandboxToolsActive = true;
     }

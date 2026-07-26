@@ -22,6 +22,17 @@ const PREVIEW_DIR = '/workspace/preview';
 // Fixed token → stable preview URL per sandbox across re-deploys of the page
 const PREVIEW_TOKEN = 'preview';
 
+const UPLOAD_DIR = '/workspace/uploads';
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8MB — generous for a demo CSV/XLSX
+const ALLOWED_UPLOAD_EXTENSIONS = ['.csv', '.xlsx'];
+
+// Decoded byte length of a base64 string, without actually materializing
+// the bytes — just for the size-limit check before writing.
+function base64ByteLength(base64: string): number {
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
 // Container cold start needs more headroom than SDK defaults (30s/90s)
 const CONTAINER_TIMEOUTS = {
   instanceGetTimeoutMS: 60_000,
@@ -152,13 +163,20 @@ app.post('/api/execute', async (c) => {
       sandbox.runCode(code, { language, timeout: EXEC_TIMEOUT_MS }),
       getSandboxTelemetry(sandbox, sessionId),
     ]);
+    // runCode() can return rich output (e.g. matplotlib charts) alongside
+    // text — png/jpeg used to be silently dropped here, keeping only .text.
+    const results = (execution.results ?? [])
+      .map((r) => ({
+        text: r.text ?? null,
+        image: r.png ? `data:image/png;base64,${r.png}` : r.jpeg ? `data:image/jpeg;base64,${r.jpeg}` : null,
+      }))
+      .filter((r) => r.text || r.image);
+
     return c.json({
       success: !execution.error,
       stdout: execution.logs?.stdout?.join('\n') ?? '',
       stderr: execution.logs?.stderr?.join('\n') ?? '',
-      results: (execution.results ?? [])
-        .map((r) => r.text)
-        .filter((t): t is string => Boolean(t)),
+      results,
       error: execution.error ? `${execution.error.name}: ${execution.error.message}` : null,
       sandbox: sandboxInfo,
     });
@@ -250,6 +268,51 @@ app.post('/api/preview', async (c) => {
   } catch (err) {
     const message = (err as Error).message || String(err);
     console.error(`[PREVIEW] ${sessionId} failed:`, message);
+    return c.json({ error: message }, 502);
+  }
+});
+
+/**
+ * POST /api/upload
+ * Write an uploaded CSV/XLSX into the session's sandbox so executeCode can
+ * read it with pandas. Body: { sessionId, fileName, contentBase64 }
+ */
+app.post('/api/upload', async (c) => {
+  const body = await c.req.json<{ sessionId?: string; fileName?: string; contentBase64?: string }>();
+  const { sessionId, fileName, contentBase64 } = body;
+
+  if (!isValidSessionId(sessionId)) {
+    return c.json({ error: 'Invalid sessionId (lowercase alphanumeric + hyphens, max 32 chars)' }, 400);
+  }
+  if (!fileName || typeof fileName !== 'string' || /[/\\]/.test(fileName) || fileName.includes('..')) {
+    return c.json({ error: 'Invalid fileName' }, 400);
+  }
+  const ext = fileName.slice(fileName.lastIndexOf('.')).toLowerCase();
+  if (!ALLOWED_UPLOAD_EXTENSIONS.includes(ext)) {
+    return c.json({ error: `Unsupported file type: ${ext}. Allowed: ${ALLOWED_UPLOAD_EXTENSIONS.join(', ')}` }, 400);
+  }
+  if (!contentBase64 || typeof contentBase64 !== 'string') {
+    return c.json({ error: 'Missing contentBase64' }, 400);
+  }
+
+  const size = base64ByteLength(contentBase64);
+  if (size > MAX_UPLOAD_BYTES) {
+    return c.json({ error: `File too large (max ${MAX_UPLOAD_BYTES / 1024 / 1024}MB)` }, 400);
+  }
+
+  console.log(`[UPLOAD] ${sessionId}: ${fileName} (${size} bytes)`);
+  const sandbox = sandboxFor(c.env, sessionId);
+  const path = `${UPLOAD_DIR}/${fileName}`;
+
+  try {
+    await sandbox.mkdir(UPLOAD_DIR, { recursive: true });
+    // XLSX is a binary zip container — write via base64 so it round-trips
+    // intact instead of being mangled as UTF-8 text.
+    await sandbox.writeFile(path, contentBase64, { encoding: 'base64' });
+    return c.json({ path, size });
+  } catch (err) {
+    const message = (err as Error).message || String(err);
+    console.error(`[UPLOAD] ${sessionId} failed:`, message);
     return c.json({ error: message }, 502);
   }
 });

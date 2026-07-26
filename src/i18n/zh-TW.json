@@ -173,6 +173,13 @@
       "edgePop": "邊緣節點 (POP)",
       "sandboxContainer": "Sandbox 容器",
       "edgePlusSandbox": "邊緣節點 + Sandbox"
+    },
+    "attachment": {
+      "attach": "附加 CSV/XLSX 檔案",
+      "remove": "移除附件",
+      "unsupportedType": "僅支援 CSV 或 XLSX 檔案",
+      "tooLarge": "檔案過大（上限 8MB）",
+      "readError": "讀取檔案失敗，請重試"
     }
   },
   "crawler": {

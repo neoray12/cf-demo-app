@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
 
@@ -41,6 +41,11 @@ interface DebugInfo {
 }
 
 // ── Constants ──
+
+// Matches the worker's MAX_UPLOAD_BYTES / ALLOWED_UPLOAD_EXTENSIONS — checked
+// client-side too so a too-large or wrong-type file never leaves the browser.
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_EXTENSIONS = [".csv", ".xlsx"];
 
 // i18n key maps (not raw labels) — the maps themselves live outside any
 // component, so lookups resolve through `t` at call time rather than baking
@@ -173,12 +178,17 @@ function MessageActions({ text, onRetry, showRetry }: { text: string; onRetry: (
 
 // ── Sandbox tool displays ──
 
+interface CodeExecutionOutputItem {
+  text?: string | null;
+  image?: string | null;
+}
+
 interface CodeExecutionResult {
   code?: string;
   success?: boolean;
   stdout?: string;
   stderr?: string;
-  results?: string[];
+  results?: CodeExecutionOutputItem[];
   error?: string | null;
   sandbox?: SandboxTelemetry | null;
   edgeColo?: string | null;
@@ -190,7 +200,9 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const isCalling = toolCall.status === "calling";
   const result = (toolCall.result ?? {}) as CodeExecutionResult;
   const code = result.code ?? (toolCall.args as { code?: string } | undefined)?.code ?? "";
-  const output = [result.stdout, ...(result.results ?? [])].filter(Boolean).join("\n").trim();
+  const textResults = (result.results ?? []).map((r) => r.text).filter((t): t is string => Boolean(t));
+  const imageResults = (result.results ?? []).map((r) => r.image).filter((i): i is string => Boolean(i));
+  const output = [result.stdout, ...textResults].filter(Boolean).join("\n").trim();
   const errorText = [result.error, result.stderr].filter(Boolean).join("\n").trim();
 
   return (
@@ -232,6 +244,11 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
                   {errorText}
                 </pre>
               )}
+              {imageResults.map((src, i) => (
+                <div key={i} className="bg-zinc-950 p-3">
+                  <img src={src} alt={`Chart ${i + 1}`} className="max-w-full rounded" />
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -709,6 +726,9 @@ export function ChatPage() {
   const [showMcpPanel, setShowMcpPanel] = useState(false);
   const [connectedMcpServers, setConnectedMcpServers] = useState<string[]>([]);
   const [input, setInput] = useState("");
+  const [pendingAttachment, setPendingAttachment] = useState<{ name: string; contentBase64: string; size: number } | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -756,7 +776,7 @@ export function ChatPage() {
   }, [isLoading]);
 
   // ── Stream NDJSON from /api/chat ──
-  const streamChat = useCallback(async (allMessages: ChatMessage[]) => {
+  const streamChat = useCallback(async (allMessages: ChatMessage[], attachments?: Array<{ name: string; contentBase64: string }>) => {
     const aiModel = AI_MODELS.find((m) => m.id === selectedModel);
     const modelId = aiModel?.workersAiModel ?? aiModel?.providerModelId ?? "@cf/openai/gpt-oss-120b";
     const provider = aiModel?.provider ?? "workers-ai";
@@ -803,6 +823,7 @@ export function ChatPage() {
           mcpServers: connectedMcpServers,
           userName,
           userEmail,
+          attachments,
         }),
         signal: controller.signal,
       });
@@ -1029,14 +1050,17 @@ export function ChatPage() {
     isNearBottomRef.current = true;
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setInput("");
+    const attachment = pendingAttachment;
+    setPendingAttachment(null);
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
-    const userMsg: ChatMessage = { id: genId(), role: "user", content: text.trim() };
+    const displayText = attachment ? `${text.trim()}\n\n📎 ${attachment.name}` : text.trim();
+    const userMsg: ChatMessage = { id: genId(), role: "user", content: displayText };
     // Use messagesRef to avoid stale closure
     const allMessages = [...messagesRef.current, userMsg];
     setMessages(allMessages);
-    await streamChat(allMessages);
-  }, [isLoading, streamChat]);
+    await streamChat(allMessages, attachment ? [{ name: attachment.name, contentBase64: attachment.contentBase64 }] : undefined);
+  }, [isLoading, streamChat, pendingAttachment]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -1053,6 +1077,33 @@ export function ChatPage() {
     setMessages(withoutLast);
     await streamChat(withoutLast);
   }, [streamChat]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    setAttachmentError(null);
+    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    if (!ALLOWED_ATTACHMENT_EXTENSIONS.includes(ext)) {
+      setAttachmentError(t("chat.attachment.unsupportedType"));
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setAttachmentError(t("chat.attachment.tooLarge"));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // readAsDataURL yields "data:<mime>;base64,<data>" — keep just the payload
+      const contentBase64 = result.slice(result.indexOf(",") + 1);
+      setPendingAttachment({ name: file.name, contentBase64, size: file.size });
+    };
+    reader.onerror = () => setAttachmentError(t("chat.attachment.readError"));
+    reader.readAsDataURL(file);
+  };
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -1272,7 +1323,31 @@ export function ChatPage() {
         {/* ── Input area ── */}
         <div className="pt-2 px-3 md:px-4 pb-4 shrink-0">
           <div className="max-w-3xl mx-auto">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ALLOWED_ATTACHMENT_EXTENSIONS.join(",")}
+              onChange={handleFileSelect}
+              className="hidden"
+            />
             <div className="relative rounded-3xl border bg-muted/30 focus-within:border-foreground/20 transition-colors">
+              {pendingAttachment && (
+                <div className="flex items-center gap-1.5 px-4 md:px-5 pt-3">
+                  <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
+                    <FileSpreadsheet className="size-3.5 shrink-0" />
+                    <span className="max-w-[200px] truncate">{pendingAttachment.name}</span>
+                    <span className="text-muted-foreground/60">({(pendingAttachment.size / 1024).toFixed(0)} KB)</span>
+                    <button
+                      type="button"
+                      onClick={() => setPendingAttachment(null)}
+                      className="ml-0.5 hover:text-foreground transition-colors cursor-pointer"
+                      title={t("chat.attachment.remove")}
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </span>
+                </div>
+              )}
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -1283,6 +1358,15 @@ export function ChatPage() {
                 className="w-full resize-none bg-transparent px-4 md:px-5 pt-3.5 pb-12 text-sm placeholder:text-muted-foreground/70 focus:outline-none min-h-[52px] max-h-[200px]"
                 disabled={isLoading}
               />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                title={t("chat.attachment.attach")}
+                className="absolute bottom-2.5 left-3 size-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
+              >
+                <Paperclip className="size-4" />
+              </button>
               <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-2">
                 {isLoading ? (
                   <button
@@ -1304,6 +1388,9 @@ export function ChatPage() {
                 )}
               </div>
             </div>
+            {attachmentError && (
+              <p className="text-center text-[11px] text-destructive mt-1.5">{attachmentError}</p>
+            )}
             <p className="text-center text-[11px] text-muted-foreground/60 mt-2">{t("chat.footer")}</p>
           </div>
         </div>

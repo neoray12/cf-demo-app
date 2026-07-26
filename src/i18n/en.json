@@ -173,6 +173,13 @@
       "edgePop": "Edge POP",
       "sandboxContainer": "Sandbox Container",
       "edgePlusSandbox": "Edge + Sandbox"
+    },
+    "attachment": {
+      "attach": "Attach CSV/XLSX file",
+      "remove": "Remove attachment",
+      "unsupportedType": "Only CSV or XLSX files are supported",
+      "tooLarge": "File too large (8MB max)",
+      "readError": "Failed to read file, please try again"
     }
   },
   "crawler": {
