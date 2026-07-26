@@ -1,0 +1,46 @@
+name = "cf-chat-sandbox"
+account_id = "5efa272dc28e4e3933324c44165b6dbe"
+compatibility_date = "2025-12-01"
+compatibility_flags = ["nodejs_compat"]
+main = "src/index.ts"
+
+# Two routes required — the wildcard does NOT match the apex:
+#   apex:     chat-sandbox.neokung.work            → API (called by cf-demo-app)
+#   wildcard: 8000-sbx-xxx-token.chat-sandbox...   → exposePort preview URLs
+# DNS prerequisites (dashboard, both proxied):
+#   chat-sandbox    CNAME → cf-chat-sandbox.neo-cloudflare.workers.dev
+#   *.chat-sandbox  CNAME → cf-chat-sandbox.neo-cloudflare.workers.dev
+# TLS: two-level subdomains need ACM/Total TLS on the zone (already in place
+# for *.saas-cfclaw.neokung.work).
+[[routes]]
+pattern = "chat-sandbox.neokung.work/*"
+zone_name = "neokung.work"
+
+[[routes]]
+pattern = "*.chat-sandbox.neokung.work/*"
+zone_name = "neokung.work"
+
+[observability]
+enabled = true
+
+# Container configuration for chat code-interpreter sandboxes
+[[containers]]
+class_name = "Sandbox"
+image = "./Dockerfile"
+instance_type = "lite"
+max_instances = 5
+
+[durable_objects]
+bindings = [
+  { class_name = "Sandbox", name = "Sandbox" }
+]
+
+[[migrations]]
+new_sqlite_classes = ["Sandbox"]
+tag = "v1"
+
+[vars]
+SANDBOX_LOG_LEVEL = "info"
+
+# Secrets (set via wrangler secret put):
+# - SANDBOX_API_SECRET: shared secret for authenticating requests from cf-demo-app

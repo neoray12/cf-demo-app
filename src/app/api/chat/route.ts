@@ -7,6 +7,7 @@ import { cookies } from 'next/headers';
 import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
+import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview } from '@/lib/chat-sandbox';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
@@ -99,6 +100,58 @@ function buildSearchKnowledgeTool(env: Record<string, unknown>) {
         return { error: `知識庫搜尋失敗: ${(err as Error).message}` };
       }
     }),
+  };
+}
+
+// Extra system prompt guidance when the sandbox tools are available
+const SANDBOX_PROMPT = `
+
+當問題需要精確計算（數學、統計、日期、資料處理）時，使用 executeCode 工具執行 Python 程式碼取得真實結果，不要憑空心算。當使用者要求製作或展示網頁時，使用 createWebPreview 工具產生預覽網址，並在回覆中附上該網址。`;
+
+function buildExecuteCodeTool(env: Record<string, unknown>, sessionId: string) {
+  return {
+    description:
+      '在安全的沙箱環境中執行 Python 程式碼並回傳真實輸出。適用於數學計算、統計、日期運算、字串與資料處理等需要精確結果的問題。程式碼必須用 print() 輸出最終結果。',
+    inputSchema: z.object({
+      code: z.string().describe('要執行的 Python 程式碼，必須用 print() 輸出最終結果'),
+    }),
+    execute: safeTool(async ({ code }: { code: string }) => {
+      console.log('[Chat API] executeCode:', code.length, 'chars');
+      const result = await sandboxExecuteCode(env as any, sessionId, code);
+      // Echo the code back so the frontend result panel is self-contained
+      return { code, ...result };
+    }),
+  };
+}
+
+function buildWebPreviewTool(env: Record<string, unknown>, sessionId: string) {
+  return {
+    description:
+      '建立靜態網頁預覽。提供 HTML/CSS/JS 檔案內容，系統會部署到沙箱並回傳可點擊的預覽網址。適用於使用者要求製作網頁、展示 UI 範例時。入口檔案必須命名為 index.html。預覽網址是公開的，不要在網頁中放入任何機密資訊。',
+    inputSchema: z.object({
+      files: z
+        .array(
+          z.object({
+            path: z.string().describe('檔案名稱，如 index.html、style.css、app.js'),
+            content: z.string().describe('完整檔案內容'),
+          })
+        )
+        .describe('網頁檔案清單，必須包含 index.html'),
+      title: z.string().optional().describe('網頁標題'),
+    }),
+    execute: safeTool(
+      async ({ files, title }: { files: Array<{ path: string; content: string }>; title?: string }) => {
+        console.log('[Chat API] createWebPreview:', files.length, 'file(s)');
+        const result = await sandboxCreatePreview(env as any, sessionId, files);
+        if (result.error) return { error: result.error };
+        return {
+          url: result.url,
+          title: title ?? 'Web Preview',
+          fileCount: files.length,
+          note: '預覽網址約 20 分鐘無流量後失效',
+        };
+      }
+    ),
   };
 }
 
@@ -357,10 +410,22 @@ export async function POST(request: NextRequest) {
   const maxTokens = needsThinkParsing ? 16384 : 4096;
   const skipMaxTokens = usesMaxCompletionTokens(modelId);
 
-  // Build tools: searchKnowledge + MCP tools
+  // Build tools: searchKnowledge + sandbox tools + MCP tools
   let tools: Record<string, any> | undefined;
+  let sandboxToolsActive = false;
   if (useTools) {
     tools = { searchKnowledge: buildSearchKnowledgeTool(env as any) };
+
+    // Sandbox tools — only when the companion worker is configured
+    if (chatSandboxConfigured(env as any)) {
+      const cookieStore = await cookies();
+      const rawSessionId = cookieStore.get('session_id')?.value || 'anonymous';
+      // Becomes a DNS label in preview URLs — keep it lowercase alphanumeric + hyphens
+      const sandboxSessionId = `sbx-${rawSessionId.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24) || 'anon'}`;
+      tools.executeCode = buildExecuteCodeTool(env as any, sandboxSessionId);
+      tools.createWebPreview = buildWebPreviewTool(env as any, sandboxSessionId);
+      sandboxToolsActive = true;
+    }
 
     // Inject MCP tools if any servers are specified
     if (mcpServerIds.length > 0) {
@@ -368,12 +433,16 @@ export async function POST(request: NextRequest) {
       Object.assign(tools, mcpTools);
       console.log(`[Chat API] Injected ${Object.keys(mcpTools).length} MCP tools from ${mcpServerIds.length} server(s)`);
     }
+
+    console.log('[Chat API] Tools registered:', Object.keys(tools).join(', '));
   }
+
+  const systemPrompt = sandboxToolsActive ? SYSTEM_PROMPT + SANDBOX_PROMPT : SYSTEM_PROMPT;
 
   function createStream(attempt: number) {
     return streamText({
       model: openai.chat(compatModelId),
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: chatMessages as any,
       ...(skipMaxTokens ? {} : { maxOutputTokens: maxTokens }),
       ...(tools ? { tools, stopWhen: stepCountIs(8) } : {}),

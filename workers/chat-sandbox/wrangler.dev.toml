@@ -1,0 +1,29 @@
+# Local-dev variant: no routes, so wrangler dev keeps the original Host header
+# and preview subdomains (8000-sbx-xxx-token.localhost:8788) reach proxyToSandbox.
+# Usage: npx wrangler dev -c wrangler.dev.toml --port 8788
+name = "cf-chat-sandbox"
+account_id = "5efa272dc28e4e3933324c44165b6dbe"
+compatibility_date = "2025-12-01"
+compatibility_flags = ["nodejs_compat"]
+main = "src/index.ts"
+
+[observability]
+enabled = true
+
+[[containers]]
+class_name = "Sandbox"
+image = "./Dockerfile"
+instance_type = "lite"
+max_instances = 5
+
+[durable_objects]
+bindings = [
+  { class_name = "Sandbox", name = "Sandbox" }
+]
+
+[[migrations]]
+new_sqlite_classes = ["Sandbox"]
+tag = "v1"
+
+[vars]
+SANDBOX_LOG_LEVEL = "info"

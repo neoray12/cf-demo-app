@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 // ── Types ──
@@ -43,10 +43,14 @@ interface DebugInfo {
 
 const TOOL_LABELS: Record<string, string> = {
   searchKnowledge: "搜尋知識庫",
+  executeCode: "執行程式碼",
+  createWebPreview: "建立網頁預覽",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
   searchKnowledge: "AI Search 知識庫",
+  executeCode: "Sandbox 程式執行",
+  createWebPreview: "Sandbox 網頁預覽",
 };
 
 // MCP server display names
@@ -159,11 +163,159 @@ function MessageActions({ text, onRetry, showRetry }: { text: string; onRetry: (
   );
 }
 
+// ── Sandbox tool displays ──
+
+interface CodeExecutionResult {
+  code?: string;
+  success?: boolean;
+  stdout?: string;
+  stderr?: string;
+  results?: string[];
+  error?: string | null;
+}
+
+function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+  const [expanded, setExpanded] = useState(true);
+  const isCalling = toolCall.status === "calling";
+  const result = (toolCall.result ?? {}) as CodeExecutionResult;
+  const code = result.code ?? (toolCall.args as { code?: string } | undefined)?.code ?? "";
+  const output = [result.stdout, ...(result.results ?? [])].filter(Boolean).join("\n").trim();
+  const errorText = [result.error, result.stderr].filter(Boolean).join("\n").trim();
+
+  return (
+    <div className="my-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className={`inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 transition-colors cursor-pointer ${
+          isCalling
+            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
+            : "bg-muted hover:bg-muted/80 text-muted-foreground"
+        }`}
+      >
+        <Terminal className="size-3 shrink-0" />
+        <span>{isCalling ? "執行程式碼..." : "執行程式碼"}</span>
+        {isCalling ? (
+          <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+        ) : (
+          <ChevronRight className={`size-3 transition-transform ${expanded ? "rotate-90" : ""}`} />
+        )}
+      </button>
+      {expanded && code && (
+        <div className="mt-1.5 ml-3 rounded-lg overflow-hidden border border-zinc-700/50">
+          <div className="flex items-center justify-between bg-zinc-800 text-zinc-300 text-xs px-4 py-1.5">
+            <span className="font-mono">python</span>
+            <CopyButton text={code} />
+          </div>
+          <pre className="bg-zinc-900 text-zinc-100 p-4 overflow-x-auto text-[13px] leading-relaxed max-h-[300px] overflow-y-auto">
+            <code>{code}</code>
+          </pre>
+          {!isCalling && (output || errorText) && (
+            <div className="border-t border-zinc-700/50">
+              {output && (
+                <pre className="bg-zinc-950 text-emerald-300 px-4 py-3 overflow-x-auto text-[13px] leading-relaxed whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
+                  {output}
+                </pre>
+              )}
+              {errorText && (
+                <pre className="bg-zinc-950 text-red-400 px-4 py-3 overflow-x-auto text-[13px] leading-relaxed whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
+                  {errorText}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface WebPreviewResult {
+  url?: string;
+  title?: string;
+  fileCount?: number;
+  note?: string;
+  error?: string;
+}
+
+function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+  const [showInline, setShowInline] = useState(false);
+  const isCalling = toolCall.status === "calling";
+  const result = (toolCall.result ?? {}) as WebPreviewResult;
+
+  if (isCalling) {
+    return (
+      <div className="my-2">
+        <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+          <Globe className="size-3 shrink-0" />
+          <span>建立網頁預覽...</span>
+          <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+        </span>
+      </div>
+    );
+  }
+
+  if (result.error || !result.url) {
+    return (
+      <div className="my-2">
+        <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400">
+          <Globe className="size-3 shrink-0" />
+          <span>網頁預覽失敗：{result.error || "未取得預覽網址"}</span>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-2 ml-0 max-w-md">
+      <div className="rounded-lg border bg-muted/30 p-3">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center size-8 rounded-md bg-primary/10 text-primary shrink-0">
+            <Globe className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium truncate">{result.title || "Web Preview"}</div>
+            <div className="text-xs text-muted-foreground truncate">{result.url}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 mt-2.5">
+          <a
+            href={result.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            <ExternalLink className="size-3" />
+            開啟預覽
+          </a>
+          <button
+            onClick={() => setShowInline(!showInline)}
+            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground transition-colors cursor-pointer"
+          >
+            {showInline ? "收合" : "內嵌顯示"}
+          </button>
+        </div>
+        {result.note && <div className="text-[11px] text-muted-foreground/70 mt-2">{result.note}</div>}
+      </div>
+      {showInline && (
+        <iframe
+          src={result.url}
+          sandbox="allow-scripts"
+          className="mt-2 w-full h-[400px] rounded-lg border bg-white"
+          title={result.title || "Web Preview"}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Tool Call Display ──
 
 function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const [expanded, setExpanded] = useState(false);
   const mcp = parseMcpToolName(toolCall.name);
+
+  if (toolCall.name === "executeCode") return <CodeExecutionDisplay toolCall={toolCall} />;
+  if (toolCall.name === "createWebPreview") return <WebPreviewDisplay toolCall={toolCall} />;
   const label = friendlyToolName(toolCall.name);
   const isCalling = toolCall.status === "calling";
 

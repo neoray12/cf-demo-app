@@ -25,6 +25,10 @@ bucket_name = "cf-demo-crawler"
 binding = "KV"
 id = "cd03af00eb9340a180014760028fbebd"
 
+# Secrets (set via wrangler secret put):
+# - CHAT_SANDBOX_URL: https://chat-sandbox.neokung.work — MUST be the custom domain,
+#   not workers.dev; exposePort derives preview-URL hostnames from the request host.
+# - CHAT_SANDBOX_SECRET: shared secret, same value as SANDBOX_API_SECRET on cf-chat-sandbox
 [vars]
 CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
 AI_GATEWAY_ID = "nkcf-gateway-01"

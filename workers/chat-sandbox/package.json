@@ -1,0 +1,21 @@
+{
+  "name": "chat-sandbox",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Companion Worker for chatbot code execution and web previews (Cloudflare Sandbox)",
+  "scripts": {
+    "dev": "wrangler dev -c wrangler.dev.toml --port 8788",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types"
+  },
+  "dependencies": {
+    "hono": "^4.11.6"
+  },
+  "devDependencies": {
+    "@cloudflare/sandbox": "0.8.9",
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "typescript": "^5.9.3",
+    "wrangler": "~4.81.1"
+  }
+}
