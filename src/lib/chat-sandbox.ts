@@ -37,12 +37,22 @@ async function sandboxFetch(
   });
 }
 
+// Demo telemetry: which physical container/POP ran the code, and whether it
+// was a fresh boot (cold) or a reused container (warm).
+export interface SandboxTelemetry {
+  containerId: string | null;
+  colo: string | null;
+  uptimeSeconds: number | null;
+  coldStart: boolean | null;
+}
+
 export interface CodeExecutionResult {
   success: boolean;
   stdout: string;
   stderr: string;
   results: string[];
   error: string | null;
+  sandbox: SandboxTelemetry | null;
 }
 
 export async function executeCode(
@@ -64,6 +74,7 @@ export async function executeCode(
         stderr: '',
         results: [],
         error: data.error || `HTTP ${res.status}`,
+        sandbox: null,
       };
     }
     return {
@@ -72,6 +83,7 @@ export async function executeCode(
       stderr: data.stderr ?? '',
       results: data.results ?? [],
       error: data.error ?? null,
+      sandbox: data.sandbox ?? null,
     };
   } catch (err) {
     const message = (err as Error).message || String(err);
@@ -79,7 +91,7 @@ export async function executeCode(
     const friendly = /timeout|timed out|abort/i.test(message)
       ? '沙箱啟動中或執行逾時，請稍後再試一次。'
       : message;
-    return { success: false, stdout: '', stderr: '', results: [], error: friendly };
+    return { success: false, stdout: '', stderr: '', results: [], error: friendly, sandbox: null };
   }
 }
 
@@ -87,22 +99,22 @@ export async function createPreview(
   env: SandboxEnv,
   sessionId: string,
   files: Array<{ path: string; content: string }>
-): Promise<{ url?: string; error?: string }> {
+): Promise<{ url?: string; error?: string; sandbox: SandboxTelemetry | null }> {
   try {
     const res = await sandboxFetch(env, '/api/preview', {
       method: 'POST',
       body: JSON.stringify({ sessionId, files }),
     });
-    const data = (await res.json()) as { url?: string; error?: string };
+    const data = (await res.json()) as { url?: string; error?: string; sandbox?: SandboxTelemetry };
     if (!res.ok || !data.url) {
-      return { error: data.error || `HTTP ${res.status}` };
+      return { error: data.error || `HTTP ${res.status}`, sandbox: null };
     }
-    return { url: data.url };
+    return { url: data.url, sandbox: data.sandbox ?? null };
   } catch (err) {
     const message = (err as Error).message || String(err);
     const friendly = /timeout|timed out|abort/i.test(message)
       ? '沙箱啟動中或部署逾時，請稍後再試一次。'
       : message;
-    return { error: friendly };
+    return { error: friendly, sandbox: null };
   }
 }

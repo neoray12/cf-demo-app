@@ -48,6 +48,64 @@ function sandboxFor(env: Env, sessionId: string) {
   });
 }
 
+// Demo-facing telemetry: which physical container/POP actually ran the code,
+// and whether this was a fresh container boot or a reused (warm) one.
+interface SandboxTelemetry {
+  containerId: string | null;
+  colo: string | null;
+  uptimeSeconds: number | null;
+  coldStart: boolean | null;
+}
+
+const TRACE_TIMEOUT_MS = 4000;
+const MARKER_PATH = '/tmp/.cf-chat-sandbox-init';
+
+// /proc/uptime is unreliable for cold-start detection: on some container
+// runtimes (confirmed on local Docker dev) it reflects the shared host
+// kernel's boot time, not the individual container's — two brand-new
+// sandboxes reported near-identical uptime. A filesystem sentinel is
+// runtime-agnostic: it's guaranteed absent on a fresh container (sleepAfter
+// destroys the container and wipes its filesystem) and guaranteed present
+// once any prior call in this container's lifetime has run.
+const MARKER_CMD =
+  `NOW=$(date +%s); if [ -f ${MARKER_PATH} ]; then FIRST=$(cat ${MARKER_PATH}); STATUS=warm; ` +
+  `else echo $NOW > ${MARKER_PATH}; FIRST=$NOW; STATUS=cold; fi; echo "$STATUS $FIRST $NOW"`;
+
+async function getSandboxTelemetry(sandbox: ReturnType<typeof getSandbox>): Promise<SandboxTelemetry> {
+  const [hostnameResult, markerResult, traceResult] = await Promise.all([
+    sandbox.exec('hostname').catch(() => null),
+    sandbox.exec(`sh -c '${MARKER_CMD}'`).catch(() => null),
+    // Container's own outbound trace — reveals the colo its network egress
+    // is routed through, which is not necessarily the same colo that served
+    // the original chat request (that's request.cf.colo on the main app).
+    sandbox
+      .exec('curl -s --max-time 2 https://cloudflare.com/cdn-cgi/trace', { timeout: TRACE_TIMEOUT_MS })
+      .catch(() => null),
+  ]);
+
+  const containerId = hostnameResult?.success ? hostnameResult.stdout.trim() : null;
+
+  let uptimeSeconds: number | null = null;
+  let coldStart: boolean | null = null;
+  if (markerResult?.success) {
+    const [status, first, now] = markerResult.stdout.trim().split(/\s+/);
+    const firstNum = parseInt(first, 10);
+    const nowNum = parseInt(now, 10);
+    if (!Number.isNaN(firstNum) && !Number.isNaN(nowNum)) {
+      uptimeSeconds = Math.max(0, nowNum - firstNum);
+      coldStart = status === 'cold';
+    }
+  }
+
+  let colo: string | null = null;
+  if (traceResult?.success) {
+    const match = traceResult.stdout.match(/colo=([A-Z]{3})/);
+    colo = match?.[1] ?? null;
+  }
+
+  return { containerId, colo, uptimeSeconds, coldStart };
+}
+
 // Auth middleware — validate shared secret for all API routes
 app.use('/api/*', async (c, next) => {
   const authHeader = c.req.header('Authorization');
@@ -89,7 +147,10 @@ app.post('/api/execute', async (c) => {
   const sandbox = sandboxFor(c.env, sessionId);
 
   try {
-    const execution = await sandbox.runCode(code, { language, timeout: EXEC_TIMEOUT_MS });
+    const [execution, sandboxInfo] = await Promise.all([
+      sandbox.runCode(code, { language, timeout: EXEC_TIMEOUT_MS }),
+      getSandboxTelemetry(sandbox),
+    ]);
     return c.json({
       success: !execution.error,
       stdout: execution.logs?.stdout?.join('\n') ?? '',
@@ -98,6 +159,7 @@ app.post('/api/execute', async (c) => {
         .map((r) => r.text)
         .filter((t): t is string => Boolean(t)),
       error: execution.error ? `${execution.error.name}: ${execution.error.message}` : null,
+      sandbox: sandboxInfo,
     });
   } catch (err) {
     const message = (err as Error).message || String(err);
@@ -177,7 +239,8 @@ app.post('/api/preview', async (c) => {
       url = existing.url;
     }
 
-    return c.json({ url, fileCount: files.length });
+    const sandboxInfo = await getSandboxTelemetry(sandbox);
+    return c.json({ url, fileCount: files.length, sandbox: sandboxInfo });
   } catch (err) {
     const message = (err as Error).message || String(err);
     console.error(`[PREVIEW] ${sessionId} failed:`, message);

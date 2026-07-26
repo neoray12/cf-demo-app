@@ -12,6 +12,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
 import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
 
 // ── Types ──
 interface ToolCallInfo {
@@ -172,6 +173,8 @@ interface CodeExecutionResult {
   stderr?: string;
   results?: string[];
   error?: string | null;
+  sandbox?: SandboxTelemetry | null;
+  edgeColo?: string | null;
 }
 
 function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
@@ -225,6 +228,12 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           )}
         </div>
       )}
+      {expanded && !isCalling && result.sandbox && (
+        <>
+          <SandboxInfoBar sandbox={result.sandbox} />
+          <PopMap edgeColo={result.edgeColo} sandboxColo={result.sandbox.colo} />
+        </>
+      )}
     </div>
   );
 }
@@ -235,6 +244,8 @@ interface WebPreviewResult {
   fileCount?: number;
   note?: string;
   error?: string;
+  sandbox?: SandboxTelemetry | null;
+  edgeColo?: string | null;
 }
 
 function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
@@ -303,6 +314,12 @@ function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           className="mt-2 w-full h-[400px] rounded-lg border bg-white"
           title={result.title || "Web Preview"}
         />
+      )}
+      {result.sandbox && (
+        <>
+          <SandboxInfoBar sandbox={result.sandbox} />
+          <PopMap edgeColo={result.edgeColo} sandboxColo={result.sandbox.colo} />
+        </>
       )}
     </div>
   );

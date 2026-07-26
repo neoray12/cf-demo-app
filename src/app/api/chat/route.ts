@@ -108,7 +108,7 @@ const SANDBOX_PROMPT = `
 
 當問題需要精確計算（數學、統計、日期、資料處理）時，使用 executeCode 工具執行 Python 程式碼取得真實結果，不要憑空心算。當使用者要求製作或展示網頁時，使用 createWebPreview 工具產生預覽網址，並在回覆中附上該網址。`;
 
-function buildExecuteCodeTool(env: Record<string, unknown>, sessionId: string) {
+function buildExecuteCodeTool(env: Record<string, unknown>, sessionId: string, edgeColo: string | null) {
   return {
     description:
       '在安全的沙箱環境中執行 Python 程式碼並回傳真實輸出。適用於數學計算、統計、日期運算、字串與資料處理等需要精確結果的問題。程式碼必須用 print() 輸出最終結果。',
@@ -119,12 +119,12 @@ function buildExecuteCodeTool(env: Record<string, unknown>, sessionId: string) {
       console.log('[Chat API] executeCode:', code.length, 'chars');
       const result = await sandboxExecuteCode(env as any, sessionId, code);
       // Echo the code back so the frontend result panel is self-contained
-      return { code, ...result };
+      return { code, ...result, edgeColo };
     }),
   };
 }
 
-function buildWebPreviewTool(env: Record<string, unknown>, sessionId: string) {
+function buildWebPreviewTool(env: Record<string, unknown>, sessionId: string, edgeColo: string | null) {
   return {
     description:
       '建立靜態網頁預覽。提供 HTML/CSS/JS 檔案內容，系統會部署到沙箱並回傳可點擊的預覽網址。適用於使用者要求製作網頁、展示 UI 範例時。入口檔案必須命名為 index.html。預覽網址是公開的，不要在網頁中放入任何機密資訊。',
@@ -149,6 +149,8 @@ function buildWebPreviewTool(env: Record<string, unknown>, sessionId: string) {
           title: title ?? 'Web Preview',
           fileCount: files.length,
           note: '預覽網址約 20 分鐘無流量後失效',
+          sandbox: result.sandbox,
+          edgeColo,
         };
       }
     ),
@@ -274,7 +276,10 @@ function sanitizeMessages(
 }
 
 export async function POST(request: NextRequest) {
-  const { env } = await getCloudflareContext();
+  const { env, cf } = await getCloudflareContext();
+  // POP that served this chat request — not necessarily the same colo the
+  // sandbox container executes in (that's reported separately per tool call).
+  const edgeColo = ((cf as { colo?: string } | undefined)?.colo as string | undefined) ?? null;
 
   const body = await request.json();
   const {
@@ -422,8 +427,8 @@ export async function POST(request: NextRequest) {
       const rawSessionId = cookieStore.get('session_id')?.value || 'anonymous';
       // Becomes a DNS label in preview URLs — keep it lowercase alphanumeric + hyphens
       const sandboxSessionId = `sbx-${rawSessionId.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24) || 'anon'}`;
-      tools.executeCode = buildExecuteCodeTool(env as any, sandboxSessionId);
-      tools.createWebPreview = buildWebPreviewTool(env as any, sandboxSessionId);
+      tools.executeCode = buildExecuteCodeTool(env as any, sandboxSessionId, edgeColo);
+      tools.createWebPreview = buildWebPreviewTool(env as any, sandboxSessionId, edgeColo);
       sandboxToolsActive = true;
     }
 
