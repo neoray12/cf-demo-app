@@ -220,9 +220,14 @@ app.post('/api/preview', async (c) => {
 
     // Idempotent server start: kill any previous static server, start fresh
     await sandbox.exec('pkill -f "http.server" || true');
-    await sandbox.startProcess(
+    const proc = await sandbox.startProcess(
       `python3 -m http.server ${PREVIEW_PORT} --directory ${PREVIEW_DIR}`
     );
+    // startProcess() resolves once the process is spawned, not once it's
+    // actually accepting connections — exposing/returning the URL before the
+    // server is listening is what produced the "refused to connect" preview
+    // pages. Block until it's really answering HTTP requests.
+    await proc.waitForPort(PREVIEW_PORT, { timeout: 10_000 });
 
     const hostname = c.req.header('host') || new URL(c.req.url).host;
     let url: string;

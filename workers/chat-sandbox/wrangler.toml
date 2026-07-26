@@ -24,11 +24,18 @@ zone_name = "neokung.work"
 enabled = true
 
 # Container configuration for chat code-interpreter sandboxes
+# Pinned to APAC: our demo traffic originates from Taipei, and without a
+# constraint, Containers schedules to "nearest region with a pre-fetched
+# image" — which defaulted to ENAM (Chicago) since that's where this image
+# was first deployed/warmed, not the geographically nearest region.
 [[containers]]
 class_name = "Sandbox"
 image = "./Dockerfile"
 instance_type = "lite"
 max_instances = 5
+
+  [containers.constraints]
+  regions = [ "APAC" ]
 
 [durable_objects]
 bindings = [
