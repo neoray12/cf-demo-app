@@ -1,0 +1,31 @@
+src/lib/colo-locations.ts
+  s_bdc04ccd4a8c6f::t_42c183cbef4060 1-25
+src/lib/world-map-path.ts
+  s_bdc04ccd4a8c6f::t_85f1f2c098f022 1-7
+src/app/api/chat/route.ts
+  s_bdc04ccd4a8c6f::t_aa32bdcbd83202 111,122,127,152-153,279-282,430-431
+src/app/components/chat/sandbox-telemetry.tsx
+  s_bdc04ccd4a8c6f::t_3d8d67f8c8eebe 1-171
+src/app/pages/chat.tsx
+  s_bdc04ccd4a8c6f::t_1a79b80c4caa7e 15,176-177,231-236,247-248,318-323
+src/lib/chat-sandbox.ts
+  s_bdc04ccd4a8c6f::t_911c3ea78d9398 40-48,55,77,86,94,102,108,110,112,118
+workers/chat-sandbox/src/index.ts
+  s_bdc04ccd4a8c6f::t_1b8ae7cdbb3b26 51-108,150-153,162,242-243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0245786d85383017f039113ea09b9cfdb56cfd1a",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
