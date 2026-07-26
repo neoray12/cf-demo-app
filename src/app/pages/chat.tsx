@@ -42,48 +42,55 @@ interface DebugInfo {
 
 // ── Constants ──
 
-const TOOL_LABELS: Record<string, string> = {
-  searchKnowledge: "搜尋知識庫",
-  executeCode: "執行程式碼",
-  createWebPreview: "建立網頁預覽",
+// i18n key maps (not raw labels) — the maps themselves live outside any
+// component, so lookups resolve through `t` at call time rather than baking
+// in one language.
+const TOOL_KEYS: Record<string, string> = {
+  searchKnowledge: "chat.tool.searchKnowledge",
+  executeCode: "chat.tool.executeCode",
+  createWebPreview: "chat.tool.createWebPreview",
 };
 
-const SOURCE_LABELS: Record<string, string> = {
-  searchKnowledge: "AI Search 知識庫",
-  executeCode: "Sandbox 程式執行",
-  createWebPreview: "Sandbox 網頁預覽",
+const SOURCE_KEYS: Record<string, string> = {
+  searchKnowledge: "chat.tool.sourceSearchKnowledge",
+  executeCode: "chat.tool.sourceExecuteCode",
+  createWebPreview: "chat.tool.sourceCreateWebPreview",
 };
 
-// MCP server display names
+// MCP server display names — product/proper nouns, same in every locale.
 const MCP_SERVER_LABELS: Record<string, string> = {
   "cf-docs": "Cloudflare Docs",
   "cf-observability": "Workers Observability",
   "cf-radar": "Radar",
 };
 
-// MCP tool display names
-const MCP_TOOL_LABELS: Record<string, string> = {
-  search_cloudflare_documentation: "搜尋文件",
-  migrate_pages_to_workers_guide: "Pages 遷移指南",
+// MCP tool display name keys
+const MCP_TOOL_KEYS: Record<string, string> = {
+  search_cloudflare_documentation: "chat.tool.mcpToolSearchDocs",
+  migrate_pages_to_workers_guide: "chat.tool.mcpToolMigratePages",
 };
 
-function parseMcpToolName(rawName: string): { isMcp: boolean; serverId: string; serverLabel: string; toolName: string; toolLabel: string } | null {
+type TFunc = (key: string, options?: Record<string, unknown>) => string;
+
+function parseMcpToolName(rawName: string, t: TFunc): { isMcp: boolean; serverId: string; serverLabel: string; toolName: string; toolLabel: string } | null {
   const match = rawName.match(/^tool_([a-zA-Z0-9-]+)_(.+)$/);
   if (!match) return null;
-  const serverId = match[1];
-  const toolName = match[2];
+  // Both capture groups are mandatory in this pattern (no `?`), so they're
+  // always present when match succeeds — TS just can't infer that.
+  const serverId = match[1]!;
+  const toolName = match[2]!;
   return {
     isMcp: true,
     serverId,
     serverLabel: MCP_SERVER_LABELS[serverId] || serverId,
     toolName,
-    toolLabel: MCP_TOOL_LABELS[toolName] || toolName.replace(/_/g, " "),
+    toolLabel: MCP_TOOL_KEYS[toolName] ? t(MCP_TOOL_KEYS[toolName]) : toolName.replace(/_/g, " "),
   };
 }
 
-function friendlyToolName(rawName: string): string {
-  if (TOOL_LABELS[rawName]) return TOOL_LABELS[rawName];
-  const mcp = parseMcpToolName(rawName);
+function friendlyToolName(rawName: string, t: TFunc): string {
+  if (TOOL_KEYS[rawName]) return t(TOOL_KEYS[rawName]);
+  const mcp = parseMcpToolName(rawName, t);
   if (mcp) return mcp.toolLabel;
   return rawName.replace(/_/g, " ");
 }
@@ -178,6 +185,7 @@ interface CodeExecutionResult {
 }
 
 function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
   const isCalling = toolCall.status === "calling";
   const result = (toolCall.result ?? {}) as CodeExecutionResult;
@@ -196,7 +204,7 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
         }`}
       >
         <Terminal className="size-3 shrink-0" />
-        <span>{isCalling ? "執行程式碼..." : "執行程式碼"}</span>
+        <span>{isCalling ? t("chat.tool.runningCode") : t("chat.tool.executeCode")}</span>
         {isCalling ? (
           <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
         ) : (
@@ -249,6 +257,7 @@ interface WebPreviewResult {
 }
 
 function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+  const { t } = useTranslation();
   const [showInline, setShowInline] = useState(false);
   const isCalling = toolCall.status === "calling";
   const result = (toolCall.result ?? {}) as WebPreviewResult;
@@ -258,7 +267,7 @@ function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
       <div className="my-2">
         <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
           <Globe className="size-3 shrink-0" />
-          <span>建立網頁預覽...</span>
+          <span>{t("chat.tool.creatingPreview")}</span>
           <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
         </span>
       </div>
@@ -270,7 +279,7 @@ function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
       <div className="my-2">
         <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400">
           <Globe className="size-3 shrink-0" />
-          <span>網頁預覽失敗：{result.error || "未取得預覽網址"}</span>
+          <span>{t("chat.tool.previewFailed", { error: result.error || t("chat.tool.previewUrlMissing") })}</span>
         </span>
       </div>
     );
@@ -296,13 +305,13 @@ function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
             className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             <ExternalLink className="size-3" />
-            開啟預覽
+            {t("chat.tool.openPreview")}
           </a>
           <button
             onClick={() => setShowInline(!showInline)}
             className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground transition-colors cursor-pointer"
           >
-            {showInline ? "收合" : "內嵌顯示"}
+            {showInline ? t("chat.tool.collapse") : t("chat.tool.showInline")}
           </button>
         </div>
         {result.note && <div className="text-[11px] text-muted-foreground/70 mt-2">{result.note}</div>}
@@ -328,12 +337,13 @@ function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
 // ── Tool Call Display ──
 
 function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const mcp = parseMcpToolName(toolCall.name);
+  const mcp = parseMcpToolName(toolCall.name, t);
 
   if (toolCall.name === "executeCode") return <CodeExecutionDisplay toolCall={toolCall} />;
   if (toolCall.name === "createWebPreview") return <WebPreviewDisplay toolCall={toolCall} />;
-  const label = friendlyToolName(toolCall.name);
+  const label = friendlyToolName(toolCall.name, t);
   const isCalling = toolCall.status === "calling";
 
   return (
@@ -383,6 +393,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
 // ── Reasoning Display ──
 
 function ReasoningDisplay({ text }: { text: string }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
 
   return (
@@ -392,7 +403,7 @@ function ReasoningDisplay({ text }: { text: string }) {
         className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-muted/60 text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
       >
         <Brain className="size-3" />
-        <span>思考過程</span>
+        <span>{t("chat.tool.reasoning")}</span>
         <ChevronRight className={`size-3 transition-transform ${expanded ? "rotate-90" : ""}`} />
       </button>
       {expanded && (
@@ -407,14 +418,16 @@ function ReasoningDisplay({ text }: { text: string }) {
 // ── Sources Display ──
 
 function SourcesDisplay({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
+  const { t } = useTranslation();
   const sources = [...new Set(
     toolCalls
       .filter((tc) => tc.status === "done")
       .map((tc) => {
-        if (SOURCE_LABELS[tc.name]) return SOURCE_LABELS[tc.name];
-        const mcp = parseMcpToolName(tc.name);
+        const sourceKey = SOURCE_KEYS[tc.name];
+        if (sourceKey) return t(sourceKey);
+        const mcp = parseMcpToolName(tc.name, t);
         if (mcp) return `MCP: ${mcp.serverLabel}`;
-        return friendlyToolName(tc.name);
+        return friendlyToolName(tc.name, t);
       })
   )];
   if (!sources.length) return null;
@@ -1069,6 +1082,20 @@ export function ChatPage() {
     { title: t("chat.suggestions.r2.title"), desc: t("chat.suggestions.r2.prompt") },
   ];
 
+  const sandboxSuggestions = [
+    { title: t("chat.sandboxSuggestions.factorial.title"), desc: t("chat.sandboxSuggestions.factorial.prompt"), icon: Terminal },
+    { title: t("chat.sandboxSuggestions.fibonacci.title"), desc: t("chat.sandboxSuggestions.fibonacci.prompt"), icon: Terminal },
+    { title: t("chat.sandboxSuggestions.countdown.title"), desc: t("chat.sandboxSuggestions.countdown.prompt"), icon: Globe },
+  ];
+
+  // Sandbox demo prompts need tools enabled to actually invoke executeCode /
+  // createWebPreview — otherwise clicking one just gets a plain-text answer
+  // with no sandbox involved, which defeats the point of the suggestion.
+  const handleSandboxSuggestion = (desc: string) => {
+    if (!toolsEnabled) setToolsEnabled(true);
+    handleSend(desc);
+  };
+
   const safetySuggestions = [
     { title: t("chat.safetySuggestions.bully.title"), desc: t("chat.safetySuggestions.bully.prompt") },
     { title: t("chat.safetySuggestions.hate.title"), desc: t("chat.safetySuggestions.hate.prompt") },
@@ -1163,6 +1190,24 @@ export function ChatPage() {
                         <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
                       </button>
                     ))}
+                  </div>
+                  <div className="pt-2">
+                    <p className="text-xs font-medium text-muted-foreground/70 mb-2">{t("chat.sandboxLabel")}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {sandboxSuggestions.map((s) => (
+                        <button
+                          key={s.title}
+                          onClick={() => handleSandboxSuggestion(s.desc)}
+                          className="text-left rounded-2xl border border-sky-300/40 dark:border-sky-800/40 px-4 py-3.5 hover:bg-sky-50/50 dark:hover:bg-sky-950/20 active:bg-sky-50 dark:active:bg-sky-950/30 transition-colors"
+                        >
+                          <div className="flex items-center gap-1.5 text-sm font-medium">
+                            <s.icon className="size-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                            {s.title}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div className="pt-2">
                     <p className="text-xs font-medium text-muted-foreground/70 mb-2">{t("chat.safetyLabel")}</p>

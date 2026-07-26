@@ -51,6 +51,7 @@ function sandboxFor(env: Env, sessionId: string) {
 // Demo-facing telemetry: which physical container/POP actually ran the code,
 // and whether this was a fresh container boot or a reused (warm) one.
 interface SandboxTelemetry {
+  sandboxId: string;
   containerId: string | null;
   colo: string | null;
   uptimeSeconds: number | null;
@@ -71,7 +72,7 @@ const MARKER_CMD =
   `NOW=$(date +%s); if [ -f ${MARKER_PATH} ]; then FIRST=$(cat ${MARKER_PATH}); STATUS=warm; ` +
   `else echo $NOW > ${MARKER_PATH}; FIRST=$NOW; STATUS=cold; fi; echo "$STATUS $FIRST $NOW"`;
 
-async function getSandboxTelemetry(sandbox: ReturnType<typeof getSandbox>): Promise<SandboxTelemetry> {
+async function getSandboxTelemetry(sandbox: ReturnType<typeof getSandbox>, sandboxId: string): Promise<SandboxTelemetry> {
   const [hostnameResult, markerResult, traceResult] = await Promise.all([
     sandbox.exec('hostname').catch(() => null),
     sandbox.exec(`sh -c '${MARKER_CMD}'`).catch(() => null),
@@ -89,8 +90,8 @@ async function getSandboxTelemetry(sandbox: ReturnType<typeof getSandbox>): Prom
   let coldStart: boolean | null = null;
   if (markerResult?.success) {
     const [status, first, now] = markerResult.stdout.trim().split(/\s+/);
-    const firstNum = parseInt(first, 10);
-    const nowNum = parseInt(now, 10);
+    const firstNum = parseInt(first ?? '', 10);
+    const nowNum = parseInt(now ?? '', 10);
     if (!Number.isNaN(firstNum) && !Number.isNaN(nowNum)) {
       uptimeSeconds = Math.max(0, nowNum - firstNum);
       coldStart = status === 'cold';
@@ -103,7 +104,7 @@ async function getSandboxTelemetry(sandbox: ReturnType<typeof getSandbox>): Prom
     colo = match?.[1] ?? null;
   }
 
-  return { containerId, colo, uptimeSeconds, coldStart };
+  return { sandboxId, containerId, colo, uptimeSeconds, coldStart };
 }
 
 // Auth middleware — validate shared secret for all API routes
@@ -149,7 +150,7 @@ app.post('/api/execute', async (c) => {
   try {
     const [execution, sandboxInfo] = await Promise.all([
       sandbox.runCode(code, { language, timeout: EXEC_TIMEOUT_MS }),
-      getSandboxTelemetry(sandbox),
+      getSandboxTelemetry(sandbox, sessionId),
     ]);
     return c.json({
       success: !execution.error,
@@ -239,7 +240,7 @@ app.post('/api/preview', async (c) => {
       url = existing.url;
     }
 
-    const sandboxInfo = await getSandboxTelemetry(sandbox);
+    const sandboxInfo = await getSandboxTelemetry(sandbox, sessionId);
     return c.json({ url, fileCount: files.length, sandbox: sandboxInfo });
   } catch (err) {
     const message = (err as Error).message || String(err);

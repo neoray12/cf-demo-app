@@ -1,56 +1,60 @@
 "use client";
 
+import { useTranslation } from "react-i18next";
 import { Box, MapPin, Clock, Snowflake, Flame } from "lucide-react";
 import { getColoInfo, type ColoInfo } from "@/lib/colo-locations";
 import { WORLD_MAP_PATH } from "@/lib/world-map-path";
 
 export interface SandboxTelemetry {
+  sandboxId: string;
   containerId: string | null;
   colo: string | null;
   uptimeSeconds: number | null;
   coldStart: boolean | null;
 }
 
-function formatUptime(seconds: number | null): string {
-  if (seconds == null) return "未知";
-  if (seconds < 2) return "剛啟動";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return m > 0 ? `已運行 ${m} 分 ${s} 秒` : `已運行 ${s} 秒`;
-}
-
-function coloLabel(code: string | null): string {
-  const info = getColoInfo(code);
-  if (!info) return code || "未知";
-  return `${info.city} (${info.code})`;
-}
-
 // Container ID / POP / uptime / cold-warm — the four data points that make
 // "this ran in a real, isolated container somewhere on Cloudflare's network"
 // concrete instead of abstract, for customer demos.
 export function SandboxInfoBar({ sandbox }: { sandbox: SandboxTelemetry | null | undefined }) {
+  const { t } = useTranslation();
   if (!sandbox) return null;
-  const { containerId, colo, uptimeSeconds, coldStart } = sandbox;
-  if (!containerId && !colo && uptimeSeconds == null) return null;
+  const { sandboxId, containerId, colo, uptimeSeconds, coldStart } = sandbox;
+  if (!sandboxId && !colo && uptimeSeconds == null) return null;
+
+  const coloInfo = getColoInfo(colo);
+  const coloText = coloInfo ? `${coloInfo.city} (${coloInfo.code})` : colo || t("chat.sandbox.unknownColo");
+
+  const uptimeText =
+    uptimeSeconds == null
+      ? t("chat.sandbox.uptimeUnknown")
+      : uptimeSeconds < 2
+        ? t("chat.sandbox.justStarted")
+        : uptimeSeconds >= 60
+          ? t("chat.sandbox.uptimeMinSec", { m: Math.floor(uptimeSeconds / 60), s: Math.floor(uptimeSeconds % 60) })
+          : t("chat.sandbox.uptimeSec", { s: Math.floor(uptimeSeconds) });
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 mt-1.5 ml-3 text-[11px] text-muted-foreground">
-      {containerId && (
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/60 font-mono" title="Container hostname">
+      {sandboxId && (
+        <span
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/60 font-mono"
+          title={containerId ? `${t("chat.sandbox.sandboxIdTooltip")} · container: ${containerId}` : t("chat.sandbox.sandboxIdTooltip")}
+        >
           <Box className="size-3" />
-          {containerId}
+          {sandboxId}
         </span>
       )}
       {colo && (
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/60" title="Sandbox 容器所在的 Cloudflare 資料中心">
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/60" title={t("chat.sandbox.popTooltip")}>
           <MapPin className="size-3" />
-          {coloLabel(colo)}
+          {coloText}
         </span>
       )}
       {uptimeSeconds != null && (
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/60" title="容器存活時間">
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/60" title={t("chat.sandbox.uptimeTooltip")}>
           <Clock className="size-3" />
-          {formatUptime(uptimeSeconds)}
+          {uptimeText}
         </span>
       )}
       {coldStart != null && (
@@ -60,10 +64,10 @@ export function SandboxInfoBar({ sandbox }: { sandbox: SandboxTelemetry | null |
               ? "bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400"
               : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
           }`}
-          title={coldStart ? "全新啟動的容器" : "重複使用既有容器"}
+          title={coldStart ? t("chat.sandbox.coldStartTooltip") : t("chat.sandbox.warmStartTooltip")}
         >
           {coldStart ? <Snowflake className="size-3" /> : <Flame className="size-3" />}
-          {coldStart ? "冷啟動" : "已預熱"}
+          {coldStart ? t("chat.sandbox.coldStart") : t("chat.sandbox.warmStart")}
         </span>
       )}
     </div>
@@ -123,6 +127,7 @@ export function PopMap({
   edgeColo?: string | null;
   sandboxColo?: string | null;
 }) {
+  const { t } = useTranslation();
   const edge = getColoInfo(edgeColo);
   const sandbox = getColoInfo(sandboxColo);
   if (!edge && !sandbox) return null;
@@ -155,7 +160,7 @@ export function PopMap({
           info={edge}
           pct={projectPct(edge.lat, edge.lon)}
           dotClass="bg-sky-400"
-          label={sameLocation ? "邊緣節點 + Sandbox" : "邊緣節點 (POP)"}
+          label={sameLocation ? t("chat.sandbox.edgePlusSandbox") : t("chat.sandbox.edgePop")}
         />
       )}
       {sandbox && !sameLocation && (
@@ -163,7 +168,7 @@ export function PopMap({
           info={sandbox}
           pct={projectPct(sandbox.lat, sandbox.lon)}
           dotClass="bg-emerald-400"
-          label="Sandbox 容器"
+          label={t("chat.sandbox.sandboxContainer")}
         />
       )}
     </div>

@@ -425,8 +425,16 @@ export async function POST(request: NextRequest) {
     if (chatSandboxConfigured(env as any)) {
       const cookieStore = await cookies();
       const rawSessionId = cookieStore.get('session_id')?.value || 'anonymous';
-      // Becomes a DNS label in preview URLs — keep it lowercase alphanumeric + hyphens
-      const sandboxSessionId = `sbx-${rawSessionId.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24) || 'anon'}`;
+      // Becomes a DNS label in preview URLs — keep it lowercase alphanumeric + hyphens,
+      // and strip leading/trailing hyphens left by truncation (a UUID sliced to 24
+      // chars always lands on a hyphen at position 23, e.g. "96cdf0dc-8565-4e63-8fbe-"
+      // — the Sandbox SDK rejects IDs starting/ending with '-' as invalid DNS labels).
+      const sanitizedSessionId = rawSessionId
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '')
+        .slice(0, 24)
+        .replace(/^-+|-+$/g, '');
+      const sandboxSessionId = `sbx-${sanitizedSessionId || 'anon'}`;
       tools.executeCode = buildExecuteCodeTool(env as any, sandboxSessionId, edgeColo);
       tools.createWebPreview = buildWebPreviewTool(env as any, sandboxSessionId, edgeColo);
       sandboxToolsActive = true;

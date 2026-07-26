@@ -40,6 +40,7 @@ async function sandboxFetch(
 // Demo telemetry: which physical container/POP ran the code, and whether it
 // was a fresh boot (cold) or a reused container (warm).
 export interface SandboxTelemetry {
+  sandboxId: string;
   containerId: string | null;
   colo: string | null;
   uptimeSeconds: number | null;
