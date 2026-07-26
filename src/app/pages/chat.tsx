@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, BookOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
 
@@ -54,12 +54,16 @@ const TOOL_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.searchKnowledge",
   executeCode: "chat.tool.executeCode",
   createWebPreview: "chat.tool.createWebPreview",
+  captureScreenshot: "chat.tool.captureScreenshot",
+  readWebPage: "chat.tool.readWebPage",
 };
 
 const SOURCE_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.sourceSearchKnowledge",
   executeCode: "chat.tool.sourceExecuteCode",
   createWebPreview: "chat.tool.sourceCreateWebPreview",
+  captureScreenshot: "chat.tool.sourceCaptureScreenshot",
+  readWebPage: "chat.tool.sourceReadWebPage",
 };
 
 // MCP server display names — product/proper nouns, same in every locale.
@@ -351,6 +355,82 @@ function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   );
 }
 
+// ── Screenshot Display ──
+
+interface ScreenshotResult {
+  imageUrl?: string;
+  sourceUrl?: string;
+  error?: string;
+}
+
+function ScreenshotDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+  const { t } = useTranslation();
+  const isCalling = toolCall.status === "calling";
+  const result = (toolCall.result ?? {}) as ScreenshotResult;
+
+  if (isCalling) {
+    return (
+      <div className="my-2">
+        <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+          <Camera className="size-3 shrink-0" />
+          <span>{t("chat.tool.capturingScreenshot")}</span>
+          <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+        </span>
+      </div>
+    );
+  }
+
+  if (result.error || !result.imageUrl) {
+    return (
+      <div className="my-2">
+        <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400">
+          <Camera className="size-3 shrink-0" />
+          <span>{t("chat.tool.screenshotFailed", { error: result.error || "unknown" })}</span>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-2 max-w-lg">
+      <div className="rounded-lg border bg-muted/30 p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center justify-center size-8 rounded-md bg-primary/10 text-primary shrink-0">
+            <Camera className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">{t("chat.tool.captureScreenshot")}</div>
+            {result.sourceUrl && (
+              <a
+                href={result.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground truncate block hover:text-primary hover:underline"
+              >
+                {result.sourceUrl}
+              </a>
+            )}
+          </div>
+          <a
+            href={result.imageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground transition-colors shrink-0"
+          >
+            <ExternalLink className="size-3" />
+          </a>
+        </div>
+        <img
+          src={result.imageUrl}
+          alt={result.sourceUrl || "Screenshot"}
+          className="w-full rounded-md border bg-white"
+          loading="lazy"
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Tool Call Display ──
 
 function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
@@ -360,6 +440,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
 
   if (toolCall.name === "executeCode") return <CodeExecutionDisplay toolCall={toolCall} />;
   if (toolCall.name === "createWebPreview") return <WebPreviewDisplay toolCall={toolCall} />;
+  if (toolCall.name === "captureScreenshot") return <ScreenshotDisplay toolCall={toolCall} />;
   const label = friendlyToolName(toolCall.name, t);
   const isCalling = toolCall.status === "calling";
 
@@ -1139,6 +1220,11 @@ export function ChatPage() {
     { title: t("chat.sandboxSuggestions.countdown.title"), desc: t("chat.sandboxSuggestions.countdown.prompt"), icon: Globe },
   ];
 
+  const browserSuggestions = [
+    { title: t("chat.browserSuggestions.screenshot.title"), desc: t("chat.browserSuggestions.screenshot.prompt"), icon: Camera },
+    { title: t("chat.browserSuggestions.summarize.title"), desc: t("chat.browserSuggestions.summarize.prompt"), icon: BookOpen },
+  ];
+
   // Sandbox demo prompts need tools enabled to actually invoke executeCode /
   // createWebPreview — otherwise clicking one just gets a plain-text answer
   // with no sandbox involved, which defeats the point of the suggestion.
@@ -1253,6 +1339,24 @@ export function ChatPage() {
                         >
                           <div className="flex items-center gap-1.5 text-sm font-medium">
                             <s.icon className="size-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                            {s.title}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="pt-2">
+                    <p className="text-xs font-medium text-muted-foreground/70 mb-2">{t("chat.browserLabel")}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {browserSuggestions.map((s) => (
+                        <button
+                          key={s.title}
+                          onClick={() => handleSandboxSuggestion(s.desc)}
+                          className="text-left rounded-2xl border border-violet-300/40 dark:border-violet-800/40 px-4 py-3.5 hover:bg-violet-50/50 dark:hover:bg-violet-950/20 active:bg-violet-50 dark:active:bg-violet-950/30 transition-colors"
+                        >
+                          <div className="flex items-center gap-1.5 text-sm font-medium">
+                            <s.icon className="size-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
                             {s.title}
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>

@@ -108,6 +108,112 @@ const SANDBOX_PROMPT = `
 
 當問題需要精確計算（數學、統計、日期、資料處理）時，使用 executeCode 工具執行 Python 程式碼取得真實結果，不要憑空心算。當使用者要求製作或展示網頁時，使用 createWebPreview 工具產生預覽網址，並在回覆中附上該網址。當使用者上傳 CSV/XLSX 檔案時，使用 executeCode 搭配 pandas 讀取分析，沙箱已安裝 pandas、openpyxl、matplotlib；若適合可用 matplotlib 畫圖，圖表會直接顯示給使用者。`;
 
+// Extra system prompt guidance when the Browser Rendering tools are available
+const BROWSER_PROMPT = `
+
+當使用者要求截圖某個網頁時，使用 captureScreenshot 工具，截圖會直接顯示在對話中。當使用者要求閱讀、摘要或分析某個網址的內容時，使用 readWebPage 工具取得網頁的 Markdown 內容再回答。網址必須包含 http:// 或 https:// 開頭。`;
+
+const BR_API_BASE = 'https://api.cloudflare.com/client/v4/accounts';
+const BR_TIMEOUT_MS = 30_000;
+const READ_PAGE_MAX_CHARS = 8000;
+
+function browserRenderingConfigured(env: Record<string, unknown>): boolean {
+  return Boolean(env.CF_API_TOKEN && env.CF_ACCOUNT_ID && env.CRAWLER_BUCKET);
+}
+
+function isValidHttpUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function buildScreenshotTool(env: Record<string, unknown>) {
+  return {
+    description:
+      '使用 Cloudflare Browser Rendering 對指定網址進行截圖，截圖會直接內嵌顯示在對話中。適用於使用者要求「截圖某個網站」或想看某網頁長什麼樣子時。網址必須以 http:// 或 https:// 開頭。',
+    inputSchema: z.object({
+      url: z.string().describe('要截圖的完整網址，必須含 http:// 或 https://'),
+      fullPage: z.boolean().optional().default(false).describe('是否截取整頁（預設只截可視區域）'),
+    }),
+    execute: safeTool(async ({ url, fullPage }: { url: string; fullPage?: boolean }) => {
+      console.log('[Chat API] captureScreenshot:', url, 'fullPage:', fullPage);
+      if (!isValidHttpUrl(url)) {
+        return { error: '無效的網址，必須以 http:// 或 https:// 開頭' };
+      }
+      const res = await fetch(
+        `${BR_API_BASE}/${env.CF_ACCOUNT_ID}/browser-rendering/screenshot`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${env.CF_API_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url, screenshotOptions: { fullPage: Boolean(fullPage) } }),
+          signal: AbortSignal.timeout(BR_TIMEOUT_MS),
+        }
+      );
+      if (!res.ok) {
+        const detail = (await res.text()).slice(0, 300);
+        return { error: `截圖失敗 (HTTP ${res.status}): ${detail}` };
+      }
+      const bytes = await res.arrayBuffer();
+      // Store in R2 and hand the model a short URL — inlining the PNG as
+      // base64 in the tool result would flood the model's context window.
+      const key = `screenshots/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.png`;
+      await (env.CRAWLER_BUCKET as R2Bucket).put(key, bytes, {
+        httpMetadata: { contentType: 'image/png' },
+      });
+      return {
+        imageUrl: `/api/crawler/screenshot?key=${encodeURIComponent(key)}`,
+        sourceUrl: url,
+        fullPage: Boolean(fullPage),
+        sizeBytes: bytes.byteLength,
+      };
+    }),
+  };
+}
+
+function buildReadWebPageTool(env: Record<string, unknown>) {
+  return {
+    description:
+      '使用 Cloudflare Browser Rendering 讀取指定網址的內容並轉為 Markdown 文字。適用於使用者要求閱讀、摘要、翻譯或分析某個網頁內容時。網址必須以 http:// 或 https:// 開頭。',
+    inputSchema: z.object({
+      url: z.string().describe('要讀取的完整網址，必須含 http:// 或 https://'),
+    }),
+    execute: safeTool(async ({ url }: { url: string }) => {
+      console.log('[Chat API] readWebPage:', url);
+      if (!isValidHttpUrl(url)) {
+        return { error: '無效的網址，必須以 http:// 或 https:// 開頭' };
+      }
+      const res = await fetch(
+        `${BR_API_BASE}/${env.CF_ACCOUNT_ID}/browser-rendering/markdown`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${env.CF_API_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url }),
+          signal: AbortSignal.timeout(BR_TIMEOUT_MS),
+        }
+      );
+      const data = (await res.json()) as { success?: boolean; result?: string; errors?: unknown[] };
+      if (!res.ok || !data.success || typeof data.result !== 'string') {
+        return { error: `讀取網頁失敗 (HTTP ${res.status})` };
+      }
+      const truncated = data.result.length > READ_PAGE_MAX_CHARS;
+      return {
+        url,
+        markdown: truncated ? data.result.slice(0, READ_PAGE_MAX_CHARS) : data.result,
+        truncated,
+      };
+    }),
+  };
+}
+
 interface UploadedFileInfo {
   name: string;
   path: string;
@@ -434,6 +540,7 @@ export async function POST(request: NextRequest) {
   // Build tools: searchKnowledge + sandbox tools + MCP tools
   let tools: Record<string, any> | undefined;
   let sandboxToolsActive = false;
+  let browserToolsActive = false;
   if (useTools) {
     tools = { searchKnowledge: buildSearchKnowledgeTool(env as any) };
 
@@ -471,6 +578,13 @@ export async function POST(request: NextRequest) {
       sandboxToolsActive = true;
     }
 
+    // Browser Rendering tools — screenshot + page reading via CF REST API
+    if (browserRenderingConfigured(env as any)) {
+      tools.captureScreenshot = buildScreenshotTool(env as any);
+      tools.readWebPage = buildReadWebPageTool(env as any);
+      browserToolsActive = true;
+    }
+
     // Inject MCP tools if any servers are specified
     if (mcpServerIds.length > 0) {
       const mcpTools = await buildMcpTools(env as any, mcpServerIds);
@@ -481,7 +595,10 @@ export async function POST(request: NextRequest) {
     console.log('[Chat API] Tools registered:', Object.keys(tools).join(', '));
   }
 
-  const systemPrompt = sandboxToolsActive ? SYSTEM_PROMPT + SANDBOX_PROMPT : SYSTEM_PROMPT;
+  const systemPrompt =
+    SYSTEM_PROMPT +
+    (sandboxToolsActive ? SANDBOX_PROMPT : '') +
+    (browserToolsActive ? BROWSER_PROMPT : '');
 
   function createStream(attempt: number) {
     return streamText({
