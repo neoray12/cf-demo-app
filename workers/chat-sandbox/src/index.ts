@@ -263,6 +263,21 @@ app.post('/api/preview', async (c) => {
       url = existing.url;
     }
 
+    // waitForPort() only confirms the server is listening *inside* the
+    // container — the public preview URL (edge → DO → container) can still
+    // take a beat to become reachable on a fresh cold-started container,
+    // which is what produced "refused to connect" even after that fix.
+    // Poll the actual public URL the browser will hit before declaring ready.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const probe = await fetch(url, { signal: AbortSignal.timeout(3000) });
+        if (probe.ok || probe.status < 500) break;
+      } catch {
+        // Not reachable yet — retry
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+
     const sandboxInfo = await getSandboxTelemetry(sandbox, sessionId);
     return c.json({ url, fileCount: files.length, sandbox: sandboxInfo });
   } catch (err) {
