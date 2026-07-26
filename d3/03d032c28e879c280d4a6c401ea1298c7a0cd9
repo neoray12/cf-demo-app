@@ -1,0 +1,35 @@
+tsconfig.tsbuildinfo
+  s_bdc04ccd4a8c6f::t_b69d5f71585936 1
+src/app/api/chat/route.ts
+  s_bdc04ccd4a8c6f::t_e72fc21bdd70de 10,109,111-124,127-128,307,316,454-469
+src/app/components/chat/sandbox-telemetry.tsx
+  s_bdc04ccd4a8c6f::t_a9ac57c1dcf33f 77-86,92-97,153,155,159-162,171-172
+src/app/pages/chat.tsx
+  s_bdc04ccd4a8c6f::t_b22443d18139d2 13,45-49,181-185,191,203-205,247-251,729-731,779,826,1053-1054,1057-1058,1062-1063,1081-1107,1326-1332,1334-1350,1361-1369,1391-1393
+src/i18n/en.json
+  s_bdc04ccd4a8c6f::t_c4366d9688f81e 176-182
+src/i18n/zh-TW.json
+  s_bdc04ccd4a8c6f::t_085204fd87325a 176-182
+src/lib/chat-sandbox.ts
+  s_bdc04ccd4a8c6f::t_6af6c21fc0fc8f 50-54,59,127-151
+workers/chat-sandbox/Dockerfile
+  s_bdc04ccd4a8c6f::t_e26592ec7fed6b 6-7
+workers/chat-sandbox/src/index.ts
+  s_bdc04ccd4a8c6f::t_4368c2800901bc 25-35,166-174,179,272-316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d303d032c28e879c280d4a6c401ea1298c7a0cd9",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
