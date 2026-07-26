@@ -1,0 +1,33 @@
+src/app/api/chat/route.ts
+  s_bdc04ccd4a8c6f::t_55cd472321ab11 428-437
+src/app/components/chat/sandbox-telemetry.tsx
+  s_bdc04ccd4a8c6f::t_435e5faa328bf0 3,9,20,22-35,39-43,45,49,51,55,57,67,70,130,163,171
+src/app/pages/chat.tsx
+  s_bdc04ccd4a8c6f::t_760388daea0811 45-51,54-57,60,67-70,73-75,78-81,87,91-93,188,207,260,270,282,308,314,340,342,346,396,406,421,426-428,430,1085-1098,1194-1211
+src/i18n/en.json
+  s_bdc04ccd4a8c6f::t_5e27d1e47a1fbc 126-175
+src/i18n/zh-TW.json
+  s_bdc04ccd4a8c6f::t_c89c4e983b7932 126-175
+src/lib/chat-sandbox.ts
+  s_bdc04ccd4a8c6f::t_7b08a945c86276 43
+src/middleware.ts
+  s_bdc04ccd4a8c6f::t_f40b57b97d9793 1-29
+workers/chat-sandbox/src/index.ts
+  s_bdc04ccd4a8c6f::t_dba93dc08557c8 54,75,93-94,107,153,243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "31135ad87eda8c96ec1107ee1b854ff931a2e278",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
