@@ -36,33 +36,27 @@ export function isValidCodeModeToken(token: string, toolName: string): boolean {
   return s.toolNames.includes(toolName);
 }
 
-// Every tool resolves to a JSON object, never a bare string. Naming the
-// fields saves a wasted round-trip: without them the model assumes
-// readWebPage returns the markdown itself, hits "page.split is not a
-// function", and has to retry.
-//
-// Plain comma lists only — writing these as object literals ({ url,
-// markdown }) reliably broke tool-call argument generation on gpt-oss-120b:
-// the model emitted a truncated call and the stream produced
-// tool-call-start with no matching tool-call, 3 times out of 3.
-const RETURN_FIELDS: Record<string, string> = {
-  searchKnowledge: 'found, count, results',
-  executeCode: 'success, stdout, stderr, results, error',
-  createWebPreview: 'url, title, fileCount',
-  captureScreenshot: 'imageUrl, sourceUrl, sizeBytes',
-  readWebPage: 'url, markdown, truncated',
-};
-
-/** Human-readable signature list injected into the tool description. */
+/**
+ * Human-readable signature list injected into the tool description.
+ *
+ * Keep this format EXACTLY as-is. Two attempts to enrich it with return-type
+ * information (object literals, then plain field lists) both broke tool-call
+ * argument generation on gpt-oss-120b — the stream emitted tool-call-start
+ * with no matching tool-call, 3 runs out of 3, and the chat fell through to
+ * the "no reply" fallback. Return-shape guidance lives in the system prompt
+ * instead, where it doesn't perturb argument generation.
+ */
 export function describeTools(tools: Record<string, { description?: string }>): string {
   return Object.entries(tools)
-    .map(([name, t]) => {
-      const summary = t.description?.split('\n')[0] ?? '';
-      const returns = RETURN_FIELDS[name] ? `（回傳物件，欄位：${RETURN_FIELDS[name]}）` : '';
-      return `  codemode.${name}(args)${returns} — ${summary}`;
-    })
+    .map(([name, t]) => `  codemode.${name}(args) — ${t.description?.split('\n')[0] ?? ''}`)
     .join('\n');
 }
+
+/** Return-shape hints — carried in the system prompt, not the tool schema. */
+export const RETURN_SHAPE_HINT =
+  '工具回傳的都是物件而非字串，主要欄位：readWebPage 回 url/markdown/truncated；' +
+  'executeCode 回 success/stdout/stderr/error；captureScreenshot 回 imageUrl/sourceUrl；' +
+  'createWebPreview 回 url/title；searchKnowledge 回 found/count/results。';
 
 /**
  * Models write the script in one of three shapes; normalize them all into

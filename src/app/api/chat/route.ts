@@ -8,7 +8,7 @@ import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview, uploadFile as sandboxUploadFile } from '@/lib/chat-sandbox';
-import { createCodeModeSession, describeTools, buildCodeModeModule, normalizeCode } from '@/lib/codemode';
+import { createCodeModeSession, describeTools, buildCodeModeModule, normalizeCode, RETURN_SHAPE_HINT } from '@/lib/codemode';
 import { setCodeModeToolRunner } from '@/app/api/codemode-exec/route';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
@@ -126,6 +126,8 @@ const EXECUTE_JS_TIMEOUT_MS = 10_000;
 const CODE_MODE_PROMPT = `
 
 目前為 Code Mode：你只有一個 codemode 工具。需要查資料、執行程式、截圖或其他操作時，寫一段 JavaScript async arrow function，在裡面呼叫 codemode 命名空間下的函式（工具描述中列出了可用的函式與型別），一次完成多個步驟後 return 結果。這比多輪工具呼叫更快也更省 token。`;
+
+const CODE_MODE_RETURN_HINT = `\n\n${RETURN_SHAPE_HINT}`;
 
 function buildExecuteJsTool(env: Record<string, unknown>) {
   return {
@@ -751,7 +753,7 @@ export async function POST(request: NextRequest) {
   }
 
   const systemPrompt = codeModeActive
-    ? SYSTEM_PROMPT + CODE_MODE_PROMPT
+    ? SYSTEM_PROMPT + CODE_MODE_PROMPT + CODE_MODE_RETURN_HINT
     : SYSTEM_PROMPT +
       (sandboxToolsActive ? SANDBOX_PROMPT : '') +
       (browserToolsActive ? BROWSER_PROMPT : '') +
