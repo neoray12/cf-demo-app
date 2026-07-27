@@ -36,10 +36,26 @@ export function isValidCodeModeToken(token: string, toolName: string): boolean {
   return s.toolNames.includes(toolName);
 }
 
+// Every tool resolves to a JSON object, never a bare string. Spelling the
+// shapes out saves a wasted round-trip: without them the model assumes
+// readWebPage returns the markdown itself, hits "page.split is not a
+// function", and has to retry.
+const RETURN_SHAPES: Record<string, string> = {
+  searchKnowledge: '{ found, count, results: [{ filename, score, text }] }',
+  executeCode: '{ success, stdout, stderr, results, error }',
+  createWebPreview: '{ url, title, fileCount }',
+  captureScreenshot: '{ imageUrl, sourceUrl, sizeBytes }',
+  readWebPage: '{ url, markdown, truncated }',
+};
+
 /** Human-readable signature list injected into the tool description. */
 export function describeTools(tools: Record<string, { description?: string }>): string {
   return Object.entries(tools)
-    .map(([name, t]) => `  codemode.${name}(args) — ${t.description?.split('\n')[0] ?? ''}`)
+    .map(([name, t]) => {
+      const summary = t.description?.split('\n')[0] ?? '';
+      const returns = RETURN_SHAPES[name] ? ` → 回傳 ${RETURN_SHAPES[name]}` : '';
+      return `  codemode.${name}(args)${returns} — ${summary}`;
+    })
     .join('\n');
 }
 
