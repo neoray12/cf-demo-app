@@ -36,16 +36,21 @@ export function isValidCodeModeToken(token: string, toolName: string): boolean {
   return s.toolNames.includes(toolName);
 }
 
-// Every tool resolves to a JSON object, never a bare string. Spelling the
-// shapes out saves a wasted round-trip: without them the model assumes
+// Every tool resolves to a JSON object, never a bare string. Naming the
+// fields saves a wasted round-trip: without them the model assumes
 // readWebPage returns the markdown itself, hits "page.split is not a
 // function", and has to retry.
-const RETURN_SHAPES: Record<string, string> = {
-  searchKnowledge: '{ found, count, results: [{ filename, score, text }] }',
-  executeCode: '{ success, stdout, stderr, results, error }',
-  createWebPreview: '{ url, title, fileCount }',
-  captureScreenshot: '{ imageUrl, sourceUrl, sizeBytes }',
-  readWebPage: '{ url, markdown, truncated }',
+//
+// Plain comma lists only — writing these as object literals ({ url,
+// markdown }) reliably broke tool-call argument generation on gpt-oss-120b:
+// the model emitted a truncated call and the stream produced
+// tool-call-start with no matching tool-call, 3 times out of 3.
+const RETURN_FIELDS: Record<string, string> = {
+  searchKnowledge: 'found, count, results',
+  executeCode: 'success, stdout, stderr, results, error',
+  createWebPreview: 'url, title, fileCount',
+  captureScreenshot: 'imageUrl, sourceUrl, sizeBytes',
+  readWebPage: 'url, markdown, truncated',
 };
 
 /** Human-readable signature list injected into the tool description. */
@@ -53,7 +58,7 @@ export function describeTools(tools: Record<string, { description?: string }>): 
   return Object.entries(tools)
     .map(([name, t]) => {
       const summary = t.description?.split('\n')[0] ?? '';
-      const returns = RETURN_SHAPES[name] ? ` → 回傳 ${RETURN_SHAPES[name]}` : '';
+      const returns = RETURN_FIELDS[name] ? `（回傳物件，欄位：${RETURN_FIELDS[name]}）` : '';
       return `  codemode.${name}(args)${returns} — ${summary}`;
     })
     .join('\n');
