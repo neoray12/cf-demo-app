@@ -25,5 +25,10 @@ bindings = [
 new_sqlite_classes = ["Sandbox"]
 tag = "v1"
 
+[[kv_namespaces]]
+binding = "KV"
+id = "cd03af00eb9340a180014760028fbebd"
+
 [vars]
 SANDBOX_LOG_LEVEL = "info"
+AVOID_COLOS = "HKG"

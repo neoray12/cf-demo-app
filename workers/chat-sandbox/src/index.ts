@@ -42,6 +42,8 @@ const CONTAINER_TIMEOUTS = {
 interface Env {
   Sandbox: DurableObjectNamespace<Sandbox>;
   SANDBOX_API_SECRET: string;
+  KV: KVNamespace;
+  AVOID_COLOS?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -57,6 +59,72 @@ function sandboxFor(env: Env, sessionId: string) {
     sleepAfter: DEFAULT_SLEEP_AFTER,
     containerTimeouts: CONTAINER_TIMEOUTS,
   });
+}
+
+// ── Colo avoidance ──
+//
+// Containers placement constraints stop at region granularity (APAC etc.) —
+// there is no way to exclude a specific city like HKG in wrangler config.
+// Placement also fixes a Durable Object's location at first creation, so the
+// only lever we have is the sandbox ID itself: probe where a fresh sandbox
+// landed, and if it's in an avoided colo, destroy it and re-roll with a new
+// generation-suffixed ID (sbx-xxx → sbx-xxx-g2 → sbx-xxx-g3). The winning ID
+// is pinned in KV so every later request in the session reuses the same
+// container. Costs extra cold starts on unlucky rolls and is best-effort —
+// if every attempt lands in an avoided colo, the last roll is kept.
+
+const COLO_PIN_PREFIX = 'chat-sandbox:colo-pin:';
+const COLO_PIN_TTL_SECONDS = 60 * 60 * 24; // sandboxes sleep after 20m; 24h is plenty
+const MAX_PLACEMENT_ATTEMPTS = 3;
+
+function avoidedColos(env: Env): string[] {
+  return (env.AVOID_COLOS || '')
+    .split(',')
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+// Boots the container (if needed) and asks where its egress actually is.
+// -k because local dev behind WARP/Zero Trust MITMs container egress with a
+// CA the image doesn't trust; we only parse the colo= line, so this is fine.
+async function probeColo(sandbox: ReturnType<typeof getSandbox>): Promise<string | null> {
+  const trace = await sandbox
+    .exec('curl -sk --max-time 2 https://cloudflare.com/cdn-cgi/trace', { timeout: TRACE_TIMEOUT_MS })
+    .catch(() => null);
+  if (!trace?.success) return null;
+  return trace.stdout.match(/colo=([A-Z]{3})/)?.[1] ?? null;
+}
+
+async function resolveSandboxId(env: Env, sessionId: string): Promise<string> {
+  const avoid = avoidedColos(env);
+  if (avoid.length === 0) return sessionId;
+
+  const pinKey = `${COLO_PIN_PREFIX}${sessionId}`;
+  const pinned = await env.KV.get(pinKey);
+  if (pinned) return pinned;
+
+  let chosen = sessionId;
+  for (let gen = 1; gen <= MAX_PLACEMENT_ATTEMPTS; gen++) {
+    const candidateId = gen === 1 ? sessionId : `${sessionId}-g${gen}`;
+    chosen = candidateId;
+    const colo = await probeColo(sandboxFor(env, candidateId));
+    // Unknown colo → accept rather than churn containers on a flaky probe
+    if (!colo || !avoid.includes(colo)) {
+      if (colo && gen > 1) console.log(`[PLACEMENT] ${sessionId}: re-rolled to ${candidateId} (${colo})`);
+      break;
+    }
+    console.log(`[PLACEMENT] ${sessionId}: attempt ${gen} (${candidateId}) landed in avoided colo ${colo}`);
+    if (gen < MAX_PLACEMENT_ATTEMPTS) {
+      await sandboxFor(env, candidateId).destroy().catch(() => {});
+    }
+  }
+
+  // Two concurrent first-requests can race here; last write wins, and both
+  // containers exist briefly — harmless for a demo, sleepAfter reaps the loser.
+  const existing = await env.KV.get(pinKey);
+  if (existing) return existing;
+  await env.KV.put(pinKey, chosen, { expirationTtl: COLO_PIN_TTL_SECONDS });
+  return chosen;
 }
 
 // Demo-facing telemetry: which physical container/POP actually ran the code,
@@ -91,7 +159,7 @@ async function getSandboxTelemetry(sandbox: ReturnType<typeof getSandbox>, sandb
     // is routed through, which is not necessarily the same colo that served
     // the original chat request (that's request.cf.colo on the main app).
     sandbox
-      .exec('curl -s --max-time 2 https://cloudflare.com/cdn-cgi/trace', { timeout: TRACE_TIMEOUT_MS })
+      .exec('curl -sk --max-time 2 https://cloudflare.com/cdn-cgi/trace', { timeout: TRACE_TIMEOUT_MS })
       .catch(() => null),
   ]);
 
@@ -156,12 +224,13 @@ app.post('/api/execute', async (c) => {
   }
 
   console.log(`[EXECUTE] ${sessionId}: ${language}, ${code.length} chars`);
-  const sandbox = sandboxFor(c.env, sessionId);
+  const resolvedId = await resolveSandboxId(c.env, sessionId);
+  const sandbox = sandboxFor(c.env, resolvedId);
 
   try {
     const [execution, sandboxInfo] = await Promise.all([
       sandbox.runCode(code, { language, timeout: EXEC_TIMEOUT_MS }),
-      getSandboxTelemetry(sandbox, sessionId),
+      getSandboxTelemetry(sandbox, resolvedId),
     ]);
     // runCode() can return rich output (e.g. matplotlib charts) alongside
     // text — png/jpeg used to be silently dropped here, keeping only .text.
@@ -222,7 +291,8 @@ app.post('/api/preview', async (c) => {
   }
 
   console.log(`[PREVIEW] ${sessionId}: ${files.length} file(s)`);
-  const sandbox = sandboxFor(c.env, sessionId);
+  const resolvedId = await resolveSandboxId(c.env, sessionId);
+  const sandbox = sandboxFor(c.env, resolvedId);
 
   try {
     // Fresh preview dir so stale files from a previous preview don't linger
@@ -278,7 +348,7 @@ app.post('/api/preview', async (c) => {
       await new Promise((resolve) => setTimeout(resolve, 800));
     }
 
-    const sandboxInfo = await getSandboxTelemetry(sandbox, sessionId);
+    const sandboxInfo = await getSandboxTelemetry(sandbox, resolvedId);
     return c.json({ url, fileCount: files.length, sandbox: sandboxInfo });
   } catch (err) {
     const message = (err as Error).message || String(err);
@@ -316,7 +386,8 @@ app.post('/api/upload', async (c) => {
   }
 
   console.log(`[UPLOAD] ${sessionId}: ${fileName} (${size} bytes)`);
-  const sandbox = sandboxFor(c.env, sessionId);
+  const resolvedId = await resolveSandboxId(c.env, sessionId);
+  const sandbox = sandboxFor(c.env, resolvedId);
   const path = `${UPLOAD_DIR}/${fileName}`;
 
   try {
@@ -342,7 +413,9 @@ app.delete('/api/session/:sessionId', async (c) => {
     return c.json({ error: 'Invalid sessionId' }, 400);
   }
   try {
-    await sandboxFor(c.env, sessionId).destroy();
+    const resolvedId = await resolveSandboxId(c.env, sessionId);
+    await sandboxFor(c.env, resolvedId).destroy();
+    await c.env.KV.delete(`${COLO_PIN_PREFIX}${sessionId}`).catch(() => {});
     return c.json({ success: true });
   } catch (err) {
     return c.json({ success: false, error: (err as Error).message }, 502);

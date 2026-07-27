@@ -46,8 +46,20 @@ bindings = [
 new_sqlite_classes = ["Sandbox"]
 tag = "v1"
 
+# Shared with cf-demo-app's KV namespace — keys are prefixed "chat-sandbox:"
+# to stay out of the main app's keyspace. Used to pin each session's resolved
+# sandbox ID after colo-avoidance re-rolls (see AVOID_COLOS).
+[[kv_namespaces]]
+binding = "KV"
+id = "cd03af00eb9340a180014760028fbebd"
+
 [vars]
 SANDBOX_LOG_LEVEL = "info"
+# Comma-separated colo IATA codes the sandbox must NOT run in. Containers
+# placement only supports region granularity (APAC etc.), so city-level
+# avoidance is done app-side: probe the container's colo on first use and
+# destroy + re-roll with a generation suffix if it landed somewhere here.
+AVOID_COLOS = "HKG"
 
 # Secrets (set via wrangler secret put):
 # - SANDBOX_API_SECRET: shared secret for authenticating requests from cf-demo-app
