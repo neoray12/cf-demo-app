@@ -8,8 +8,8 @@ import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview, uploadFile as sandboxUploadFile } from '@/lib/chat-sandbox';
-import { createCodeTool } from '@cloudflare/codemode/ai';
-import { DynamicWorkerExecutor } from '@cloudflare/codemode';
+import { createCodeModeSession, describeTools, buildCodeModeModule } from '@/lib/codemode';
+import { setCodeModeToolRunner } from '@/app/api/codemode-exec/route';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
@@ -696,15 +696,55 @@ export async function POST(request: NextRequest) {
     // a JS script that calls the other tools as functions inside a Dynamic
     // Worker, instead of stepping through multiple tool-call rounds. This is
     // the token-saving pattern Cloudflare's codemode SDK implements.
-    if (codeMode && (env as any).LOADER) {
+    if (codeMode && (env as any).LOADER && (env as any).SELF) {
       // executeJs is redundant inside Code Mode (the script itself IS the JS)
       const { executeJs: _omitted, ...wrappedTools } = tools;
-      const executor = new DynamicWorkerExecutor({ loader: (env as any).LOADER });
+      const toolNames = Object.keys(wrappedTools);
+      const session = createCodeModeSession(toolNames);
+
+      // Tool calls from the sandbox arrive at /api/codemode-exec, which
+      // dispatches through this runner back into the real tool implementations.
+      setCodeModeToolRunner(async (name, args) => {
+        const tool = (wrappedTools as any)[name];
+        if (!tool) throw new Error(`Unknown tool: ${name}`);
+        return tool.execute(args);
+      });
+
       tools = {
-        codemode: createCodeTool({ tools: wrappedTools as any, executor }) as any,
+        codemode: {
+          description:
+            '一次執行多個工具：寫一段 JavaScript async 程式碼，在裡面呼叫下列函式並 return 最終結果。這比多輪工具呼叫更快、更省 token。可用函式：\n' +
+            describeTools(wrappedTools as any) +
+            '\n用 await 呼叫（如 const page = await codemode.readWebPage({ url }); ），用 return 回傳結果，可用 console.log() 輸出過程。',
+          inputSchema: z.object({
+            code: z.string().describe('JavaScript 程式碼，呼叫 codemode.<工具名>(args) 並 return 結果'),
+          }),
+          execute: safeTool(async ({ code }: { code: string }) => {
+            console.log('[Chat API] codemode script:', code.length, 'chars');
+            const loader = (env as any).LOADER as {
+              load: (opts: Record<string, unknown>) => { getEntrypoint: () => { fetch: (req: Request) => Promise<Response> } };
+            };
+            const started = Date.now();
+            const worker = loader.load({
+              compatibilityDate: '2026-01-01',
+              mainModule: 'main.js',
+              modules: { 'main.js': buildCodeModeModule(code, session.token) },
+              // Route the sandbox's egress back to this Worker: codemode.*
+              // calls reach /api/codemode-exec; anything else 404s here and
+              // never touches the real internet.
+              globalOutbound: (env as any).SELF,
+            });
+            const res = await worker
+              .getEntrypoint()
+              .fetch(new Request('https://codemode.internal/', { signal: AbortSignal.timeout(45_000) }));
+            const executionMs = Date.now() - started;
+            const data = (await res.json()) as { logs: string[]; result: unknown; error: string | null };
+            return { code, ...data, engine: 'codemode', executionMs, toolCount: toolNames.length };
+          }),
+        },
       };
       codeModeActive = true;
-      console.log(`[Chat API] Code Mode: wrapped ${Object.keys(wrappedTools).length} tool(s) into codemode`);
+      console.log(`[Chat API] Code Mode: wrapped ${toolNames.length} tool(s) into codemode`);
     }
 
     console.log('[Chat API] Tools registered:', Object.keys(tools).join(', '));

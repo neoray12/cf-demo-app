@@ -31,6 +31,14 @@ id = "cd03af00eb9340a180014760028fbebd"
 [[worker_loaders]]
 binding = "LOADER"
 
+# Self service binding — Code Mode scripts run in a Dynamic Worker whose
+# globalOutbound routes back HERE, so codemode.<tool>() proxy calls hit
+# /api/codemode-exec while any other fetch from the sandbox never reaches
+# the real internet (it lands on this worker and 404s).
+[[services]]
+binding = "SELF"
+service = "cf-demo-app"
+
 # Secrets (set via wrangler secret put):
 # - CHAT_SANDBOX_URL: https://chat-sandbox.neokung.work — MUST be the custom domain,
 #   not workers.dev; exposePort derives preview-URL hostnames from the request host.
