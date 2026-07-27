@@ -43,6 +43,26 @@ export function describeTools(tools: Record<string, { description?: string }>): 
     .join('\n');
 }
 
+/**
+ * Models write the script in one of three shapes; normalize them all into
+ * statements that end in a `return`, so the harness's wrapper actually
+ * captures the value. Without this an IIFE body evaluates and is discarded,
+ * the tool returns null, and the model happily invents an answer.
+ */
+export function normalizeCode(raw: string): string {
+  const code = raw.trim().replace(/;\s*$/, '');
+  // IIFE: (async () => { ... })()  /  (function(){...})()
+  if (/^\(/.test(code) && /\)\s*\(\s*\)$/.test(code)) {
+    return `return await ${code};`;
+  }
+  // Bare function expression: async () => { ... }  /  async function () {...}
+  if (/^async\s*\(/.test(code) || /^\(\s*\)\s*=>/.test(code) || /^async\s+function\b/.test(code) || /^function\b/.test(code)) {
+    return `return await (${code})();`;
+  }
+  // Plain statement list — assumed to contain its own return / console.log
+  return code;
+}
+
 /** The module that wraps the model's script inside the Dynamic Worker. */
 export function buildCodeModeModule(userCode: string, token: string): string {
   return `
@@ -71,7 +91,7 @@ export function buildCodeModeModule(userCode: string, token: string): string {
         let result = null, error = null;
         try {
           result = await (async () => {
-            ${userCode}
+            ${normalizeCode(userCode)}
           })();
         } catch (e) {
           error = String(e && e.message ? e.message : e);

@@ -8,7 +8,7 @@ import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview, uploadFile as sandboxUploadFile } from '@/lib/chat-sandbox';
-import { createCodeModeSession, describeTools, buildCodeModeModule } from '@/lib/codemode';
+import { createCodeModeSession, describeTools, buildCodeModeModule, normalizeCode } from '@/lib/codemode';
 import { setCodeModeToolRunner } from '@/app/api/codemode-exec/route';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
@@ -156,7 +156,7 @@ function buildExecuteJsTool(env: Record<string, unknown>) {
             let result = null, error = null;
             try {
               result = await (async () => {
-                ${code}
+                ${normalizeCode(code)}
               })();
             } catch (e) {
               error = String(e && e.stack ? e.message : e);
