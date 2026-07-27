@@ -1,0 +1,29 @@
+package-lock.json
+  s_bdc04ccd4a8c6f::t_ba36543f213b3c 12,1466-1495,8619-8624,8846-8848
+package.json
+  s_bdc04ccd4a8c6f::t_98f609b2034e00 18
+src/app/api/chat/route.ts
+  s_bdc04ccd4a8c6f::t_b3c9db3969b450 11-12,125-129,133,499,509,636,695-709,713-718
+src/app/pages/chat.tsx
+  s_bdc04ccd4a8c6f::t_e0925e1efe9e59 13,57,67,212-213,218-228,230-235,247,291-301,496,858,960,1184,1341-1358
+src/i18n/en.json
+  s_bdc04ccd4a8c6f::t_e93f7effcaf180 173-176
+src/i18n/zh-TW.json
+  s_bdc04ccd4a8c6f::t_60387e4a3b0ec4 173-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1acb396e2c92b1ba36372edaa828a7ce9a825c76",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "claude-fable-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
