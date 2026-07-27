@@ -1,0 +1,23 @@
+workers/chat-sandbox/src/index.ts
+  s_bdc04ccd4a8c6f::t_4c17100ebcca1e 45-46,64-129,162,227-228,233,294-295,351,389-390,416-418
+workers/chat-sandbox/wrangler.dev.toml
+  s_bdc04ccd4a8c6f::t_01d51060126b20 28-31,34
+workers/chat-sandbox/wrangler.toml
+  s_bdc04ccd4a8c6f::t_91f99a75cad50b 49-55,58-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1ed38f29782d16e9c4611986cf3167314c6066d8",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
