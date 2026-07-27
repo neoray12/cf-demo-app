@@ -1,0 +1,21 @@
+src/app/api/chat/route.ts
+  s_26762c2c7db8bc::t_e29514233f6736 11,159
+src/lib/codemode.ts
+  s_26762c2c7db8bc::t_10cb435c165dcb 46-65,94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "3e4c7b1ceb8bcb79f3b95d8dfd27878968449065",
+  "prompts": {},
+  "sessions": {
+    "s_26762c2c7db8bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f58248e8-ca6e-4fdd-bc6d-949c96c70de1",
+        "model": "claude-fable-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
