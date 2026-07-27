@@ -113,6 +113,88 @@ const BROWSER_PROMPT = `
 
 當使用者要求截圖某個網頁時，使用 captureScreenshot 工具，截圖會直接顯示在對話中。當使用者要求閱讀、摘要或分析某個網址的內容時，使用 readWebPage 工具取得網頁的 Markdown 內容再回答。網址必須包含 http:// 或 https:// 開頭。`;
 
+// Extra system prompt guidance when the Dynamic Worker executeJs tool is available
+const DYNAMIC_WORKER_PROMPT = `
+
+當需要執行 JavaScript 程式碼（快速計算、字串處理、演算法示範）時，優先使用 executeJs 工具——它在毫秒級啟動的 V8 isolate 中執行。需要 Python、pandas、檔案或畫圖時才用 executeCode。executeJs 的沙箱完全禁止網路存取，fetch 會失敗，這是刻意的安全設計。`;
+
+const EXECUTE_JS_TIMEOUT_MS = 10_000;
+
+function buildExecuteJsTool(env: Record<string, unknown>) {
+  return {
+    description:
+      '在 Cloudflare Dynamic Worker（V8 isolate，毫秒級啟動）中執行 JavaScript 程式碼。適用於快速計算、演算法、字串/JSON 處理。用 console.log() 輸出結果；也可以 return 一個值。沙箱完全禁止網路存取（fetch 會失敗），無檔案系統。需要 Python/pandas/畫圖時請改用 executeCode。',
+    inputSchema: z.object({
+      code: z.string().describe('要執行的 JavaScript 程式碼，用 console.log() 輸出結果，可使用 await'),
+    }),
+    execute: safeTool(async ({ code }: { code: string }) => {
+      console.log('[Chat API] executeJs:', code.length, 'chars');
+      const loader = env.LOADER as {
+        load: (opts: Record<string, unknown>) => { getEntrypoint: () => { fetch: (req: Request) => Promise<Response> } };
+      };
+
+      // Harness module: shadow console to capture logs, run user code in an
+      // async IIFE, report logs/result/error as JSON. User code is embedded
+      // verbatim — it runs inside its own isolate, so injection is contained
+      // by design (that's the whole point of the sandbox).
+      const harness = `
+        export default {
+          async fetch() {
+            const logs = [];
+            const console = {
+              log: (...a) => logs.push(a.map((x) => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ')),
+              error: (...a) => logs.push('[error] ' + a.map(String).join(' ')),
+              warn: (...a) => logs.push('[warn] ' + a.map(String).join(' ')),
+            };
+            let result = null, error = null;
+            try {
+              result = await (async () => {
+                ${code}
+              })();
+            } catch (e) {
+              error = String(e && e.stack ? e.message : e);
+            }
+            return Response.json({ logs, result: result === undefined ? null : result, error });
+          },
+        };
+      `;
+
+      const started = Date.now();
+      const worker = loader.load({
+        compatibilityDate: '2026-01-01',
+        mainModule: 'main.js',
+        modules: { 'main.js': harness },
+        // No network egress: AI-generated code cannot call out. This is the
+        // security demo — fetch() inside the sandbox fails.
+        globalOutbound: null,
+      });
+      const res = await worker
+        .getEntrypoint()
+        .fetch(new Request('https://dynamic-worker.internal/', { signal: AbortSignal.timeout(EXECUTE_JS_TIMEOUT_MS) }));
+      const executionMs = Date.now() - started;
+
+      const data = (await res.json()) as { logs: string[]; result: unknown; error: string | null };
+      const stdout = [
+        ...data.logs,
+        ...(data.result !== null && data.result !== undefined ? [`=> ${typeof data.result === 'object' ? JSON.stringify(data.result) : String(data.result)}`] : []),
+      ].join('\n');
+
+      return {
+        code,
+        language: 'javascript',
+        success: !data.error,
+        stdout,
+        stderr: '',
+        results: [],
+        error: data.error,
+        engine: 'dynamic-worker',
+        executionMs,
+        sandbox: null,
+      };
+    }),
+  };
+}
+
 const BR_API_BASE = 'https://api.cloudflare.com/client/v4/accounts';
 const BR_TIMEOUT_MS = 30_000;
 const READ_PAGE_MAX_CHARS = 8000;
@@ -541,6 +623,7 @@ export async function POST(request: NextRequest) {
   let tools: Record<string, any> | undefined;
   let sandboxToolsActive = false;
   let browserToolsActive = false;
+  let dynamicWorkerActive = false;
   if (useTools) {
     tools = { searchKnowledge: buildSearchKnowledgeTool(env as any) };
 
@@ -578,6 +661,13 @@ export async function POST(request: NextRequest) {
       sandboxToolsActive = true;
     }
 
+    // Dynamic Worker executeJs — only when the LOADER binding exists (open
+    // beta; also absent in local dev if the dev proxy doesn't support it yet)
+    if ((env as any).LOADER) {
+      tools.executeJs = buildExecuteJsTool(env as any);
+      dynamicWorkerActive = true;
+    }
+
     // Browser Rendering tools — screenshot + page reading via CF REST API
     if (browserRenderingConfigured(env as any)) {
       tools.captureScreenshot = buildScreenshotTool(env as any);
@@ -598,7 +688,8 @@ export async function POST(request: NextRequest) {
   const systemPrompt =
     SYSTEM_PROMPT +
     (sandboxToolsActive ? SANDBOX_PROMPT : '') +
-    (browserToolsActive ? BROWSER_PROMPT : '');
+    (browserToolsActive ? BROWSER_PROMPT : '') +
+    (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '');
 
   function createStream(attempt: number) {
     return streamText({

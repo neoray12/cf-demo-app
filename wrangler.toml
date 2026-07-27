@@ -25,6 +25,12 @@ bucket_name = "cf-demo-crawler"
 binding = "KV"
 id = "cd03af00eb9340a180014760028fbebd"
 
+# Dynamic Workers (open beta) — spins up V8 isolates at runtime for the
+# executeJs chat tool. Isolate-level sandboxing, ms startup, JS only;
+# complements the container-based Python sandbox (workers/chat-sandbox).
+[[worker_loaders]]
+binding = "LOADER"
+
 # Secrets (set via wrangler secret put):
 # - CHAT_SANDBOX_URL: https://chat-sandbox.neokung.work — MUST be the custom domain,
 #   not workers.dev; exposePort derives preview-URL hostnames from the request host.

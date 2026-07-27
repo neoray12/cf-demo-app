@@ -53,6 +53,7 @@ const ALLOWED_ATTACHMENT_EXTENSIONS = [".csv", ".xlsx"];
 const TOOL_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.searchKnowledge",
   executeCode: "chat.tool.executeCode",
+  executeJs: "chat.tool.executeJs",
   createWebPreview: "chat.tool.createWebPreview",
   captureScreenshot: "chat.tool.captureScreenshot",
   readWebPage: "chat.tool.readWebPage",
@@ -61,6 +62,7 @@ const TOOL_KEYS: Record<string, string> = {
 const SOURCE_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.sourceSearchKnowledge",
   executeCode: "chat.tool.sourceExecuteCode",
+  executeJs: "chat.tool.sourceExecuteJs",
   createWebPreview: "chat.tool.sourceCreateWebPreview",
   captureScreenshot: "chat.tool.sourceCaptureScreenshot",
   readWebPage: "chat.tool.sourceReadWebPage",
@@ -189,6 +191,7 @@ interface CodeExecutionOutputItem {
 
 interface CodeExecutionResult {
   code?: string;
+  language?: string;
   success?: boolean;
   stdout?: string;
   stderr?: string;
@@ -196,6 +199,8 @@ interface CodeExecutionResult {
   error?: string | null;
   sandbox?: SandboxTelemetry | null;
   edgeColo?: string | null;
+  engine?: string;
+  executionMs?: number;
 }
 
 function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
@@ -208,6 +213,9 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const imageResults = (result.results ?? []).map((r) => r.image).filter((i): i is string => Boolean(i));
   const output = [result.stdout, ...textResults].filter(Boolean).join("\n").trim();
   const errorText = [result.error, result.stderr].filter(Boolean).join("\n").trim();
+  const isDynamicWorker = toolCall.name === "executeJs";
+  const language = result.language ?? (isDynamicWorker ? "javascript" : "python");
+  const buttonLabel = isDynamicWorker ? t("chat.tool.executeJs") : t("chat.tool.executeCode");
 
   return (
     <div className="my-2">
@@ -219,8 +227,8 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
             : "bg-muted hover:bg-muted/80 text-muted-foreground"
         }`}
       >
-        <Terminal className="size-3 shrink-0" />
-        <span>{isCalling ? t("chat.tool.runningCode") : t("chat.tool.executeCode")}</span>
+        {isDynamicWorker ? <Zap className="size-3 shrink-0" /> : <Terminal className="size-3 shrink-0" />}
+        <span>{isCalling ? t("chat.tool.runningCode") : buttonLabel}</span>
         {isCalling ? (
           <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
         ) : (
@@ -230,7 +238,7 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
       {expanded && code && (
         <div className="mt-1.5 ml-3 rounded-lg overflow-hidden border border-zinc-700/50">
           <div className="flex items-center justify-between bg-zinc-800 text-zinc-300 text-xs px-4 py-1.5">
-            <span className="font-mono">python</span>
+            <span className="font-mono">{language}</span>
             <CopyButton text={code} />
           </div>
           <pre className="bg-zinc-900 text-zinc-100 p-4 overflow-x-auto text-[13px] leading-relaxed max-h-[300px] overflow-y-auto">
@@ -262,6 +270,25 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           <SandboxInfoBar sandbox={result.sandbox} />
           <PopMap edgeColo={result.edgeColo} sandboxColo={result.sandbox.colo} />
         </>
+      )}
+      {expanded && !isCalling && result.engine === "dynamic-worker" && (
+        <div className="mt-1.5 ml-3 flex items-center gap-1.5 flex-wrap">
+          <span
+            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
+            title={t("chat.tool.dynamicWorkerTooltip")}
+          >
+            <Zap className="size-3" />
+            Dynamic Worker · V8 isolate
+          </span>
+          {typeof result.executionMs === "number" && (
+            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-muted text-muted-foreground">
+              {t("chat.tool.executionTime", { ms: result.executionMs })}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-muted text-muted-foreground" title={t("chat.tool.noNetworkTooltip")}>
+            🔒 {t("chat.tool.noNetwork")}
+          </span>
+        </div>
       )}
     </div>
   );
@@ -438,7 +465,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const [expanded, setExpanded] = useState(false);
   const mcp = parseMcpToolName(toolCall.name, t);
 
-  if (toolCall.name === "executeCode") return <CodeExecutionDisplay toolCall={toolCall} />;
+  if (toolCall.name === "executeCode" || toolCall.name === "executeJs") return <CodeExecutionDisplay toolCall={toolCall} />;
   if (toolCall.name === "createWebPreview") return <WebPreviewDisplay toolCall={toolCall} />;
   if (toolCall.name === "captureScreenshot") return <ScreenshotDisplay toolCall={toolCall} />;
   const label = friendlyToolName(toolCall.name, t);
@@ -1225,6 +1252,12 @@ export function ChatPage() {
     { title: t("chat.browserSuggestions.summarize.title"), desc: t("chat.browserSuggestions.summarize.prompt"), icon: BookOpen },
   ];
 
+  const dynamicWorkerSuggestions = [
+    { title: t("chat.dwSuggestions.speed.title"), desc: t("chat.dwSuggestions.speed.prompt"), icon: Zap },
+    { title: t("chat.dwSuggestions.compare.title"), desc: t("chat.dwSuggestions.compare.prompt"), icon: Zap },
+    { title: t("chat.dwSuggestions.blocked.title"), desc: t("chat.dwSuggestions.blocked.prompt"), icon: Zap },
+  ];
+
   // Sandbox demo prompts need tools enabled to actually invoke executeCode /
   // createWebPreview — otherwise clicking one just gets a plain-text answer
   // with no sandbox involved, which defeats the point of the suggestion.
@@ -1339,6 +1372,24 @@ export function ChatPage() {
                         >
                           <div className="flex items-center gap-1.5 text-sm font-medium">
                             <s.icon className="size-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                            {s.title}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="pt-2">
+                    <p className="text-xs font-medium text-muted-foreground/70 mb-2">{t("chat.dwLabel")}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {dynamicWorkerSuggestions.map((s) => (
+                        <button
+                          key={s.title}
+                          onClick={() => handleSandboxSuggestion(s.desc)}
+                          className="text-left rounded-2xl border border-amber-300/40 dark:border-amber-800/40 px-4 py-3.5 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 active:bg-amber-50 dark:active:bg-amber-950/30 transition-colors"
+                        >
+                          <div className="flex items-center gap-1.5 text-sm font-medium">
+                            <s.icon className="size-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                             {s.title}
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
