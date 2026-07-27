@@ -8,6 +8,8 @@ import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview, uploadFile as sandboxUploadFile } from '@/lib/chat-sandbox';
+import { createCodeTool } from '@cloudflare/codemode/ai';
+import { DynamicWorkerExecutor } from '@cloudflare/codemode';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
@@ -120,10 +122,15 @@ const DYNAMIC_WORKER_PROMPT = `
 
 const EXECUTE_JS_TIMEOUT_MS = 10_000;
 
+// System prompt override when Code Mode collapses everything into one tool
+const CODE_MODE_PROMPT = `
+
+目前為 Code Mode：你只有一個 codemode 工具。需要查資料、執行程式、截圖或其他操作時，寫一段 JavaScript async arrow function，在裡面呼叫 codemode 命名空間下的函式（工具描述中列出了可用的函式與型別），一次完成多個步驟後 return 結果。這比多輪工具呼叫更快也更省 token。`;
+
 function buildExecuteJsTool(env: Record<string, unknown>) {
   return {
     description:
-      '在 Cloudflare Dynamic Worker（V8 isolate，毫秒級啟動）中執行 JavaScript 程式碼。適用於快速計算、演算法、字串/JSON 處理。用 console.log() 輸出結果；也可以 return 一個值。沙箱完全禁止網路存取（fetch 會失敗），無檔案系統。需要 Python/pandas/畫圖時請改用 executeCode。',
+      '在 Cloudflare Dynamic Worker（V8 isolate，毫秒級啟動）中執行 JavaScript 程式碼。適用於快速計算、演算法、字串/JSON 處理。用 console.log() 輸出結果；也可以 return 一個值。沙箱無檔案系統且網路被封鎖——若使用者想看網路封鎖的效果，請實際執行含 fetch 的程式碼讓錯誤真實呈現，不要只用文字解釋。需要 Python/pandas/畫圖時請改用 executeCode。',
     inputSchema: z.object({
       code: z.string().describe('要執行的 JavaScript 程式碼，用 console.log() 輸出結果，可使用 await'),
     }),
@@ -489,6 +496,7 @@ export async function POST(request: NextRequest) {
     model: modelIdFromClient,
     provider: rawProvider,
     toolsEnabled = false,
+    codeMode = false,
     mcpServers: mcpServerIds = [],
     userName,
     userEmail,
@@ -498,6 +506,7 @@ export async function POST(request: NextRequest) {
     model?: string;
     provider?: ModelProvider;
     toolsEnabled?: boolean;
+    codeMode?: boolean;
     mcpServers?: string[];
     userName?: string;
     userEmail?: string;
@@ -624,6 +633,7 @@ export async function POST(request: NextRequest) {
   let sandboxToolsActive = false;
   let browserToolsActive = false;
   let dynamicWorkerActive = false;
+  let codeModeActive = false;
   if (useTools) {
     tools = { searchKnowledge: buildSearchKnowledgeTool(env as any) };
 
@@ -682,14 +692,30 @@ export async function POST(request: NextRequest) {
       console.log(`[Chat API] Injected ${Object.keys(mcpTools).length} MCP tools from ${mcpServerIds.length} server(s)`);
     }
 
+    // Code Mode: collapse the whole tool set into ONE tool — the model writes
+    // a JS script that calls the other tools as functions inside a Dynamic
+    // Worker, instead of stepping through multiple tool-call rounds. This is
+    // the token-saving pattern Cloudflare's codemode SDK implements.
+    if (codeMode && (env as any).LOADER) {
+      // executeJs is redundant inside Code Mode (the script itself IS the JS)
+      const { executeJs: _omitted, ...wrappedTools } = tools;
+      const executor = new DynamicWorkerExecutor({ loader: (env as any).LOADER });
+      tools = {
+        codemode: createCodeTool({ tools: wrappedTools as any, executor }) as any,
+      };
+      codeModeActive = true;
+      console.log(`[Chat API] Code Mode: wrapped ${Object.keys(wrappedTools).length} tool(s) into codemode`);
+    }
+
     console.log('[Chat API] Tools registered:', Object.keys(tools).join(', '));
   }
 
-  const systemPrompt =
-    SYSTEM_PROMPT +
-    (sandboxToolsActive ? SANDBOX_PROMPT : '') +
-    (browserToolsActive ? BROWSER_PROMPT : '') +
-    (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '');
+  const systemPrompt = codeModeActive
+    ? SYSTEM_PROMPT + CODE_MODE_PROMPT
+    : SYSTEM_PROMPT +
+      (sandboxToolsActive ? SANDBOX_PROMPT : '') +
+      (browserToolsActive ? BROWSER_PROMPT : '') +
+      (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '');
 
   function createStream(attempt: number) {
     return streamText({

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.48",
+    "@cloudflare/codemode": "^0.5.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opennextjs/cloudflare": "^1.0.0",
     "@radix-ui/react-avatar": "^1.1.9",

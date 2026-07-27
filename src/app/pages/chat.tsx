@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, BookOpen } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, BookOpen, Braces } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
 
@@ -54,6 +54,7 @@ const TOOL_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.searchKnowledge",
   executeCode: "chat.tool.executeCode",
   executeJs: "chat.tool.executeJs",
+  codemode: "chat.tool.codemode",
   createWebPreview: "chat.tool.createWebPreview",
   captureScreenshot: "chat.tool.captureScreenshot",
   readWebPage: "chat.tool.readWebPage",
@@ -63,6 +64,7 @@ const SOURCE_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.sourceSearchKnowledge",
   executeCode: "chat.tool.sourceExecuteCode",
   executeJs: "chat.tool.sourceExecuteJs",
+  codemode: "chat.tool.sourceCodemode",
   createWebPreview: "chat.tool.sourceCreateWebPreview",
   captureScreenshot: "chat.tool.sourceCaptureScreenshot",
   readWebPage: "chat.tool.sourceReadWebPage",
@@ -207,15 +209,30 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
   const isCalling = toolCall.status === "calling";
+  const isDynamicWorker = toolCall.name === "executeJs";
+  const isCodeMode = toolCall.name === "codemode";
   const result = (toolCall.result ?? {}) as CodeExecutionResult;
   const code = result.code ?? (toolCall.args as { code?: string } | undefined)?.code ?? "";
   const textResults = (result.results ?? []).map((r) => r.text).filter((t): t is string => Boolean(t));
   const imageResults = (result.results ?? []).map((r) => r.image).filter((i): i is string => Boolean(i));
-  const output = [result.stdout, ...textResults].filter(Boolean).join("\n").trim();
+  // codemode results are { result, logs } rather than the sandbox shape
+  const cmRaw = isCodeMode ? ((toolCall.result ?? {}) as { result?: unknown; logs?: string[] }) : null;
+  const cmValue = cmRaw?.result;
+  const output = isCodeMode
+    ? [
+        ...(cmRaw?.logs ?? []),
+        ...(cmValue !== null && cmValue !== undefined
+          ? [`=> ${typeof cmValue === "object" ? JSON.stringify(cmValue, null, 2) : String(cmValue)}`]
+          : []),
+      ].join("\n").trim()
+    : [result.stdout, ...textResults].filter(Boolean).join("\n").trim();
   const errorText = [result.error, result.stderr].filter(Boolean).join("\n").trim();
-  const isDynamicWorker = toolCall.name === "executeJs";
-  const language = result.language ?? (isDynamicWorker ? "javascript" : "python");
-  const buttonLabel = isDynamicWorker ? t("chat.tool.executeJs") : t("chat.tool.executeCode");
+  const language = result.language ?? (isDynamicWorker || isCodeMode ? "javascript" : "python");
+  const buttonLabel = isCodeMode
+    ? t("chat.tool.codemode")
+    : isDynamicWorker
+      ? t("chat.tool.executeJs")
+      : t("chat.tool.executeCode");
 
   return (
     <div className="my-2">
@@ -227,7 +244,7 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
             : "bg-muted hover:bg-muted/80 text-muted-foreground"
         }`}
       >
-        {isDynamicWorker ? <Zap className="size-3 shrink-0" /> : <Terminal className="size-3 shrink-0" />}
+        {isCodeMode ? <Braces className="size-3 shrink-0" /> : isDynamicWorker ? <Zap className="size-3 shrink-0" /> : <Terminal className="size-3 shrink-0" />}
         <span>{isCalling ? t("chat.tool.runningCode") : buttonLabel}</span>
         {isCalling ? (
           <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
@@ -270,6 +287,17 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           <SandboxInfoBar sandbox={result.sandbox} />
           <PopMap edgeColo={result.edgeColo} sandboxColo={result.sandbox.colo} />
         </>
+      )}
+      {expanded && !isCalling && isCodeMode && (
+        <div className="mt-1.5 ml-3 flex items-center gap-1.5 flex-wrap">
+          <span
+            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
+            title={t("chat.tool.codeModeBadgeTooltip")}
+          >
+            <Braces className="size-3" />
+            Code Mode · Dynamic Worker
+          </span>
+        </div>
       )}
       {expanded && !isCalling && result.engine === "dynamic-worker" && (
         <div className="mt-1.5 ml-3 flex items-center gap-1.5 flex-wrap">
@@ -465,7 +493,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const [expanded, setExpanded] = useState(false);
   const mcp = parseMcpToolName(toolCall.name, t);
 
-  if (toolCall.name === "executeCode" || toolCall.name === "executeJs") return <CodeExecutionDisplay toolCall={toolCall} />;
+  if (toolCall.name === "executeCode" || toolCall.name === "executeJs" || toolCall.name === "codemode") return <CodeExecutionDisplay toolCall={toolCall} />;
   if (toolCall.name === "createWebPreview") return <WebPreviewDisplay toolCall={toolCall} />;
   if (toolCall.name === "captureScreenshot") return <ScreenshotDisplay toolCall={toolCall} />;
   const label = friendlyToolName(toolCall.name, t);
@@ -827,6 +855,7 @@ export function ChatPage() {
   const isMobile = useIsMobile();
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
   const [toolsEnabled, setToolsEnabled] = useState(false);
+  const [codeModeEnabled, setCodeModeEnabled] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{ open: boolean; error: ChatErrorState | null }>({
     open: false,
     error: null,
@@ -928,6 +957,7 @@ export function ChatPage() {
           model: modelId,
           provider,
           toolsEnabled,
+          codeMode: codeModeEnabled,
           mcpServers: connectedMcpServers,
           userName,
           userEmail,
@@ -1151,7 +1181,7 @@ export function ChatPage() {
         toolCallNames: debugToolNames,
       });
     }
-  }, [selectedModel, toolsEnabled, connectedMcpServers]);
+  }, [selectedModel, toolsEnabled, codeModeEnabled, connectedMcpServers]);
 
   const handleSend = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -1307,6 +1337,24 @@ export function ChatPage() {
             >
               <Zap className="size-3.5" />
               <span className="hidden md:inline">工具</span>
+            </button>
+            <button
+              onClick={() => {
+                setCodeModeEnabled((v) => {
+                  const next = !v;
+                  if (next) setToolsEnabled(true);
+                  return next;
+                });
+              }}
+              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
+                codeModeEnabled
+                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                  : "text-muted-foreground hover:bg-muted/60"
+              }`}
+              title={t("chat.tool.codeModeTooltip")}
+            >
+              <Braces className="size-3.5" />
+              <span className="hidden md:inline">Code Mode</span>
             </button>
             <button
               onClick={() => setShowMcpPanel((v) => !v)}
