@@ -1,0 +1,27 @@
+tsconfig.tsbuildinfo
+  s_bdc04ccd4a8c6f::t_a0fa29711637be 1
+src/app/api/chat/route.ts
+  s_bdc04ccd4a8c6f::t_4f85a9108c429d 11-12,699,702-712,714-744,747
+src/app/api/codemode-exec/route.ts
+  s_bdc04ccd4a8c6f::t_a0cb99e4533571 1-46
+src/lib/codemode.ts
+  s_bdc04ccd4a8c6f::t_93affc2c9c7f7c 1-83
+wrangler.toml
+  s_bdc04ccd4a8c6f::t_6bf9c405bbd878 34-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8eb7c57921200242c87f53a3c38351bd506704bc",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "claude-opus-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
