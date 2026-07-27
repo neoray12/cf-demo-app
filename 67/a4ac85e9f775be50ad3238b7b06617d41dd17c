@@ -1,0 +1,19 @@
+src/lib/codemode.ts
+  s_bdc04ccd4a8c6f::t_3a39ad3f73bfd8 39-50,54-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "67a4ac85e9f775be50ad3238b7b06617d41dd17c",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
