@@ -1310,7 +1310,7 @@ export function ChatPage() {
   const isDev = process.env.NODE_ENV === "development";
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-[calc(100svh-3.5rem)] overflow-hidden">
       {/* ── Chat area ── */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* ── Header ── */}
@@ -1388,10 +1388,10 @@ export function ChatPage() {
         </div>
 
         {/* ── Messages ── */}
-        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-3 md:px-4">
+        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-3 md:px-4 min-h-full">
             {!hasMessages ? (
-              <div className="flex flex-col justify-center min-h-[calc(100vh-16rem)]">
+              <div className="flex flex-col justify-center min-h-full py-6">
                 <div className="space-y-6">
                   <div>
                     <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{t("chat.title")}</h1>

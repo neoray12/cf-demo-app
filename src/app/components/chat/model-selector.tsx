@@ -90,7 +90,7 @@ export function ModelSelector({ selectedModel, onModelChange }: ModelSelectorPro
           <ChevronDown className="size-3" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-56">
+      <DropdownMenuContent align="center" className="w-56 max-h-[60vh] overflow-y-auto">
         {providers.map((provider, i) => {
           const models = grouped.get(provider);
           if (!models?.length) return null;
