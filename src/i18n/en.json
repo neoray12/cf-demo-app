@@ -217,11 +217,14 @@
       "edgePlusSandbox": "Edge + Sandbox"
     },
     "attachment": {
-      "attach": "Attach CSV/XLSX file",
+      "attach": "Attach an image or CSV/XLSX file",
       "remove": "Remove attachment",
       "unsupportedType": "Only CSV or XLSX files are supported",
       "tooLarge": "File too large (8MB max)",
-      "readError": "Failed to read file, please try again"
+      "readError": "Failed to read file, please try again",
+      "modelNoVision": "This model cannot read images — switch to Claude or GPT-5",
+      "imageTooLarge": "Image too large ({{mb}}MB max)",
+      "tooManyImages": "You can attach at most {{max}} images"
     }
   },
   "crawler": {
@@ -237,15 +240,42 @@
     "emptyState": "Enter a URL and click \"Execute\" to see results",
     "unknown": "Unknown",
     "endpoints": {
-      "screenshot": { "title": "Screenshot", "desc": "Capture full or partial webpage screenshots" },
-      "pdf": { "title": "PDF Export", "desc": "Convert webpages to PDF documents" },
-      "markdown": { "title": "Markdown Extract", "desc": "Convert HTML to Markdown format" },
-      "content": { "title": "HTML Content", "desc": "Get the HTML source code of a webpage" },
-      "snapshot": { "title": "Snapshot", "desc": "Get both HTML content and screenshot" },
-      "scrape": { "title": "Element Scrape", "desc": "Extract specific elements using CSS selectors" },
-      "json": { "title": "JSON Structured", "desc": "Use AI to convert webpages to structured JSON" },
-      "links": { "title": "Link Extract", "desc": "Extract all hyperlinks from a webpage" },
-      "crawl": { "title": "Site Crawl", "desc": "Crawl all pages of a website by depth" }
+      "screenshot": {
+        "title": "Screenshot",
+        "desc": "Capture full or partial webpage screenshots"
+      },
+      "pdf": {
+        "title": "PDF Export",
+        "desc": "Convert webpages to PDF documents"
+      },
+      "markdown": {
+        "title": "Markdown Extract",
+        "desc": "Convert HTML to Markdown format"
+      },
+      "content": {
+        "title": "HTML Content",
+        "desc": "Get the HTML source code of a webpage"
+      },
+      "snapshot": {
+        "title": "Snapshot",
+        "desc": "Get both HTML content and screenshot"
+      },
+      "scrape": {
+        "title": "Element Scrape",
+        "desc": "Extract specific elements using CSS selectors"
+      },
+      "json": {
+        "title": "JSON Structured",
+        "desc": "Use AI to convert webpages to structured JSON"
+      },
+      "links": {
+        "title": "Link Extract",
+        "desc": "Extract all hyperlinks from a webpage"
+      },
+      "crawl": {
+        "title": "Site Crawl",
+        "desc": "Crawl all pages of a website by depth"
+      }
     },
     "options": {
       "fullPageScreenshot": "Full Page Screenshot",

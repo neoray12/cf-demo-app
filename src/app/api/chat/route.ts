@@ -503,6 +503,7 @@ export async function POST(request: NextRequest) {
     userName,
     userEmail,
     attachments = [],
+    images = [],
   } = body as {
     messages: Array<{ role: string; content: string }>;
     model?: string;
@@ -513,6 +514,8 @@ export async function POST(request: NextRequest) {
     userName?: string;
     userEmail?: string;
     attachments?: Array<{ name: string; contentBase64: string }>;
+    /** Pasted screenshots as data URLs, attached to the latest user turn. */
+    images?: string[];
   };
 
   if (!messages || !Array.isArray(messages)) {
@@ -623,7 +626,39 @@ export async function POST(request: NextRequest) {
   });
 
   const useTools = toolsEnabled && modelSupportsTools(provider, modelId);
-  const chatMessages = sanitizeMessages(messages);
+  const chatMessages: Array<{ role: string; content: unknown }> = sanitizeMessages(messages);
+
+  // Images ride along with the newest user turn. The AI SDK converts these
+  // image parts into whatever the provider expects (image_url for the
+  // OpenAI-compatible gateway endpoint, source blocks for Anthropic).
+  if (Array.isArray(images) && images.length > 0) {
+    let lastUserIdx = -1;
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i]?.role === 'user') { lastUserIdx = i; break; }
+    }
+    if (lastUserIdx >= 0) {
+      const textContent = String(chatMessages[lastUserIdx]!.content ?? '');
+      chatMessages[lastUserIdx] = {
+        role: 'user',
+        content: [
+          // Some providers reject an empty text part, so only include one
+          // when the user actually typed something alongside the image.
+          ...(textContent.trim() ? [{ type: 'text', text: textContent }] : []),
+          ...images
+            .filter((u): u is string => typeof u === 'string' && u.startsWith('data:image/'))
+            .map((url) => {
+              // The AI SDK treats a string `image` as a URL to fetch and
+              // rejects the data: scheme, so split the data URL into its
+              // media type and raw base64 payload instead.
+              const comma = url.indexOf(',');
+              const mediaType = url.slice(5, url.indexOf(';')) || 'image/png';
+              return { type: 'image', image: url.slice(comma + 1), mediaType };
+            }),
+        ],
+      };
+      console.log(`[Chat API] ${images.length} image(s) attached to the last user message`);
+    }
+  }
 
   // Only parse <think> tags for reasoning models that embed reasoning in text
   const needsThinkParsing = isReasoningModel(modelId);

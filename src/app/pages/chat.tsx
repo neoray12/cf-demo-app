@@ -27,8 +27,16 @@ interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** Pasted/attached images, as data URLs, shown inline in the bubble. */
+  images?: string[];
   reasoning?: string;
   toolCalls?: ToolCallInfo[];
+}
+
+interface PendingImage {
+  id: string;
+  dataUrl: string;
+  size: number;
 }
 
 interface DebugInfo {
@@ -46,6 +54,21 @@ interface DebugInfo {
 // client-side too so a too-large or wrong-type file never leaves the browser.
 const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_EXTENSIONS = [".csv", ".xlsx"];
+
+// Images are sent to the model itself (not the sandbox), so they are capped
+// tighter than data files — base64 inflates them ~33% inside the JSON body.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGES = 4;
+
+// Only these accept image input. Pasting a screenshot while a text-only model
+// is selected would otherwise fail deep in the provider with an opaque error.
+const VISION_MODEL_IDS = new Set([
+  "claude-sonnet-4-6",
+  "claude-sonnet-4-5",
+  "claude-opus-4-6",
+  "claude-3-haiku",
+  "openai-gpt5",
+]);
 
 // i18n key maps (not raw labels) — the maps themselves live outside any
 // component, so lookups resolve through `t` at call time rather than baking
@@ -864,6 +887,7 @@ export function ChatPage() {
   const [connectedMcpServers, setConnectedMcpServers] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [pendingAttachment, setPendingAttachment] = useState<{ name: string; contentBase64: string; size: number } | null>(null);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -913,7 +937,7 @@ export function ChatPage() {
   }, [isLoading]);
 
   // ── Stream NDJSON from /api/chat ──
-  const streamChat = useCallback(async (allMessages: ChatMessage[], attachments?: Array<{ name: string; contentBase64: string }>) => {
+  const streamChat = useCallback(async (allMessages: ChatMessage[], attachments?: Array<{ name: string; contentBase64: string }>, images?: string[]) => {
     const aiModel = AI_MODELS.find((m) => m.id === selectedModel);
     const modelId = aiModel?.workersAiModel ?? aiModel?.providerModelId ?? "@cf/openai/gpt-oss-120b";
     const provider = aiModel?.provider ?? "workers-ai";
@@ -957,6 +981,7 @@ export function ChatPage() {
           model: modelId,
           provider,
           toolsEnabled,
+          images,
           codeMode: codeModeEnabled,
           mcpServers: connectedMcpServers,
           userName,
@@ -1184,21 +1209,34 @@ export function ChatPage() {
   }, [selectedModel, toolsEnabled, codeModeEnabled, connectedMcpServers]);
 
   const handleSend = useCallback(async (text: string) => {
-    if (!text.trim() || isLoading) return;
+    const images = pendingImages;
+    // An image on its own is a valid message — no text required.
+    if ((!text.trim() && images.length === 0) || isLoading) return;
     isNearBottomRef.current = true;
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setInput("");
     const attachment = pendingAttachment;
     setPendingAttachment(null);
+    setPendingImages([]);
+    setAttachmentError(null);
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     const displayText = attachment ? `${text.trim()}\n\n📎 ${attachment.name}` : text.trim();
-    const userMsg: ChatMessage = { id: genId(), role: "user", content: displayText };
+    const userMsg: ChatMessage = {
+      id: genId(),
+      role: "user",
+      content: displayText,
+      ...(images.length ? { images: images.map((i) => i.dataUrl) } : {}),
+    };
     // Use messagesRef to avoid stale closure
     const allMessages = [...messagesRef.current, userMsg];
     setMessages(allMessages);
-    await streamChat(allMessages, attachment ? [{ name: attachment.name, contentBase64: attachment.contentBase64 }] : undefined);
-  }, [isLoading, streamChat, pendingAttachment]);
+    await streamChat(
+      allMessages,
+      attachment ? [{ name: attachment.name, contentBase64: attachment.contentBase64 }] : undefined,
+      images.length ? images.map((i) => i.dataUrl) : undefined,
+    );
+  }, [isLoading, streamChat, pendingAttachment, pendingImages]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -1216,10 +1254,65 @@ export function ChatPage() {
     await streamChat(withoutLast);
   }, [streamChat]);
 
+  // Shared intake for images arriving by paste, file picker or drag-drop.
+  const addImageFiles = useCallback((files: File[]) => {
+    if (!files.length) return;
+    setAttachmentError(null);
+
+    if (!VISION_MODEL_IDS.has(selectedModel)) {
+      setAttachmentError(t("chat.attachment.modelNoVision"));
+      return;
+    }
+
+    const room = MAX_IMAGES - pendingImages.length;
+    if (room <= 0) {
+      setAttachmentError(t("chat.attachment.tooManyImages", { max: MAX_IMAGES }));
+      return;
+    }
+    if (files.length > room) setAttachmentError(t("chat.attachment.tooManyImages", { max: MAX_IMAGES }));
+
+    for (const file of files.slice(0, room)) {
+      if (file.size > MAX_IMAGE_BYTES) {
+        setAttachmentError(t("chat.attachment.imageTooLarge", { mb: MAX_IMAGE_BYTES / 1024 / 1024 }));
+        continue;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        // Re-check the cap here: several reads can be in flight at once.
+        setPendingImages((cur) =>
+          cur.length >= MAX_IMAGES
+            ? cur
+            : [...cur, { id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, dataUrl, size: file.size }]
+        );
+      };
+      reader.onerror = () => setAttachmentError(t("chat.attachment.readError"));
+      reader.readAsDataURL(file);
+    }
+  }, [selectedModel, pendingImages.length, t]);
+
+  // Cmd/Ctrl+V of a screenshot — the clipboard exposes it as an image item.
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const imageFiles = Array.from(e.clipboardData?.items ?? [])
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => Boolean(f));
+    if (!imageFiles.length) return;
+    // Keep the default paste for any text that came alongside the image
+    e.preventDefault();
+    addImageFiles(imageFiles);
+  }, [addImageFiles]);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file later
     if (!file) return;
+
+    // Images go to the model; CSV/XLSX go to the sandbox — different paths.
+    if (file.type.startsWith("image/")) {
+      addImageFiles([file]);
+      return;
+    }
 
     setAttachmentError(null);
     const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
@@ -1252,7 +1345,7 @@ export function ChatPage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (input.trim()) handleSend(input);
+      if (input.trim() || pendingImages.length) handleSend(input);
     }
   };
 
@@ -1493,8 +1586,26 @@ export function ChatPage() {
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1.5">
                             <CopyButton text={msg.content} />
                           </div>
-                          <div className="bg-muted rounded-3xl px-4 py-2.5 md:px-5 md:py-3 max-w-[85%]">
-                            <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                          <div className="flex flex-col items-end gap-1.5 max-w-[85%]">
+                            {msg.images && msg.images.length > 0 && (
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                {msg.images.map((src, i) => (
+                                  <a key={i} href={src} target="_blank" rel="noopener noreferrer">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={src}
+                                      alt=""
+                                      className="max-h-60 max-w-full rounded-2xl border border-border/60 object-contain hover:opacity-90 transition-opacity"
+                                    />
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                            {msg.content && (
+                              <div className="bg-muted rounded-3xl px-4 py-2.5 md:px-5 md:py-3">
+                                <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ) : (
@@ -1529,7 +1640,7 @@ export function ChatPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept={ALLOWED_ATTACHMENT_EXTENSIONS.join(",")}
+              accept={[...ALLOWED_ATTACHMENT_EXTENSIONS, "image/*"].join(",")}
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -1551,11 +1662,34 @@ export function ChatPage() {
                   </span>
                 </div>
               )}
+              {pendingImages.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-4 md:px-5 pt-3">
+                  {pendingImages.map((img) => (
+                    <div key={img.id} className="relative group/thumb">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.dataUrl}
+                        alt=""
+                        className="size-16 rounded-lg object-cover border border-border/60"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPendingImages((cur) => cur.filter((i) => i.id !== img.id))}
+                        title={t("chat.attachment.remove")}
+                        className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-foreground text-background flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity cursor-pointer"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 placeholder={t("chat.placeholder")}
                 rows={1}
                 className="w-full resize-none bg-transparent px-4 md:px-5 pt-3.5 pb-12 text-sm placeholder:text-muted-foreground/70 focus:outline-none min-h-[52px] max-h-[200px]"
@@ -1582,8 +1716,8 @@ export function ChatPage() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => { if (input.trim()) handleSend(input); }}
-                    disabled={!input.trim()}
+                    onClick={() => { if (input.trim() || pendingImages.length) handleSend(input); }}
+                    disabled={!input.trim() && pendingImages.length === 0}
                     className="h-8 px-4 rounded-full bg-foreground text-background text-xs font-medium flex items-center justify-center disabled:bg-muted-foreground/30 disabled:text-muted-foreground/50 transition-colors hover:bg-foreground/80"
                   >
                     {t("chat.send")}
