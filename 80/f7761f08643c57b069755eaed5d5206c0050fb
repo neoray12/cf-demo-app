@@ -1,0 +1,23 @@
+src/app/components/chat/model-selector.tsx
+  s_bdc04ccd4a8c6f::t_e8c739a0c09ab4 93
+src/app/pages/chat.tsx
+  s_bdc04ccd4a8c6f::t_d6c87c70788de6 1313,1391-1392,1394
+tsconfig.tsbuildinfo
+  s_bdc04ccd4a8c6f::t_3da736581e0b2b 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "80f7761f08643c57b069755eaed5d5206c0050fb",
+  "prompts": {},
+  "sessions": {
+    "s_bdc04ccd4a8c6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fff31653-6e02-458c-b155-f98e217d0cb1",
+        "model": "claude-opus-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
