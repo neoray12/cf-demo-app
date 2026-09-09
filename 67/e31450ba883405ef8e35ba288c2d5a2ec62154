@@ -1,0 +1,19 @@
+src/lib/codemode.ts
+  s_79cf8780cd4ce3::t_3ba93b9fed7776 119-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "67e31450ba883405ef8e35ba288c2d5a2ec62154",
+  "prompts": {},
+  "sessions": {
+    "s_79cf8780cd4ce3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "900b92ff-7f5b-43a4-8a17-d93e91a80187",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
