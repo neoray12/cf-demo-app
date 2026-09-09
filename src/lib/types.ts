@@ -46,6 +46,7 @@ export const AI_MODELS: AIModel[] = [
     provider: "workers-ai",
     workersAiModel: "@cf/zai-org/glm-5.3-flash",
     reasoning: true,
+    iconUrl: "/zai.svg",
   },
   {
     id: "glm-5.3",
@@ -53,6 +54,23 @@ export const AI_MODELS: AIModel[] = [
     provider: "workers-ai",
     workersAiModel: "@cf/zai-org/glm-5.3",
     reasoning: true,
+    iconUrl: "/zai.svg",
+  },
+  {
+    id: "deepseek-v4-flash",
+    name: "DeepSeek V4 Flash",
+    provider: "workers-ai",
+    workersAiModel: "@cf/deepseek-ai/deepseek-v4-flash-0731",
+    reasoning: true,
+    iconUrl: "/deepseek.svg",
+  },
+  {
+    id: "deepseek-v4-pro",
+    name: "DeepSeek V4 Pro",
+    provider: "workers-ai",
+    workersAiModel: "@cf/deepseek-ai/deepseek-v4-pro-0813",
+    reasoning: true,
+    iconUrl: "/deepseek.svg",
   },
   {
     id: "gemma-4-26b",
