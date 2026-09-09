@@ -1,0 +1,23 @@
+public/deepseek.svg
+  s_79cf8780cd4ce3::t_ef56f794a91c4d 1
+public/zai.svg
+  s_79cf8780cd4ce3::t_9b16f9833493c4 1
+src/lib/types.ts
+  s_79cf8780cd4ce3::t_0bfea67791507d 49,57-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e991e5ccecc7444d1d7e4d44de8623660dde3a0f",
+  "prompts": {},
+  "sessions": {
+    "s_79cf8780cd4ce3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "900b92ff-7f5b-43a4-8a17-d93e91a80187",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
