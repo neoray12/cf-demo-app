@@ -1,0 +1,25 @@
+src/app/api/chat/route.ts
+  s_79cf8780cd4ce3::t_12081acd15f48c 534,536
+src/app/pages/chat.tsx
+  s_79cf8780cd4ce3::t_3d4bb0117093f3 67
+src/app/pages/openclaw-instances.tsx
+  s_79cf8780cd4ce3::t_d9f2359e1ce36f 56,63-64
+src/lib/types.ts
+  s_79cf8780cd4ce3::t_4b53902ef97231 44-45,47-48,51-52,54,93-94,96,100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "940c629b51cf10eb63c3c72bdc7490c11281606e",
+  "prompts": {},
+  "sessions": {
+    "s_79cf8780cd4ce3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "900b92ff-7f5b-43a4-8a17-d93e91a80187",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
