@@ -116,7 +116,10 @@ export function normalizeCode(raw: string): string {
   }
   // Bare function expression: async () => { ... }  /  async function () {...}
   if (/^async\s*\(/.test(code) || /^\(\s*\)\s*=>/.test(code) || /^async\s+function\b/.test(code) || /^function\b/.test(code)) {
-    return `return await (${code})();`;
+    // Models sometimes "invoke" an unparenthesised arrow — `async () => {…}()` —
+    // which is a syntax error on its own; drop the call and let the wrapper invoke it.
+    const fn = code.replace(/\}\s*\(\s*\)$/, '}');
+    return `return await (${fn})();`;
   }
   // Plain statement list — assumed to contain its own return / console.log
   return code;
