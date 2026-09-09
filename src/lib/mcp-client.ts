@@ -61,7 +61,8 @@ const SERVER_LABELS: Record<string, { name: string; description: string }> = {
   'cf-docs': { name: 'Cloudflare Docs', description: '取得 Cloudflare 最新的技術文件與參考資料' },
   'cf-observability': { name: 'Workers Observability', description: '偵錯並取得應用程式日誌與分析' },
   'cf-radar': { name: 'Radar', description: '取得全球網路流量洞察與趨勢' },
-  'saas': { name: 'SAP & Salesforce', description: '透過 MCP Server Portal 連接 SAP 與 Salesforce，查詢業務資料與執行操作' },
+  'sap': { name: 'SAP', description: '連接 SAP 系統，查詢業務資料與執行操作' },
+  'salesforce': { name: 'Salesforce', description: '存取 Salesforce CRM 資料，管理客戶與商機' },
 };
 
 /**
