@@ -1,0 +1,25 @@
+src/app/api/chat/route.ts
+  s_79cf8780cd4ce3::t_f3e42938717c45 8-10,276-292,305-310,320,340,369-374,376-388,394,399,471,477,479,564-566,581-583,613
+src/app/api/codemode-exec/route.ts
+  s_79cf8780cd4ce3::t_178ea56186926f 2-4,11-15,25-28,31-35,39
+src/lib/chat-tools.ts
+  s_79cf8780cd4ce3::t_16d8ba8ec69d2f 1-446
+src/lib/codemode.ts
+  s_79cf8780cd4ce3::t_28ca2b9aaf4e97 15-21,23-37,40-55,57-60,63-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "4e3b325ebbb36001c49a72b29f5038d0f44164df",
+  "prompts": {},
+  "sessions": {
+    "s_79cf8780cd4ce3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "900b92ff-7f5b-43a4-8a17-d93e91a80187",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
