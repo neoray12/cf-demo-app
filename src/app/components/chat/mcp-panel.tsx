@@ -7,12 +7,18 @@ import { Badge } from "@/components/ui/badge";
 // Per-server custom icons
 const CfLogo = () => <img src="/CF_logomark.svg" alt="Cloudflare" className="h-4 w-auto object-contain" />;
 
+const SaasLogos = () => (
+  <span className="flex items-center gap-1">
+    <img src="/sap-logo.png" alt="SAP" className="h-5 w-auto object-contain" />
+    <img src="/salesforce.svg" alt="Salesforce" className="h-6 w-auto object-contain" />
+  </span>
+);
+
 const SERVER_ICONS: Record<string, React.ReactNode> = {
   'cf-docs': <CfLogo />,
   'cf-observability': <CfLogo />,
   'cf-radar': <CfLogo />,
-  'sap': <img src="/sap-logo.png" alt="SAP" className="h-5 w-auto object-contain" />,
-  'salesforce': <img src="/salesforce.svg" alt="Salesforce" className="h-9 w-auto object-contain" />,
+  'saas': <SaasLogos />,
 };
 
 interface McpServer {
