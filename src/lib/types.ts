@@ -13,24 +13,6 @@ export interface AIModel {
 export const AI_MODELS: AIModel[] = [
   // Cloudflare Workers AI
   {
-    id: "llama-3.2-3b",
-    name: "Llama 3.2 3B (極速)",
-    provider: "workers-ai",
-    workersAiModel: "@cf/meta/llama-3.2-3b-instruct",
-  },
-  {
-    id: "llama-3.1-8b",
-    name: "Llama 3.1 8B (快速)",
-    provider: "workers-ai",
-    workersAiModel: "@cf/meta/llama-3.1-8b-instruct",
-  },
-  {
-    id: "llama-3.3-70b-fp8",
-    name: "Llama 3.3 70B FP8",
-    provider: "workers-ai",
-    workersAiModel: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-  },
-  {
     id: "gpt-oss-120b",
     name: "GPT OSS 120B",
     provider: "workers-ai",
@@ -59,16 +41,17 @@ export const AI_MODELS: AIModel[] = [
     iconUrl: "/moonshotai.svg",
   },
   {
-    id: "glm-4.7-flash",
-    name: "GLM 4.7 Flash",
+    id: "glm-5.3-flash",
+    name: "GLM 5.3 Flash",
     provider: "workers-ai",
-    workersAiModel: "@cf/zai-org/glm-4.7-flash",
+    workersAiModel: "@cf/zai-org/glm-5.3-flash",
+    reasoning: true,
   },
   {
-    id: "glm-5.2",
-    name: "GLM 5.2",
+    id: "glm-5.3",
+    name: "GLM 5.3",
     provider: "workers-ai",
-    workersAiModel: "@cf/zai-org/glm-5.2",
+    workersAiModel: "@cf/zai-org/glm-5.3",
     reasoning: true,
   },
   {
@@ -107,26 +90,14 @@ export const AI_MODELS: AIModel[] = [
     providerModelId: "claude-sonnet-4-6",
   },
   {
-    id: "claude-sonnet-4-5",
-    name: "Claude Sonnet 4.5",
+    id: "claude-haiku-4-5",
+    name: "Claude Haiku 4.5",
     provider: "anthropic",
-    providerModelId: "claude-sonnet-4-5",
-  },
-  {
-    id: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
-    provider: "anthropic",
-    providerModelId: "claude-opus-4-6",
-  },
-  {
-    id: "claude-3-haiku",
-    name: "Claude 3 Haiku",
-    provider: "anthropic",
-    providerModelId: "claude-3-haiku-20240307",
+    providerModelId: "claude-haiku-4-5-20251001",
   },
 ];
 
-export const DEFAULT_MODEL_ID = "glm-5.2";
+export const DEFAULT_MODEL_ID = "glm-5.3";
 
 export interface BrowserRenderingEndpoint {
   id: string;

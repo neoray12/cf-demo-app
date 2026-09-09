@@ -53,16 +53,15 @@ const AI_PROVIDERS = [
 const AI_MODELS: Record<string, { id: string; label: string }[]> = {
   anthropic: [
     { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-    { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
-    { id: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
+    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
   ],
   openai: [
     { id: 'gpt-4o', label: 'GPT-4o' },
     { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
   ],
   'workers-ai': [
-    { id: '@cf/meta/llama-3.1-8b-instruct', label: 'Llama 3.1 8B' },
-    { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'Llama 3.3 70B' },
+    { id: '@cf/moonshotai/kimi-k2.7-code', label: 'Kimi K2.7 Code' },
+    { id: '@cf/openai/gpt-oss-120b', label: 'GPT OSS 120B' },
   ],
 };
 

@@ -531,9 +531,9 @@ export async function POST(request: NextRequest) {
     openai: 'gpt-3.5-turbo',
     anthropic: 'claude-sonnet-4-6',
     perplexity: 'sonar',
-    'workers-ai': '@cf/meta/llama-3.1-8b-instruct',
+    'workers-ai': '@cf/openai/gpt-oss-20b',
   };
-  const modelId = modelIdFromClient || defaultModels[provider] || '@cf/meta/llama-3.1-8b-instruct';
+  const modelId = modelIdFromClient || defaultModels[provider] || '@cf/openai/gpt-oss-20b';
 
   // Build compat model ID for AI Gateway
   let compatModelId: string;
