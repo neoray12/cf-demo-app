@@ -1,0 +1,55 @@
+agents.md
+  s_9c0a01df767c2e::t_fcba81001fe0a6 88-103
+src/app/api/chat/route.ts
+  s_9c0a01df767c2e::t_baaa87cda8ffff 10,28,67-71,113-114,127-129,131,157,186,196-199,204-205,238-247,254,265-268,281,307,338-339,344,351-354,403-404,443,518-521
+src/app/components/app-sidebar.tsx
+  s_9c0a01df767c2e::t_227745c8531ceb 35,382-391
+src/app/components/chat/model-selector.tsx
+  s_9c0a01df767c2e::t_84f491c63b6667 58,83
+src/app/pages/chat.tsx
+  s_9c0a01df767c2e::t_84742a9ee5e1fd 13-20,41-42,75,81-89,95-96,107-108,533-695,706-707,834-844,1079-1091,1196-1197,1238,1248,1314-1317,1426,1573,1594-1595,1649,1654-1686
+src/app/pages/crawler-endpoint.tsx
+  s_9c0a01df767c2e::t_c63f20b187d08a 476,496
+src/i18n/en.json
+  s_9c0a01df767c2e::t_32575eec01da31 26-27,152-159,209-217,310-313,388-434
+src/i18n/zh-TW.json
+  s_9c0a01df767c2e::t_e31e7a6b77be58 26-27,152-159,209-217,310-313,388-434
+src/lib/chat-tools.ts
+  s_9c0a01df767c2e::t_11d0766d1de2f0 19-67,70,76-98,281-343,515,518-520,522,526-531,560
+src/lib/types.ts
+  s_9c0a01df767c2e::t_5c8ba4275f2d1b 1,14-20
+wrangler.dev.toml
+  s_9c0a01df767c2e::t_6f56dadd88bae5 25-27
+wrangler.toml
+  s_9c0a01df767c2e::t_5c12116746ca5f 49-51
+src/app/(dashboard)/clef/page.tsx
+  s_a59a2cf55c0053::t_4e7d97ae5b67fe 1-7
+src/app/api/clef/route.ts
+  s_a59a2cf55c0053::t_a10095dc101e84 1-124
+src/app/pages/clef-playground.tsx
+  s_a59a2cf55c0053::t_ca85aac4cc913b 1-831
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "df3614f1dc9c394a939863a29d3b40ffc6d2542d",
+  "prompts": {},
+  "sessions": {
+    "s_9c0a01df767c2e": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "helpful-library",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_a59a2cf55c0053": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_a59a2cf55c0053",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
