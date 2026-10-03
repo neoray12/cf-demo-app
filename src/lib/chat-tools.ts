@@ -16,44 +16,86 @@ export function safeTool<T>(fn: (args: T) => Promise<unknown>) {
   };
 }
 
+const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|bmp)$/i;
+
+type AiSearchContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+
+// Query AI Search over REST (works in local dev, unlike the AI binding).
+// Content can be plain text or multimodal parts (image_url with a data URI).
+async function aiSearchQuery(env: Record<string, unknown>, content: string | AiSearchContentPart[], maxResults: number) {
+  const instance = (env.AUTORAG_NAME as string) || 'cf-demo-ai-search-mm';
+  const res = await fetch(
+    `${BR_API_BASE}/${env.CF_ACCOUNT_ID}/ai-search/namespaces/default/instances/${instance}/search`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.CF_API_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content }],
+        ai_search_options: { retrieval: { max_num_results: Math.min(Math.max(maxResults, 1), 10) } },
+      }),
+      signal: AbortSignal.timeout(15_000),
+    }
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    success?: boolean;
+    errors?: Array<{ message: string }>;
+    result?: {
+      query_kind?: string;
+      search_query?: string;
+      chunks?: Array<{ score: number; text: string; item?: { key?: string; metadata?: { sourceurl?: string } } }>;
+    };
+  };
+  if (!res.ok || !data.success) {
+    return { error: `知識庫搜尋失敗: ${data.errors?.[0]?.message ?? `HTTP ${res.status}`}` };
+  }
+  const results = (data.result?.chunks ?? [])
+    .filter((c) => c.score >= 0.3)
+    .map((c) => {
+      const filename = c.item?.key ?? '';
+      return {
+        filename,
+        score: c.score,
+        sourceUrl: c.item?.metadata?.sourceurl || null,
+        text: c.text,
+        ...(IMAGE_EXT_RE.test(filename) ? { imageUrl: `/api/crawler/screenshot?key=${encodeURIComponent(filename)}` } : {}),
+      };
+    });
+  const meta = { instance, queryKind: data.result?.query_kind ?? null, searchQuery: data.result?.search_query ?? null };
+  if (!results.length) return { found: false, ...meta, message: '未找到相關的知識庫內容，請嘗試換個問法。' };
+  return { found: true, ...meta, count: results.length, results };
+}
+
 export function buildSearchKnowledgeTool(env: Record<string, unknown>) {
   return {
-    description: '搜尋知識庫中已爬取的網站內容。當使用者詢問與已爬取網站相關的問題時使用此工具。',
+    description: '搜尋知識庫（AI Search）中已爬取的網站內容、截圖與 PDF。當使用者詢問與已爬取網站相關的問題時使用此工具。',
     inputSchema: z.object({
       query: z.string().describe('搜尋查詢，使用與使用者問題相同的語言'),
       maxResults: z.number().optional().default(5).describe('最大結果數量 (1-10)'),
     }),
     execute: safeTool(async ({ query, maxResults }: { query: string; maxResults: number }) => {
-      try {
-        console.log('[Chat API] searchKnowledge:', query);
-        // AI Search (AutoRAG) requires Cloudflare AI binding — not available in local dev
-        if (!(env.AI as any)?.autorag) {
-          return { error: 'AI Search 在本地開發環境不可用，請部署到 Cloudflare Workers 後使用。' };
-        }
-        const numResults = Math.min(Math.max(maxResults ?? 5, 1), 10);
-        const autoragName = (env.AUTORAG_NAME as string) || 'cf-demo-ai-search';
-        const searchPromise = (env.AI as any).autorag(autoragName).search({
-          query,
-          max_num_results: numResults,
-        });
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('AutoRAG 搜尋逾時（15s）')), 15000)
-        );
-        const ragResult = await Promise.race([searchPromise, timeoutPromise]);
-        if (!ragResult?.data?.length) return { found: false, message: '未找到相關的知識庫內容。' };
-        const filtered = ragResult.data
-          .filter((item: { score: number }) => item.score >= 0.3)
-          .map((item: { filename: string; score: number; content: Array<{ text: string }> }) => ({
-            filename: item.filename,
-            score: item.score,
-            text: item.content?.map((c: { text: string }) => c.text).join('\n'),
-          }));
-        if (!filtered.length) return { found: false, message: '找到結果但相關性不足，請嘗試換個問法。' };
-        return { found: true, count: filtered.length, results: filtered };
-      } catch (err) {
-        console.error('[Chat API] searchKnowledge error:', err);
-        return { error: `知識庫搜尋失敗: ${(err as Error).message}` };
-      }
+      console.log('[Chat API] searchKnowledge:', query);
+      return aiSearchQuery(env, query, maxResults ?? 5);
+    }),
+  };
+}
+
+// Image query against the multimodal AI Search index. The images come from the
+// user's current message, so the model only picks one by index — the base64
+// payload never passes through the model's tool arguments.
+export function buildSearchKnowledgeByImageTool(env: Record<string, unknown>, images: string[]) {
+  return {
+    description: `以圖搜尋知識庫：用使用者這則訊息附上的圖片（共 ${images.length} 張）去 AI Search 找視覺上相似的截圖或相關內容。使用者問「知識庫裡有沒有類似的頁面/圖片」時使用。`,
+    inputSchema: z.object({
+      imageIndex: z.number().int().min(0).max(images.length - 1).optional().default(0).describe('要使用第幾張圖片（從 0 開始）'),
+      text: z.string().optional().describe('可選的文字描述，與圖片一起組成多模態查詢'),
+      maxResults: z.number().optional().default(5).describe('最大結果數量 (1-10)'),
+    }),
+    execute: safeTool(async ({ imageIndex, text, maxResults }: { imageIndex?: number; text?: string; maxResults?: number }) => {
+      const image = images[imageIndex ?? 0] ?? images[0]!;
+      console.log('[Chat API] searchKnowledgeByImage: image', imageIndex ?? 0, 'text:', text ?? '');
+      const parts: AiSearchContentPart[] = [{ type: 'image_url', image_url: { url: image } }];
+      if (text?.trim()) parts.push({ type: 'text', text });
+      return aiSearchQuery(env, parts, maxResults ?? 5);
     }),
   };
 }
@@ -236,6 +278,69 @@ export function buildReadWebPageTool(env: Record<string, unknown>) {
   };
 }
 
+export const WEB_SEARCH_PROVIDERS = ['ceramic', 'exa', 'linkup'] as const;
+export type WebSearchProvider = (typeof WEB_SEARCH_PROVIDERS)[number];
+const WEB_SEARCH_TIMEOUT_MS = 15_000;
+const WEB_SEARCH_DESC_MAX_CHARS = 1500;
+
+export function isWebSearchProvider(v: unknown): v is WebSearchProvider {
+  return typeof v === 'string' && (WEB_SEARCH_PROVIDERS as readonly string[]).includes(v);
+}
+
+export function webSearchConfigured(env: Record<string, unknown>): boolean {
+  return Boolean(env.CF_API_TOKEN && env.CF_ACCOUNT_ID);
+}
+
+export function buildWebSearchTool(env: Record<string, unknown>, defaultProvider: WebSearchProvider = 'ceramic') {
+  return {
+    description:
+      '使用 Cloudflare Web Search API（經 AI Gateway）搜尋網路上的即時資訊。適用於新聞、近期事件、產品更新、訓練資料截止日之後的資訊，或使用者明確要求「上網查」時。回傳標題、網址與摘要；需要完整內容時再對結果網址使用 readWebPage。',
+    inputSchema: z.object({
+      query: z.string().min(1).max(1024).describe('搜尋查詢字串'),
+      provider: z.enum(WEB_SEARCH_PROVIDERS).optional().describe('搜尋供應商，除非使用者指定否則不要填'),
+      limit: z.number().int().min(1).max(10).optional().default(5).describe('結果數量 (1-10)'),
+    }),
+    execute: safeTool(async ({ query, provider, limit }: { query: string; provider?: WebSearchProvider; limit?: number }) => {
+      const p = provider ?? defaultProvider;
+      console.log('[Chat API] webSearch:', p, query);
+      const started = Date.now();
+      const res = await fetch(`${BR_API_BASE}/${env.CF_ACCOUNT_ID}/ai/websearch/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.CF_API_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          provider: p,
+          limit: Math.min(Math.max(limit ?? 5, 1), 10),
+          options: { gateway: { id: (env.AI_GATEWAY_ID as string) || 'nkcf-gateway-01' } },
+        }),
+        signal: AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS),
+      });
+      const raw = (await res.json().catch(() => ({}))) as Record<string, any>;
+      // The REST API may or may not wrap the payload in a { success, result } envelope
+      const data = (raw.result ?? raw) as {
+        items?: Array<{ url: string; title?: string; description?: string }>;
+        metadata?: { requestId?: string; latencyMs?: number };
+      };
+      if (!res.ok || !Array.isArray(data.items)) {
+        const code = raw.error?.code ?? raw.errors?.[0]?.message ?? `HTTP ${res.status}`;
+        const hint = code === 'web_search_payment_required' ? '（AI Gateway 帳戶需要儲值 credits 或設定 BYOK provider key）' : '';
+        return { error: `Web Search 失敗: ${code}${hint}`, provider: p, query };
+      }
+      return {
+        query,
+        provider: p,
+        latencyMs: data.metadata?.latencyMs ?? Date.now() - started,
+        requestId: data.metadata?.requestId ?? null,
+        items: data.items.map((it) => ({
+          url: it.url,
+          title: it.title ?? it.url,
+          description: (it.description ?? '').slice(0, WEB_SEARCH_DESC_MAX_CHARS),
+        })),
+      };
+    }),
+  };
+}
+
 export interface UploadedFileInfo {
   name: string;
   path: string;
@@ -407,13 +512,23 @@ export interface ToolSetConfig {
   edgeColo: string | null;
   uploadedFiles: UploadedFileInfo[];
   mcpServerIds: string[];
+  webSearchProvider?: WebSearchProvider;
 }
 
-export async function buildToolSet(env: Record<string, unknown>, cfg: ToolSetConfig) {
+// `images` stays outside ToolSetConfig on purpose: the config is signed into
+// the Code Mode session token, and base64 images would bloat it.
+export async function buildToolSet(env: Record<string, unknown>, cfg: ToolSetConfig, images: string[] = []) {
   const tools: Record<string, any> = { searchKnowledge: buildSearchKnowledgeTool(env) };
+  if (images.length > 0) tools.searchKnowledgeByImage = buildSearchKnowledgeByImageTool(env, images);
   let sandboxToolsActive = false;
   let browserToolsActive = false;
   let dynamicWorkerActive = false;
+  let webSearchActive = false;
+
+  if (webSearchConfigured(env)) {
+    tools.webSearch = buildWebSearchTool(env, cfg.webSearchProvider);
+    webSearchActive = true;
+  }
 
   // Sandbox tools — only when the companion worker is configured
   if (chatSandboxConfigured(env as any)) {
@@ -442,5 +557,5 @@ export async function buildToolSet(env: Record<string, unknown>, cfg: ToolSetCon
     console.log(`[Chat API] Injected ${Object.keys(mcpTools).length} MCP tools from ${cfg.mcpServerIds.length} server(s)`);
   }
 
-  return { tools, sandboxToolsActive, browserToolsActive, dynamicWorkerActive };
+  return { tools, sandboxToolsActive, browserToolsActive, dynamicWorkerActive, webSearchActive };
 }

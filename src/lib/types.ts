@@ -1,4 +1,4 @@
-export type ModelProvider = "workers-ai" | "openai" | "perplexity" | "anthropic";
+export type ModelProvider = "auto" | "workers-ai" | "openai" | "perplexity" | "anthropic";
 
 export interface AIModel {
   id: string;
@@ -11,6 +11,13 @@ export interface AIModel {
 }
 
 export const AI_MODELS: AIModel[] = [
+  // AI Gateway Auto Router — picks a model per request by task & cost
+  {
+    id: "cf-auto",
+    name: "Auto Router",
+    provider: "auto",
+    providerModelId: "cloudflare/auto",
+  },
   // Cloudflare Workers AI
   {
     id: "gpt-oss-120b",

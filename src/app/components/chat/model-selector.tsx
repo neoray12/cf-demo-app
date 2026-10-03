@@ -55,6 +55,7 @@ function ProviderIcon({ provider, iconUrl, className }: { provider: ModelProvide
 }
 
 const PROVIDER_LABELS: Record<ModelProvider, string> = {
+  "auto": "Cloudflare Auto Router",
   "workers-ai": "Cloudflare Workers AI",
   "openai": "OpenAI",
   "perplexity": "Perplexity",
@@ -79,7 +80,7 @@ export function ModelSelector({ selectedModel, onModelChange }: ModelSelectorPro
   const { t } = useTranslation();
   const current = AI_MODELS.find((m) => m.id === selectedModel) || AI_MODELS[0]!;
   const grouped = groupByProvider(AI_MODELS);
-  const providers: ModelProvider[] = ["workers-ai", "openai", "perplexity", "anthropic"];
+  const providers: ModelProvider[] = ["auto", "workers-ai", "openai", "perplexity", "anthropic"];
 
   return (
     <DropdownMenu>

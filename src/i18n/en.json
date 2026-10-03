@@ -23,7 +23,8 @@
     "backToHome": "Back to Home",
     "lightMode": "Light Mode",
     "darkMode": "Dark Mode",
-    "logout": "Log Out"
+    "logout": "Log Out",
+    "clef": "Clef Decisions"
   },
   "login": {
     "title": "Cloudflare Demo",
@@ -148,6 +149,14 @@
       "summarize": {
         "title": "Summarize a Page",
         "prompt": "Read https://blog.cloudflare.com and summarize the latest posts"
+      },
+      "birthdayWeek": {
+        "title": "Web Search",
+        "prompt": "What did Cloudflare launch during Birthday Week 2026? Search the web and cite sources"
+      },
+      "news": {
+        "title": "Live information",
+        "prompt": "Search for the latest AI agent news and summarize it in 5 bullet points"
       }
     },
     "sandboxLabel": "Sandbox Demo",
@@ -197,7 +206,15 @@
       "previewUrlMissing": "No preview URL returned",
       "openPreview": "Open Preview",
       "collapse": "Collapse",
-      "showInline": "Show Inline"
+      "showInline": "Show Inline",
+      "searchKnowledgeByImage": "Search Knowledge by Image",
+      "webSearch": "Web Search",
+      "sourceWebSearch": "Cloudflare Web Search",
+      "searchingWeb": "Searching the web",
+      "webSearchFailed": "Web search failed: {{error}}",
+      "webSearchCount": "{{count}} results",
+      "webSearchProvider": "Web Search provider",
+      "webSearchPrice": "{{price}} per 1,000 requests"
     },
     "sandbox": {
       "uptimeUnknown": "Unknown",
@@ -290,6 +307,10 @@
       "linksCount": "{{count}} links",
       "noText": "(no text)",
       "pagesCount": "{{count}} pages"
+    },
+    "multimodalHint": {
+      "screenshot": "Once in R2, multimodal AI Search can retrieve it by image",
+      "pdf": "Once in R2, AI Search extracts scanned text with OCR"
     }
   },
   "openclaw": {
@@ -364,5 +385,52 @@
     "loadBucketError": "Failed to load bucket list: {{message}}",
     "loadError": "Failed to load: {{message}}",
     "readFileError": "Failed to read file: {{message}}"
+  },
+  "clef": {
+    "title": "Clef Decision Model Playground",
+    "description": "Clef (27B) and Clef-flash (9B) are Cloudflare's own open-source decision models: instead of generating text they return a probability for every option of every question — ideal for triage, moderation, and scoring.",
+    "scenario": "Example scenarios",
+    "presets": {
+      "triage": "Ticket triage",
+      "phishing": "Phishing detection",
+      "moderation": "Content moderation",
+      "judge": "LLM answer grading",
+      "vision": "Screenshot classification (Vision)"
+    },
+    "text": "Text",
+    "statePlaceholder": "Content to evaluate: text, JSON, chat logs…",
+    "addImage": "Add image",
+    "imageHint": "Paste or upload PNG/JPEG/WebP, up to {{max}}",
+    "questions": "Questions",
+    "types": {
+      "noul": "Yes/No",
+      "choice": "Choice",
+      "score": "Score"
+    },
+    "instructionsPlaceholder": "Question, e.g. Is this request urgent?",
+    "yesMeans": "A \"yes\" means… (optional)",
+    "noMeans": "A \"no\" means… (optional)",
+    "optionDesc": "Option description",
+    "addOption": "Add option",
+    "levelDesc": "Level description (lowest first)",
+    "addLevel": "Add level",
+    "copyCurl": "Copy curl",
+    "run": "Run",
+    "running": "Clef is deciding…",
+    "emptyState": "Pick a scenario or write your own questions, then click \"Run\" to compare both models",
+    "speedup": "Clef-flash is {{x}}× faster than Clef",
+    "yes": "Yes",
+    "no": "No",
+    "confidence": "Confidence",
+    "score": "Weighted score",
+    "disagree": "Disagree",
+    "disagreeTooltip": "The two models reached different decisions on this question",
+    "errors": {
+      "invalidJson": "State is not valid JSON",
+      "duplicateId": "Question ids must be unique",
+      "imageType": "Only PNG, JPEG, and WebP images are supported",
+      "imageSize": "Each image must be at most 4 MiB",
+      "imageCount": "At most {{max}} images"
+    }
   }
 }

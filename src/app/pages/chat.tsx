@@ -10,7 +10,14 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, BookOpen, Braces } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, ChevronDown, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, BookOpen, Braces, Search, Database, Route, Lock } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useTranslation } from "react-i18next";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
 
@@ -31,6 +38,8 @@ interface ChatMessage {
   images?: string[];
   reasoning?: string;
   toolCalls?: ToolCallInfo[];
+  /** Auto Router: the model AI Gateway actually routed this turn to. */
+  routedModel?: { model: string; reason: string | null };
 }
 
 interface PendingImage {
@@ -63,16 +72,28 @@ const MAX_IMAGES = 4;
 // Only these accept image input. Pasting a screenshot while a text-only model
 // is selected would otherwise fail deep in the provider with an opaque error.
 const VISION_MODEL_IDS = new Set([
+  "cf-auto",
   "claude-sonnet-4-6",
   "claude-haiku-4-5",
   "openai-gpt5",
 ]);
+
+// Cloudflare Web Search API providers — list price per 1k requests, ZDR = Zero Data Retention
+const WEB_SEARCH_PROVIDERS = [
+  { id: "ceramic", name: "Ceramic.ai", price: "$0.25", zdr: true },
+  { id: "exa", name: "Exa", price: "$7", zdr: false },
+  { id: "linkup", name: "Linkup", price: "$5", zdr: true },
+] as const;
+type WebSearchProviderId = (typeof WEB_SEARCH_PROVIDERS)[number]["id"];
+const WEB_SEARCH_PROVIDER_KEY = "cf-demo-websearch-provider";
 
 // i18n key maps (not raw labels) — the maps themselves live outside any
 // component, so lookups resolve through `t` at call time rather than baking
 // in one language.
 const TOOL_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.searchKnowledge",
+  searchKnowledgeByImage: "chat.tool.searchKnowledgeByImage",
+  webSearch: "chat.tool.webSearch",
   executeCode: "chat.tool.executeCode",
   executeJs: "chat.tool.executeJs",
   codemode: "chat.tool.codemode",
@@ -83,6 +104,8 @@ const TOOL_KEYS: Record<string, string> = {
 
 const SOURCE_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.sourceSearchKnowledge",
+  searchKnowledgeByImage: "chat.tool.sourceSearchKnowledge",
+  webSearch: "chat.tool.sourceWebSearch",
   executeCode: "chat.tool.sourceExecuteCode",
   executeJs: "chat.tool.sourceExecuteJs",
   codemode: "chat.tool.sourceCodemode",
@@ -507,6 +530,169 @@ function ScreenshotDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   );
 }
 
+// ── Web Search Display ──
+
+interface WebSearchResult {
+  query?: string;
+  provider?: string;
+  latencyMs?: number;
+  items?: Array<{ url: string; title: string; description: string }>;
+  error?: string;
+}
+
+function hostnameOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
+}
+
+function WebSearchDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(true);
+  const isCalling = toolCall.status === "calling";
+  const result = (toolCall.result ?? {}) as WebSearchResult;
+  const query = result.query ?? (toolCall.args as { query?: string } | undefined)?.query ?? "";
+  const providerInfo = WEB_SEARCH_PROVIDERS.find((p) => p.id === result.provider);
+
+  if (isCalling) {
+    return (
+      <div className="my-2">
+        <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 max-w-full">
+          <Search className="size-3 shrink-0" />
+          <span className="truncate">{t("chat.tool.searchingWeb")}{query && ` · ${query}`}</span>
+          <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin shrink-0" />
+        </span>
+      </div>
+    );
+  }
+
+  if (result.error || !result.items) {
+    return (
+      <div className="my-2">
+        <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400">
+          <Search className="size-3 shrink-0" />
+          <span>{t("chat.tool.webSearchFailed", { error: result.error || "unknown" })}</span>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-2 max-w-xl">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-muted hover:bg-muted/80 text-muted-foreground transition-colors cursor-pointer max-w-full"
+      >
+        <Search className="size-3 shrink-0" />
+        <span className="truncate">{t("chat.tool.webSearch")} · {query}</span>
+        <ChevronRight className={`size-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+      </button>
+      {expanded && (
+        <div className="mt-1.5 ml-3 rounded-lg border bg-muted/30 p-3">
+          <div className="flex items-center gap-1.5 flex-wrap mb-2">
+            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-primary/10 text-primary font-medium">
+              {providerInfo?.zdr && <Lock className="size-2.5" />}
+              {providerInfo?.name ?? result.provider}
+            </span>
+            {typeof result.latencyMs === "number" && (
+              <span className="text-[11px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground">{result.latencyMs} ms</span>
+            )}
+            <span className="text-[11px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
+              {t("chat.tool.webSearchCount", { count: result.items.length })}
+            </span>
+          </div>
+          <ol className="space-y-2.5">
+            {result.items.map((item, i) => (
+              <li key={`${item.url}-${i}`} className="min-w-0">
+                <a href={item.url} target="_blank" rel="noopener noreferrer" className="group block">
+                  <div className="text-[11px] text-muted-foreground truncate">{i + 1}. {hostnameOf(item.url)}</div>
+                  <div className="text-sm font-medium text-primary group-hover:underline line-clamp-1">{item.title}</div>
+                  {item.description && <div className="text-xs text-muted-foreground line-clamp-2">{item.description}</div>}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Knowledge (AI Search) Display ──
+
+interface KnowledgeResult {
+  found?: boolean;
+  queryKind?: string | null;
+  searchQuery?: string | null;
+  message?: string;
+  error?: string;
+  results?: Array<{ filename: string; score: number; sourceUrl?: string | null; text: string; imageUrl?: string }>;
+}
+
+function KnowledgeResultsDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const isCalling = toolCall.status === "calling";
+  const result = (toolCall.result ?? {}) as KnowledgeResult;
+  const label = friendlyToolName(toolCall.name, t);
+  const images = (result.results ?? []).filter((r) => r.imageUrl);
+  const texts = (result.results ?? []).filter((r) => !r.imageUrl);
+
+  return (
+    <div className="my-2 max-w-xl">
+      <button
+        onClick={() => !isCalling && setExpanded(!expanded)}
+        className={`inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 transition-colors ${
+          isCalling
+            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
+            : "bg-muted hover:bg-muted/80 text-muted-foreground cursor-pointer"
+        }`}
+      >
+        <Database className="size-3 shrink-0" />
+        <span>{isCalling ? `${label}...` : label}</span>
+        {!isCalling && result.queryKind && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-background/60">{result.queryKind}</span>
+        )}
+        {!isCalling && result.results && <span className="text-[10px]">({result.results.length})</span>}
+        {isCalling ? (
+          <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+        ) : (
+          <ChevronRight className={`size-3 transition-transform ${expanded ? "rotate-90" : ""}`} />
+        )}
+      </button>
+      {!isCalling && images.length > 0 && (
+        <div className="mt-1.5 ml-3 grid grid-cols-3 gap-2">
+          {images.map((r) => (
+            <a key={r.filename} href={r.imageUrl} target="_blank" rel="noopener noreferrer" className="block rounded-md border overflow-hidden bg-white" title={`${r.filename} · ${r.score.toFixed(2)}`}>
+              <img src={r.imageUrl} alt={r.filename} className="w-full h-20 object-cover object-top" loading="lazy" />
+              <div className="text-[10px] text-muted-foreground px-1.5 py-0.5 truncate bg-background">{r.score.toFixed(2)} · {r.filename}</div>
+            </a>
+          ))}
+        </div>
+      )}
+      {expanded && !isCalling && (
+        <div className="mt-1.5 ml-3 rounded-lg bg-muted/40 p-3 text-xs space-y-2 max-h-[300px] overflow-y-auto">
+          {result.error || result.message ? (
+            <div className="text-muted-foreground">{result.error || result.message}</div>
+          ) : (
+            texts.map((r, i) => (
+              <div key={`${r.filename}-${i}`} className="border-b border-border/40 pb-2 last:border-0">
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-0.5">
+                  <span className="font-mono">{r.score.toFixed(2)}</span>
+                  {r.sourceUrl ? (
+                    <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="truncate hover:underline">{r.sourceUrl}</a>
+                  ) : (
+                    <span className="truncate">{r.filename}</span>
+                  )}
+                </div>
+                <div className="line-clamp-3 whitespace-pre-wrap">{r.text}</div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Tool Call Display ──
 
 function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
@@ -517,6 +703,8 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   if (toolCall.name === "executeCode" || toolCall.name === "executeJs" || toolCall.name === "codemode") return <CodeExecutionDisplay toolCall={toolCall} />;
   if (toolCall.name === "createWebPreview") return <WebPreviewDisplay toolCall={toolCall} />;
   if (toolCall.name === "captureScreenshot") return <ScreenshotDisplay toolCall={toolCall} />;
+  if (toolCall.name === "webSearch") return <WebSearchDisplay toolCall={toolCall} />;
+  if (toolCall.name === "searchKnowledge" || toolCall.name === "searchKnowledgeByImage") return <KnowledgeResultsDisplay toolCall={toolCall} />;
   const label = friendlyToolName(toolCall.name, t);
   const isCalling = toolCall.status === "calling";
 
@@ -643,6 +831,17 @@ function AssistantMessage({
 
   return (
     <div className="max-w-full">
+      {message.routedModel && (
+        <div className="mb-1.5">
+          <span
+            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 border border-orange-200/60 dark:border-orange-800/40"
+            title={message.routedModel.reason ?? undefined}
+          >
+            <Route className="size-3" />
+            Auto Router → <span className="font-mono">{message.routedModel.model}</span>
+          </span>
+        </div>
+      )}
       {/* Reasoning */}
       {message.reasoning && <ReasoningDisplay text={message.reasoning} />}
 
@@ -877,6 +1076,19 @@ export function ChatPage() {
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
   const [toolsEnabled, setToolsEnabled] = useState(false);
   const [codeModeEnabled, setCodeModeEnabled] = useState(false);
+  const [webSearchProvider, setWebSearchProvider] = useState<WebSearchProviderId>("ceramic");
+  // Auto Router session-affinity key; a new chat starts a new conversation
+  const conversationIdRef = useRef<string>(crypto.randomUUID());
+
+  useEffect(() => {
+    const saved = localStorage.getItem(WEB_SEARCH_PROVIDER_KEY);
+    if (WEB_SEARCH_PROVIDERS.some((p) => p.id === saved)) setWebSearchProvider(saved as WebSearchProviderId);
+  }, []);
+
+  const changeWebSearchProvider = useCallback((id: WebSearchProviderId) => {
+    setWebSearchProvider(id);
+    localStorage.setItem(WEB_SEARCH_PROVIDER_KEY, id);
+  }, []);
   const [errorDialog, setErrorDialog] = useState<{ open: boolean; error: ChatErrorState | null }>({
     open: false,
     error: null,
@@ -981,6 +1193,8 @@ export function ChatPage() {
           toolsEnabled,
           images,
           codeMode: codeModeEnabled,
+          webSearchProvider,
+          conversationId: conversationIdRef.current,
           mcpServers: connectedMcpServers,
           userName,
           userEmail,
@@ -1021,6 +1235,7 @@ export function ChatPage() {
       let accText = "";
       let accReasoning = "";
       let toolCalls: ToolCallInfo[] = [];
+      let routedModel: ChatMessage["routedModel"];
 
       // 50ms batched flush
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1030,7 +1245,7 @@ export function ChatPage() {
         const r = accReasoning;
         const tc = [...toolCalls];
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc } : m)
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc, routedModel } : m)
         );
       };
       const scheduleFlush = () => {
@@ -1095,6 +1310,10 @@ export function ChatPage() {
                       userIp: event.userIp || null,
                     },
                   });
+                  break;
+                case "routed-model":
+                  routedModel = { model: event.model, reason: event.reason ?? null };
+                  scheduleFlush();
                   break;
                 case "finish":
                 case "done":
@@ -1204,7 +1423,7 @@ export function ChatPage() {
         toolCallNames: debugToolNames,
       });
     }
-  }, [selectedModel, toolsEnabled, codeModeEnabled, connectedMcpServers]);
+  }, [selectedModel, toolsEnabled, codeModeEnabled, connectedMcpServers, webSearchProvider]);
 
   const handleSend = useCallback(async (text: string) => {
     const images = pendingImages;
@@ -1351,6 +1570,7 @@ export function ChatPage() {
     if (isLoading) handleStop();
     setMessages([]);
     setInput("");
+    conversationIdRef.current = crypto.randomUUID();
     textareaRef.current?.focus();
   }, [isLoading, handleStop]);
 
@@ -1371,6 +1591,8 @@ export function ChatPage() {
   const browserSuggestions = [
     { title: t("chat.browserSuggestions.screenshot.title"), desc: t("chat.browserSuggestions.screenshot.prompt"), icon: Camera },
     { title: t("chat.browserSuggestions.summarize.title"), desc: t("chat.browserSuggestions.summarize.prompt"), icon: BookOpen },
+    { title: t("chat.browserSuggestions.birthdayWeek.title"), desc: t("chat.browserSuggestions.birthdayWeek.prompt"), icon: Search },
+    { title: t("chat.browserSuggestions.news.title"), desc: t("chat.browserSuggestions.news.prompt"), icon: Search },
   ];
 
   const dynamicWorkerSuggestions = [
@@ -1424,11 +1646,44 @@ export function ChatPage() {
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted/60"
               }`}
-              title={toolsEnabled ? "工具已啟用 (AI Search / MCP)" : "啟用工具 (AI Search / MCP)"}
+              title={toolsEnabled ? "工具已啟用 (AI Search / Web Search / MCP)" : "啟用工具 (AI Search / Web Search / MCP)"}
             >
               <Zap className="size-3.5" />
               <span className="hidden md:inline">工具</span>
             </button>
+            {toolsEnabled && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="inline-flex items-center gap-1 h-8 px-2 rounded-lg text-xs text-muted-foreground hover:bg-muted/60 transition-colors"
+                    title={t("chat.tool.webSearchProvider")}
+                  >
+                    <Search className="size-3.5" />
+                    <span className="hidden lg:inline">{WEB_SEARCH_PROVIDERS.find((p) => p.id === webSearchProvider)?.name}</span>
+                    <ChevronDown className="size-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="center" className="w-60">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">{t("chat.tool.webSearchProvider")}</DropdownMenuLabel>
+                  {WEB_SEARCH_PROVIDERS.map((p) => (
+                    <DropdownMenuItem
+                      key={p.id}
+                      onClick={() => changeWebSearchProvider(p.id)}
+                      className={webSearchProvider === p.id ? "bg-accent" : ""}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm flex items-center gap-1">
+                          {p.name}
+                          {p.zdr && <span className="text-[10px] px-1 rounded bg-green-500/15 text-green-700 dark:text-green-400">ZDR</span>}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{t("chat.tool.webSearchPrice", { price: p.price })}</div>
+                      </div>
+                      {webSearchProvider === p.id && <Check className="size-3.5" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <button
               onClick={() => {
                 setCodeModeEnabled((v) => {

@@ -23,7 +23,8 @@
     "backToHome": "返回首頁",
     "lightMode": "淺色模式",
     "darkMode": "深色模式",
-    "logout": "登出"
+    "logout": "登出",
+    "clef": "Clef 決策模型"
   },
   "login": {
     "title": "Cloudflare Demo",
@@ -148,6 +149,14 @@
       "summarize": {
         "title": "網頁摘要",
         "prompt": "幫我閱讀 https://blog.cloudflare.com 並摘要最新文章的重點"
+      },
+      "birthdayWeek": {
+        "title": "網路搜尋",
+        "prompt": "Cloudflare Birthday Week 2026 發表了哪些新功能？請上網查並附上來源"
+      },
+      "news": {
+        "title": "即時資訊",
+        "prompt": "搜尋最新的 AI Agent 相關新聞，整理成 5 點重點"
       }
     },
     "sandboxLabel": "Sandbox 示範",
@@ -197,7 +206,15 @@
       "previewUrlMissing": "未取得預覽網址",
       "openPreview": "開啟預覽",
       "collapse": "收合",
-      "showInline": "內嵌顯示"
+      "showInline": "內嵌顯示",
+      "searchKnowledgeByImage": "以圖搜尋知識庫",
+      "webSearch": "網路搜尋",
+      "sourceWebSearch": "Cloudflare Web Search",
+      "searchingWeb": "搜尋網路中",
+      "webSearchFailed": "網路搜尋失敗：{{error}}",
+      "webSearchCount": "{{count}} 筆結果",
+      "webSearchProvider": "Web Search 供應商",
+      "webSearchPrice": "每 1,000 次 {{price}}"
     },
     "sandbox": {
       "uptimeUnknown": "未知",
@@ -290,6 +307,10 @@
       "linksCount": "{{count}} 個連結",
       "noText": "(無文字)",
       "pagesCount": "{{count}} 頁"
+    },
+    "multimodalHint": {
+      "screenshot": "存入 R2 後可被多模態 AI Search 以圖檢索",
+      "pdf": "存入 R2 後 AI Search 會以 OCR 擷取掃描文字"
     }
   },
   "openclaw": {
@@ -364,5 +385,52 @@
     "loadBucketError": "載入 bucket 列表失敗: {{message}}",
     "loadError": "載入失敗: {{message}}",
     "readFileError": "讀取檔案失敗: {{message}}"
+  },
+  "clef": {
+    "title": "Clef 決策模型 Playground",
+    "description": "Clef（27B）與 Clef-flash（9B）是 Cloudflare 自家訓練的開源決策模型：不產生文字，而是對每個問題的每個選項回傳機率，適合分流、審核、評分等需要結構化決策的場景。",
+    "scenario": "範例情境",
+    "presets": {
+      "triage": "工單分流",
+      "phishing": "釣魚郵件偵測",
+      "moderation": "內容審核",
+      "judge": "LLM 回覆評分",
+      "vision": "截圖分類（Vision）"
+    },
+    "text": "文字",
+    "statePlaceholder": "要評估的內容：文字、JSON、對話紀錄…",
+    "addImage": "加入圖片",
+    "imageHint": "可貼上或上傳 PNG/JPEG/WebP，最多 {{max}} 張",
+    "questions": "問題",
+    "types": {
+      "noul": "是非題",
+      "choice": "選擇題",
+      "score": "評分題"
+    },
+    "instructionsPlaceholder": "問題描述，例如：這個請求緊急嗎？",
+    "yesMeans": "「是」代表…（選填）",
+    "noMeans": "「否」代表…（選填）",
+    "optionDesc": "選項說明",
+    "addOption": "新增選項",
+    "levelDesc": "等級說明（由低到高）",
+    "addLevel": "新增等級",
+    "copyCurl": "複製 curl",
+    "run": "執行",
+    "running": "Clef 決策中…",
+    "emptyState": "選擇範例情境或自訂問題，然後點「執行」查看兩個模型的決策機率",
+    "speedup": "Clef-flash 比 Clef 快 {{x}}×",
+    "yes": "是",
+    "no": "否",
+    "confidence": "信心度",
+    "score": "加權分數",
+    "disagree": "不一致",
+    "disagreeTooltip": "兩個模型對這題的決策不同",
+    "errors": {
+      "invalidJson": "State 不是有效的 JSON",
+      "duplicateId": "問題 id 不可重複",
+      "imageType": "僅支援 PNG、JPEG、WebP 圖片",
+      "imageSize": "單張圖片上限 4 MiB",
+      "imageCount": "最多 {{max}} 張圖片"
+    }
   }
 }

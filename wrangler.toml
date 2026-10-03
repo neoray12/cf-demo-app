@@ -46,5 +46,7 @@ service = "cf-demo-app"
 [vars]
 CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
 AI_GATEWAY_ID = "nkcf-gateway-01"
-AUTORAG_NAME = "cf-demo-ai-search"
+AUTORAG_NAME = "cf-demo-ai-search-mm"
+# Auto Router candidate pool — only providers this gateway has credentials/credits for
+AUTO_ROUTER_ALLOWED_PROVIDERS = "anthropic,workers-ai"
 MCP_SERVER_URLS = "cf-docs=https://docs.mcp.cloudflare.com/mcp,cf-observability=https://observability.mcp.cloudflare.com/mcp:oauth,cf-radar=https://radar.mcp.cloudflare.com/mcp:oauth,sap=https://sap-mcp.neokung.work/mcp:oauth,salesforce=https://salesforce-mcp.neokung.work/mcp:oauth"

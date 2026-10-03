@@ -32,6 +32,7 @@ import {
   Boxes,
   Layers,
   ShieldCheck,
+  Scale,
 } from "lucide-react";
 import {
   Sidebar,
@@ -376,6 +377,16 @@ export function AppSidebar() {
                 >
                   <Bot />
                   <span>{t("sidebar.aiAgent")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname === "/clef"}
+                  onClick={() => handleNavClick("/clef")}
+                  tooltip={t("sidebar.clef")}
+                >
+                  <Scale />
+                  <span>{t("sidebar.clef")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

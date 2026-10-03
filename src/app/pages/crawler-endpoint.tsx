@@ -473,6 +473,7 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
                 <Save className="size-4 mr-1.5" />
                 {t("common.saveToR2")}
               </Button>
+              <span className="self-center text-[11px] text-muted-foreground">{t("crawler.multimodalHint.screenshot")}</span>
             </div>
             <img src={binaryResult} alt="Screenshot" className="w-full rounded-lg border shadow" />
           </div>
@@ -492,6 +493,7 @@ export function CrawlerEndpointPage({ endpoint }: { endpoint: string }) {
                 <Save className="size-4 mr-1.5" />
                 {t("common.saveToR2")}
               </Button>
+              <span className="self-center text-[11px] text-muted-foreground">{t("crawler.multimodalHint.pdf")}</span>
             </div>
             <iframe src={binaryResult} className="h-[600px] w-full rounded-lg border" title="PDF Preview" />
           </div>

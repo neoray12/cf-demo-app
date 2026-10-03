@@ -7,7 +7,7 @@ import { cookies } from 'next/headers';
 import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { chatSandboxConfigured, uploadFile as sandboxUploadFile } from '@/lib/chat-sandbox';
 import { signCodeModeSession, codeModeSecret, describeTools, buildCodeModeModule, RETURN_SHAPE_HINT } from '@/lib/codemode';
-import { buildToolSet, safeTool, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
+import { buildToolSet, safeTool, isWebSearchProvider, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
@@ -25,7 +25,7 @@ const TOOL_CAPABLE_WORKERS_AI = [
 ];
 
 function modelSupportsTools(provider: ModelProvider, modelId: string): boolean {
-  if (provider === 'openai' || provider === 'anthropic') return true;
+  if (provider === 'openai' || provider === 'anthropic' || provider === 'auto') return true;
   if (provider === 'perplexity') return false;
   return TOOL_CAPABLE_WORKERS_AI.some((re) => re.test(modelId));
 }
@@ -63,6 +63,11 @@ const BROWSER_PROMPT = `
 const DYNAMIC_WORKER_PROMPT = `
 
 當需要執行 JavaScript 程式碼（快速計算、字串處理、演算法示範）時，優先使用 executeJs 工具——它在毫秒級啟動的 V8 isolate 中執行。需要 Python、pandas、檔案或畫圖時才用 executeCode。executeJs 的沙箱完全禁止網路存取，fetch 會失敗，這是刻意的安全設計。`;
+
+// Extra system prompt guidance when the Web Search tool is available
+const WEB_SEARCH_PROMPT = `
+
+當問題涉及即時資訊、新聞、近期事件、產品最新發表或你訓練資料截止日之後的內容時，先使用 webSearch 工具搜尋；需要某個結果的完整內容時，再對該網址使用 readWebPage。根據搜尋結果回答時，請在回覆最後以 Markdown 連結列出引用來源。`;
 
 // System prompt override when Code Mode collapses everything into one tool
 const CODE_MODE_PROMPT = `
@@ -105,6 +110,8 @@ export async function POST(request: NextRequest) {
     userEmail,
     attachments = [],
     images = [],
+    webSearchProvider: rawWebSearchProvider,
+    conversationId,
   } = body as {
     messages: Array<{ role: string; content: string }>;
     model?: string;
@@ -117,7 +124,11 @@ export async function POST(request: NextRequest) {
     attachments?: Array<{ name: string; contentBase64: string }>;
     /** Pasted screenshots as data URLs, attached to the latest user turn. */
     images?: string[];
+    webSearchProvider?: string;
+    /** Per-conversation id — Auto Router session affinity key. */
+    conversationId?: string;
   };
+  const webSearchProvider = isWebSearchProvider(rawWebSearchProvider) ? rawWebSearchProvider : 'ceramic';
 
   if (!messages || !Array.isArray(messages)) {
     return new Response(JSON.stringify({ error: 'messages is required' }), {
@@ -143,6 +154,7 @@ export async function POST(request: NextRequest) {
     case 'openai': compatModelId = `openai/${modelId}`; break;
     case 'anthropic': compatModelId = `anthropic/${modelId}`; break;
     case 'perplexity': compatModelId = `perplexity-ai/${modelId}`; break;
+    case 'auto': compatModelId = 'cloudflare/auto'; break;
     default: compatModelId = `workers-ai/${modelId}`;
   }
 
@@ -171,6 +183,7 @@ export async function POST(request: NextRequest) {
   // AI Gateway parses unicode escapes correctly — do NOT encodeURIComponent
   const metadataJson = JSON.stringify({
     tools_enabled: toolsEnabled,
+    web_search_provider: toolsEnabled ? webSearchProvider : null,
     name: userName ?? 'anonymous',
     email: userEmail ?? 'unknown',
     usertier,
@@ -180,10 +193,16 @@ export async function POST(request: NextRequest) {
   // Sanitize SSE stream: some Workers AI models (e.g. llama-3.2-3b) return
   // delta.content as a number instead of string, causing AI_TypeValidationError.
   // This wrapper intercepts the response body and coerces content to string.
+  // Auto Router reports the model it picked in response headers; captured here
+  // and forwarded to the client as a `routed-model` event.
+  let routedInfo: { model: string; reason: string | null } | null = null;
+
   function sanitizeSseFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const headers = new Headers(init?.headers as HeadersInit);
     if (isExternal) headers.delete('Authorization');
     return fetch(url, { ...init, headers }).then((res) => {
+      const routedModel = res.headers.get('cf-aig-routed-model');
+      if (routedModel) routedInfo = { model: routedModel, reason: res.headers.get('cf-aig-routing-reason') };
       if (!res.body || !res.headers.get('content-type')?.includes('text/event-stream')) return res;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -216,12 +235,23 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Auto Router: pin one model per turn (session affinity) and restrict the
+  // candidate pool to providers this gateway actually has credentials for.
+  const autoRouterHeaders: Record<string, string> = {};
+  if (provider === 'auto') {
+    const sid = (await cookies()).get('session_id')?.value || 'anonymous';
+    autoRouterHeaders['cf-aig-session-id'] = `${sid}:${String(conversationId || 'default').replace(/[^\w-]/g, '').slice(0, 64)}`;
+    const allowed = (env as any).AUTO_ROUTER_ALLOWED_PROVIDERS as string | undefined;
+    if (allowed) autoRouterHeaders['cf-aig-allowed-providers'] = allowed;
+  }
+
   const openai = createOpenAI({
     apiKey: isExternal ? 'aig-managed' : (cfApiToken || 'dummy'),
     baseURL,
     headers: {
       ...(aigToken ? { 'cf-aig-authorization': `Bearer ${aigToken}` } : {}),
       'cf-aig-metadata': metadataJson,
+      ...autoRouterHeaders,
     },
     fetch: sanitizeSseFetch,
   });
@@ -232,7 +262,10 @@ export async function POST(request: NextRequest) {
   // Images ride along with the newest user turn. The AI SDK converts these
   // image parts into whatever the provider expects (image_url for the
   // OpenAI-compatible gateway endpoint, source blocks for Anthropic).
-  if (Array.isArray(images) && images.length > 0) {
+  const validImages = Array.isArray(images)
+    ? images.filter((u): u is string => typeof u === 'string' && u.startsWith('data:image/'))
+    : [];
+  if (validImages.length > 0) {
     let lastUserIdx = -1;
     for (let i = chatMessages.length - 1; i >= 0; i--) {
       if (chatMessages[i]?.role === 'user') { lastUserIdx = i; break; }
@@ -245,8 +278,7 @@ export async function POST(request: NextRequest) {
           // Some providers reject an empty text part, so only include one
           // when the user actually typed something alongside the image.
           ...(textContent.trim() ? [{ type: 'text', text: textContent }] : []),
-          ...images
-            .filter((u): u is string => typeof u === 'string' && u.startsWith('data:image/'))
+          ...validImages
             .map((url) => {
               // The AI SDK treats a string `image` as a URL to fetch and
               // rejects the data: scheme, so split the data URL into its
@@ -272,6 +304,7 @@ export async function POST(request: NextRequest) {
   let browserToolsActive = false;
   let dynamicWorkerActive = false;
   let codeModeActive = false;
+  let webSearchActive = false;
   if (useTools) {
     const cookieStore = await cookies();
     const sessionId = cookieStore.get('session_id')?.value || 'anonymous';
@@ -302,20 +335,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const toolConfig: ToolSetConfig = { sessionId, sandboxSessionId, edgeColo, uploadedFiles, mcpServerIds };
-    const built = await buildToolSet(env as any, toolConfig);
+    const toolConfig: ToolSetConfig = { sessionId, sandboxSessionId, edgeColo, uploadedFiles, mcpServerIds, webSearchProvider };
+    const built = await buildToolSet(env as any, toolConfig, validImages);
     tools = built.tools;
     sandboxToolsActive = built.sandboxToolsActive;
     browserToolsActive = built.browserToolsActive;
     dynamicWorkerActive = built.dynamicWorkerActive;
+    webSearchActive = built.webSearchActive;
 
     // Code Mode: collapse the whole tool set into ONE tool — the model writes
     // a JS script that calls the other tools as functions inside a Dynamic
     // Worker, instead of stepping through multiple tool-call rounds. This is
     // the token-saving pattern Cloudflare's codemode SDK implements.
     if (codeMode && (env as any).LOADER && (env as any).SELF) {
-      // executeJs is redundant inside Code Mode (the script itself IS the JS)
-      const { executeJs: _omitted, ...wrappedTools } = tools;
+      // executeJs is redundant inside Code Mode (the script itself IS the JS);
+      // searchKnowledgeByImage depends on this request's images, which the
+      // codemode-exec isolate can't rebuild from the signed session.
+      const { executeJs: _omitted, searchKnowledgeByImage: _omittedImg, ...wrappedTools } = tools;
       const toolNames = Object.keys(wrappedTools);
       const token = await signCodeModeSession(codeModeSecret(env as any), { ...toolConfig, toolNames });
 
@@ -364,7 +400,8 @@ export async function POST(request: NextRequest) {
     : SYSTEM_PROMPT +
       (sandboxToolsActive ? SANDBOX_PROMPT : '') +
       (browserToolsActive ? BROWSER_PROMPT : '') +
-      (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '');
+      (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '') +
+      (webSearchActive ? WEB_SEARCH_PROMPT : '');
 
   // Abort on inactivity rather than on a fixed total budget. One 60s signal
   // spanned every step of a multi-step run (tool-call argument streaming, tool
@@ -403,6 +440,7 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   let insideThink = false;
   let thinkBuffer = '';
+  let routedSent = false;
 
   function send(controller: ReadableStreamDefaultController, data: Record<string, unknown>) {
     try {
@@ -477,6 +515,10 @@ export async function POST(request: NextRequest) {
     try {
     for await (const part of result.fullStream) {
       bump();
+      if (routedInfo && !routedSent) {
+        routedSent = true;
+        send(controller, { type: 'routed-model', ...(routedInfo as { model: string; reason: string | null }) });
+      }
       switch (part.type) {
         case 'text-delta':
           hasTextContent = true;
