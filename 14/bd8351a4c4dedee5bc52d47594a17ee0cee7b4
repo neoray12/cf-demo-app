@@ -1,0 +1,37 @@
+agents.md
+  s_9c0a01df767c2e::t_881ce6f120e8f7 93-94
+src/app/api/clef/route.ts
+  s_9c0a01df767c2e::t_77181ba43a6695 6,13-18,26-42,44,48-49,73,77-81,83,106-107,144,148-149,153-155,158-162
+src/app/pages/clef-playground.tsx
+  s_9c0a01df767c2e::t_c1efbe371b74ab 12,15,32-39,66-67,85-86,265-329,332-337,343-370,428-433,504-506,513-515,531-533,547,556-580,590-591,619-626,634-639,729-773,922-923,925-929,961,964,967,980-984,987-989,998-999
+src/i18n/en.json
+  s_9c0a01df767c2e::t_1dae18c763966a 391,398-401,424,436-453
+src/i18n/zh-TW.json
+  s_9c0a01df767c2e::t_a978734bc6f4bf 391,398-401,424,436-453
+src/i18n/index.ts
+  s_d278edbe1b4684::t_852051d2770a83 16,20-23,25,27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "14bd8351a4c4dedee5bc52d47594a17ee0cee7b4",
+  "prompts": {},
+  "sessions": {
+    "s_9c0a01df767c2e": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "helpful-library",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_d278edbe1b4684": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_d278edbe1b4684",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
