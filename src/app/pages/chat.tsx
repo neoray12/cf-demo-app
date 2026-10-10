@@ -1127,6 +1127,12 @@ export function ChatPage() {
   const isMobile = useIsMobile();
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
   const [toolsEnabled, setToolsEnabled] = useState(false);
+  // Mirror of toolsEnabled that is writable *synchronously*. Suggestion cards
+  // turn tools on and send in the same tick, when the closure still holds the
+  // old `false` — the request then went out without tools and the model did the
+  // arithmetic in its head, with no sandbox call shown.
+  const toolsEnabledRef = useRef(false);
+  useEffect(() => { toolsEnabledRef.current = toolsEnabled; }, [toolsEnabled]);
   const [codeModeEnabled, setCodeModeEnabled] = useState(false);
   const [webSearchProvider, setWebSearchProvider] = useState<WebSearchProviderId>("ceramic");
   // Auto Router session-affinity key; a new chat starts a new conversation
@@ -1242,7 +1248,7 @@ export function ChatPage() {
           messages: debugReqMsgs,
           model: modelId,
           provider,
-          toolsEnabled,
+          toolsEnabled: toolsEnabledRef.current,
           images,
           codeMode: codeModeEnabled,
           webSearchProvider,
@@ -1677,7 +1683,8 @@ export function ChatPage() {
   // createWebPreview — otherwise clicking one just gets a plain-text answer
   // with no sandbox involved, which defeats the point of the suggestion.
   const handleSandboxSuggestion = (desc: string) => {
-    if (!toolsEnabled) setToolsEnabled(true);
+    toolsEnabledRef.current = true;
+    setToolsEnabled(true);
     handleSend(desc);
   };
 
