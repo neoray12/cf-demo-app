@@ -1,0 +1,29 @@
+agents.md
+  s_9c0a01df767c2e::t_b283f9546e56d7 99-100
+src/i18n/en.json
+  s_9c0a01df767c2e::t_788533ae60e8af 136
+src/i18n/zh-TW.json
+  s_9c0a01df767c2e::t_ab5d0a5df50cce 136
+src/lib/chat-sandbox.ts
+  s_9c0a01df767c2e::t_e56eeb44f0a412 49-65,110,150,176
+src/lib/types.ts
+  s_9c0a01df767c2e::t_01e6c9cc3fdd8c 125-127
+workers/chat-sandbox/src/index.ts
+  s_9c0a01df767c2e::t_f706a9ac030d16 100-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1a4aef77a9ac57601d842343ac7454edf0457ff9",
+  "prompts": {},
+  "sessions": {
+    "s_9c0a01df767c2e": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "helpful-library",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
