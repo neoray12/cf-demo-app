@@ -1,0 +1,19 @@
+src/app/pages/chat.tsx
+  s_9c0a01df767c2e::t_b467951e95a23a 1130-1135,1251,1686-1687
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "55d919384ed35127ce1b0ec2d0339449c2b35235",
+  "prompts": {},
+  "sessions": {
+    "s_9c0a01df767c2e": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "helpful-library",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
