@@ -1,0 +1,21 @@
+src/app/api/chat/route.ts
+  s_9c0a01df767c2e::t_f4a03cc682ee4e 52-54,328-333
+workers/chat-sandbox/src/index.ts
+  s_9c0a01df767c2e::t_65c9e701f72ffe 293,296,298-305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6ca5ff994412ef1803bf24ab3b7b7cc3f087ddfa",
+  "prompts": {},
+  "sessions": {
+    "s_9c0a01df767c2e": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "helpful-library",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
