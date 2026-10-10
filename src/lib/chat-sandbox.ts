@@ -46,7 +46,23 @@ async function sandboxFetch(
  * model's own thinking time instead of stacking on top of the first tool call.
  * Never throws — it is purely an optimisation.
  */
-export async function warmSandbox(env: SandboxEnv, sessionId: string): Promise<void> {
+const warmups = new Map<string, Promise<void>>();
+
+// Tool calls wait for an in-flight warmup of the same session (bounded) instead
+// of racing it — both would otherwise place/boot the same container at once.
+async function awaitWarmup(sessionId: string): Promise<void> {
+  const warm = warmups.get(sessionId);
+  if (!warm) return;
+  await Promise.race([warm, new Promise<void>((r) => setTimeout(r, FETCH_TIMEOUT_MS - 5_000))]);
+}
+
+export function warmSandbox(env: SandboxEnv, sessionId: string): Promise<void> {
+  const p = doWarm(env, sessionId).finally(() => { if (warmups.get(sessionId) === p) warmups.delete(sessionId); });
+  warmups.set(sessionId, p);
+  return p;
+}
+
+async function doWarm(env: SandboxEnv, sessionId: string): Promise<void> {
   if (!chatSandboxConfigured(env)) return;
   try {
     await fetch(`${env.CHAT_SANDBOX_URL}/api/warmup`, {
@@ -91,6 +107,7 @@ export async function executeCode(
   language: string = 'python'
 ): Promise<CodeExecutionResult> {
   try {
+    await awaitWarmup(sessionId);
     const res = await sandboxFetch(env, '/api/execute', {
       method: 'POST',
       body: JSON.stringify({ sessionId, code, language }),
@@ -130,6 +147,7 @@ export async function createPreview(
   files: Array<{ path: string; content: string }>
 ): Promise<{ url?: string; error?: string; sandbox: SandboxTelemetry | null }> {
   try {
+    await awaitWarmup(sessionId);
     const res = await sandboxFetch(env, '/api/preview', {
       method: 'POST',
       body: JSON.stringify({ sessionId, files }),
@@ -155,6 +173,7 @@ export async function uploadFile(
   contentBase64: string
 ): Promise<{ path?: string; size?: number; error?: string }> {
   try {
+    await awaitWarmup(sessionId);
     const res = await sandboxFetch(env, '/api/upload', {
       method: 'POST',
       body: JSON.stringify({ sessionId, fileName, contentBase64 }),

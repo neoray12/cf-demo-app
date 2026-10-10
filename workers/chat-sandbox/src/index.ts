@@ -97,7 +97,20 @@ async function probeColo(sandbox: ReturnType<typeof getSandbox>): Promise<string
   return trace.stdout.match(/colo=([A-Z]{3})/)?.[1] ?? null;
 }
 
-async function resolveSandboxId(env: Env, sessionId: string): Promise<string> {
+// Single-flight per session: /api/warmup and the first tool call arrive together,
+// and two concurrent placements would each probe, destroy and re-roll the same
+// candidate IDs — tearing down the container the other one is booting.
+const placementInFlight = new Map<string, Promise<string>>();
+
+function resolveSandboxId(env: Env, sessionId: string): Promise<string> {
+  const existing = placementInFlight.get(sessionId);
+  if (existing) return existing;
+  const p = placeSandbox(env, sessionId).finally(() => placementInFlight.delete(sessionId));
+  placementInFlight.set(sessionId, p);
+  return p;
+}
+
+async function placeSandbox(env: Env, sessionId: string): Promise<string> {
   const avoid = avoidedColos(env);
   if (avoid.length === 0) return sessionId;
 

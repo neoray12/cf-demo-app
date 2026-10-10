@@ -96,6 +96,8 @@
   - `max_instances` 曾被 5 個「存活數天到數月、沒有依 `sleepAfter` 休眠」的 container 佔滿，新 session 全部卡住直到逾時。現在 `workers/chat-sandbox` 每次請求會在 KV 記錄最後使用時間，cron 每 5 分鐘把閒置超過 25 分鐘的 sandbox `destroy()`（`reapIdleSandboxes`），並一次性清掉先前遺留的 `LEGACY_SANDBOX_IDS`；`max_instances` 提高到 10
   - `/api/chat` 一開始就用 `ctx.waitUntil(warmSandbox())` 呼叫 sandbox 的 `/api/warmup` 預先開機，冷啟動與模型思考時間重疊；工具逾時 55s、串流 idle 90s（工具逾時必須小於 idle 視窗）；colo 重擲上限 3→2
   - `executeJs`（`normalizeCode`）改用括號配對判斷程式形狀：以 `function fib(){}` 宣告開頭、後面接 `console.log(...)` 的腳本以前會被當成函式運算式包起來而 SyntaxError（"Unexpected identifier 'console'"），幾乎每個 DW 範例前 1–2 次都失敗
+  - 預設模型改為 `claude-haiku-4-5`（Sandbox/DW 範例實測 6–10 秒；GLM 5.3 因推理過程不串流，同樣範例要 12–88 秒且變異大；gpt-oss-120b 約 8–20 秒，是不想用外部 provider 時的替代）
+  - sandbox worker 的 `resolveSandboxId` 做 single-flight，app 端工具呼叫會等同 session 進行中的 warmup，避免兩邊同時 probe/re-roll 互相銷毀 container
   - 聊天訊息改用有序 `parts`（文字/推理/工具依實際發生順序顯示）；等待中顯示計時，工具執行中顯示秒數
 - **介面語言**：預設繁體中文（不偵測瀏覽器語言），只記住使用者手動切換的語言，localStorage key `cf-demo-lang-v2`
 - **Auto Router**：模型 `cf-auto`（provider `auto` → compat `cloudflare/auto`），送 `cf-aig-session-id`（session cookie + conversationId）與 `cf-aig-allowed-providers`（`[vars] AUTO_ROUTER_ALLOWED_PROVIDERS`，只列 gateway 有金鑰/額度的 provider）。回應 header `cf-aig-routed-model` 以 NDJSON `routed-model` 事件推給前端顯示 badge

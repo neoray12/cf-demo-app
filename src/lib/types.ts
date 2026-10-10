@@ -122,7 +122,9 @@ export const AI_MODELS: AIModel[] = [
   },
 ];
 
-export const DEFAULT_MODEL_ID = "glm-5.3";
+// Haiku 4.5 answers tool-using prompts in ~6-10 s; GLM 5.3 (hidden reasoning,
+// nothing streamed while it thinks) took 12-88 s for the same prompts.
+export const DEFAULT_MODEL_ID = "claude-haiku-4-5";
 
 export interface BrowserRenderingEndpoint {
   id: string;

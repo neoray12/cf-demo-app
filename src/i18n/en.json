@@ -133,7 +133,7 @@
       },
       "compare": {
         "title": "Isolate vs Container",
-        "prompt": "Calculate 20 factorial in both JavaScript and Python so I can compare execution speed"
+        "prompt": "Calculate 20 factorial once with JavaScript (the executeJs tool) and once with Python (the executeCode tool), then compare the execution times they report"
       },
       "blocked": {
         "title": "Network Lockdown Demo",

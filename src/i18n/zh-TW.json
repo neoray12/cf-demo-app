@@ -133,7 +133,7 @@
       },
       "compare": {
         "title": "isolate vs 容器對決",
-        "prompt": "分別用 JavaScript 和 Python 計算 20 的階乘，讓我比較兩者的執行速度"
+        "prompt": "分別用 JavaScript（executeJs 工具）和 Python（executeCode 工具）各執行一次，計算 20 的階乘，並比較兩者回報的執行時間"
       },
       "blocked": {
         "title": "網路封鎖示範",
