@@ -290,11 +290,19 @@ app.post('/api/warmup', async (c) => {
     return c.json({ error: 'Invalid sessionId (lowercase alphanumeric + hyphens, max 32 chars)' }, 400);
   }
   const started = Date.now();
+  const lap = () => Date.now() - started;
   try {
     const resolvedId = await resolveSandboxId(c.env, body.sessionId);
+    const placedMs = lap();
     await touch(c.env, resolvedId);
-    const r = await sandboxFor(c.env, resolvedId).exec('true');
-    return c.json({ ready: r.success, ms: Date.now() - started });
+    const sandbox = sandboxFor(c.env, resolvedId);
+    const r = await sandbox.exec('true');
+    const bootedMs = lap();
+    // The first runCode() also has to spin up the Python interpreter, which is
+    // a big slice of the "cold" first call — pay it here instead.
+    const py = await sandbox.runCode('1', { language: 'python', timeout: 60_000 }).then(() => true).catch(() => false);
+    console.log(`[WARMUP] ${resolvedId}: placed=${placedMs}ms booted=${bootedMs}ms python(${py})=${lap()}ms`);
+    return c.json({ ready: r.success, ms: lap(), placedMs, bootedMs, python: py });
   } catch (err) {
     return c.json({ ready: false, ms: Date.now() - started, error: (err as Error).message }, 502);
   }

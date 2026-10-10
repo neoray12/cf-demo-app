@@ -49,6 +49,9 @@ function extractFirewallFromHtml(html: string): { isFirewall: boolean; rayId: st
   return { isFirewall: true, rayId: rayMatch?.[1] || null, userIp: ipMatch?.[1] || null };
 }
 
+// Prompts that probably want the Python sandbox / web preview (used to pre-warm it)
+const SANDBOX_HINT = /計算|階乘|費氏|統計|算出|程式|python|pandas|csv|xlsx|圖表|畫圖|網頁|預覽|倒數|html|容器|sandbox|executeCode|calculate|factorial|fibonacci|chart|plot|preview/i;
+
 // Extra system prompt guidance when the sandbox tools are available
 const SANDBOX_PROMPT = `
 
@@ -322,7 +325,12 @@ export async function POST(request: NextRequest) {
     // Boot the container now, while the model is still thinking — the first
     // executeCode/createWebPreview call then finds it warm instead of paying
     // the full cold start (and risking the tool timeout) itself.
-    if (chatSandboxConfigured(env as any)) ctx.waitUntil(warmSandbox(env as any, sandboxSessionId));
+    // Only for prompts that look like they need a sandbox — warming a container
+    // for every tools-enabled chat would burn instance slots on plain Q&A.
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+    if (chatSandboxConfigured(env as any) && (attachments.length > 0 || SANDBOX_HINT.test(lastUser))) {
+      ctx.waitUntil(warmSandbox(env as any, sandboxSessionId));
+    }
 
     // Upload any attached CSV/XLSX into the sandbox before building the
     // tools, so executeCode's description can tell the model exactly where
