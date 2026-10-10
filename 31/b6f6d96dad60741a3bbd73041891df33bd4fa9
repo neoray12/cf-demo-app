@@ -1,0 +1,37 @@
+agents.md
+  s_9c0a01df767c2e::t_0fedbda5ef3a67 95-99
+src/app/api/chat/route.ts
+  s_9c0a01df767c2e::t_9d5fdc8a194514 8,96,322-326,415
+src/app/pages/chat.tsx
+  s_9c0a01df767c2e::t_17f5788db3b85c 41-42,47-51,167-179,295,313,405,412,849,851,853,855-866,882-887,889-904,920,923-925,930,932-938,1290,1292-1304,1313,1315,1341,1347,1352,1357,1365,1417
+src/i18n/en.json
+  s_9c0a01df767c2e::t_b23b3eac3a5106 245-246
+src/i18n/zh-TW.json
+  s_9c0a01df767c2e::t_eb4bda94a6ed09 245-246
+src/lib/chat-sandbox.ts
+  s_9c0a01df767c2e::t_62750364d93b3b 11-14,43-62,121,145
+src/lib/chat-tools.ts
+  s_9c0a01df767c2e::t_aac24dd131c81d 108,169
+src/lib/codemode.ts
+  s_9c0a01df767c2e::t_d531b1d19073e0 105-133,139-144,148-153,155-167,169-171
+workers/chat-sandbox/src/index.ts
+  s_9c0a01df767c2e::t_dcb9467e64c36d 78-80,132-191,268-289,312,380,476,522-525
+workers/chat-sandbox/wrangler.toml
+  s_9c0a01df767c2e::t_e4ec4af1b59428 23-26,39-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "31b6f6d96dad60741a3bbd73041891df33bd4fa9",
+  "prompts": {},
+  "sessions": {
+    "s_9c0a01df767c2e": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "helpful-library",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
