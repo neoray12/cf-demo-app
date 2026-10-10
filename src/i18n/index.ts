@@ -13,13 +13,18 @@ i18n
       en: { translation: en },
     },
     fallbackLng: "zh-TW",
+    supportedLngs: ["zh-TW", "en"],
     interpolation: {
       escapeValue: false,
     },
+    // Default to Traditional Chinese regardless of browser language; only an
+    // explicit switch (sidebar / login toggle) is remembered. The storage key
+    // was bumped from "cf-demo-lang" because that one also cached the old
+    // navigator-detected value, which would keep English browsers on English.
     detection: {
-      order: ["localStorage", "navigator"],
+      order: ["localStorage"],
       caches: ["localStorage"],
-      lookupLocalStorage: "cf-demo-lang",
+      lookupLocalStorage: "cf-demo-lang-v2",
     },
   });
 

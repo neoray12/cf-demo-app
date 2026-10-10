@@ -388,14 +388,17 @@
   },
   "clef": {
     "title": "Clef 決策模型 Playground",
-    "description": "Clef（27B）與 Clef-flash（9B）是 Cloudflare 自家訓練的開源決策模型：不產生文字，而是對每個問題的每個選項回傳機率，適合分流、審核、評分等需要結構化決策的場景。",
+    "description": "Cloudflare 自家訓練的開源決策模型家族：Clef（27B，更快）、Clef-flash（9B，降價至 $0.038/M）與新的 Clef-omni（30B MoE，支援文字、圖片、音訊與影片）。不產生文字，而是對每個問題的每個選項回傳機率，適合分流、審核、評分等結構化決策。",
     "scenario": "範例情境",
     "presets": {
       "triage": "工單分流",
       "phishing": "釣魚郵件偵測",
       "moderation": "內容審核",
       "judge": "LLM 回覆評分",
-      "vision": "截圖分類（Vision）"
+      "vision": "截圖分類（Vision）",
+      "omni": "設備驗收（音訊/影片）",
+      "pii": "PII 偵測（DLP）",
+      "spam": "GitHub 垃圾 issue"
     },
     "text": "文字",
     "statePlaceholder": "要評估的內容：文字、JSON、對話紀錄…",
@@ -418,7 +421,7 @@
     "run": "執行",
     "running": "Clef 決策中…",
     "emptyState": "選擇範例情境或自訂問題，然後點「執行」查看兩個模型的決策機率",
-    "speedup": "Clef-flash 比 Clef 快 {{x}}×",
+    "speedup": "{{fast}} 最快，比 {{slow}} 快 {{x}}×",
     "yes": "是",
     "no": "否",
     "confidence": "信心度",
@@ -430,7 +433,23 @@
       "duplicateId": "問題 id 不可重複",
       "imageType": "僅支援 PNG、JPEG、WebP 圖片",
       "imageSize": "單張圖片上限 4 MiB",
-      "imageCount": "最多 {{max}} 張圖片"
-    }
+      "imageCount": "最多 {{max}} 張圖片",
+      "audioType": "請選擇音訊檔（wav、mp3…）",
+      "videoType": "請選擇影片檔（mp4、webm）",
+      "audioCount": "最多 {{max}} 段音訊",
+      "videoCount": "最多 {{max}} 段影片",
+      "audioSize": "單段音訊上限 {{mb}} MB",
+      "videoSize": "單段影片上限 {{mb}} MB",
+      "audioDuration": "音訊長度上限 {{s}} 秒",
+      "videoDuration": "影片長度上限 {{s}} 秒",
+      "mediaTotal": "音訊與影片合計上限 16 MB"
+    },
+    "addAudio": "加入音訊",
+    "addVideo": "加入影片",
+    "mediaHint": "音訊 wav/mp3 最多 4 段（各 8 MB、300 秒）；影片 mp4/webm 最多 2 段（各 16 MB、60 秒），合計 16 MB",
+    "contextWindow": "Context window",
+    "costTooltip": "只計算輸入 token（${{price}} / 百萬 tokens），Clef 不收輸出 token 費用",
+    "calls": "次呼叫",
+    "ignoredMedia": "音訊/影片僅支援 Clef-omni，此模型只評估文字與圖片"
   }
 }

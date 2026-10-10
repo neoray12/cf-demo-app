@@ -3,13 +3,19 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 // Clef decision models on Workers AI — no text generation, they return a
 // probability for every allowed option of every typed question.
-const CLEF_MODELS = ['clef', 'clef-flash'] as const;
+const CLEF_MODELS = ['clef', 'clef-flash', 'clef-omni'] as const;
 type ClefModel = (typeof CLEF_MODELS)[number];
 
 const QUESTION_ID_RE = /^[A-Za-z0-9_.-]{1,100}$/;
 const IMAGE_DATA_URL_RE = /^data:image\/(png|jpeg|webp);base64,/i;
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES_TOTAL = 8 * 1024 * 1024;
+// Clef-omni only: audio (wav/mp3…) and video (mp4/webm) clips
+const MAX_AUDIO = 4;
+const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEOS = 2;
+const MAX_VIDEO_BYTES = 16 * 1024 * 1024;
+const MAX_MEDIA_BYTES_TOTAL = 16 * 1024 * 1024;
 const TIMEOUT_MS = 30_000;
 
 type Question =
@@ -17,11 +23,30 @@ type Question =
   | { type: 'choice'; instructions: string; criteria: Record<string, string | null> }
   | { type: 'score'; instructions: string; criteria: string[] };
 
+const decodedBytes = (dataUrl: string) => Math.floor(((dataUrl.length - dataUrl.indexOf(',') - 1) * 3) / 4);
+
+function validateMedia(list: unknown, kind: 'audio' | 'video', max: number, maxEach: number): { error?: string; bytes: number } {
+  if (list === undefined) return { bytes: 0 };
+  if (!Array.isArray(list) || list.length > max) return { error: `${kind === 'audio' ? 'audio' : 'videos'} must be an array of at most ${max}`, bytes: 0 };
+  let bytes = 0;
+  for (const item of list) {
+    if (typeof item !== 'string' || !item.toLowerCase().startsWith(`data:${kind}/`) || !item.includes(';base64,')) {
+      return { error: `${kind} clips must be base64 data:${kind}/* URLs`, bytes: 0 };
+    }
+    const size = decodedBytes(item);
+    if (size > maxEach) return { error: `each ${kind} clip must be at most ${maxEach / 1024 / 1024} MiB`, bytes: 0 };
+    bytes += size;
+  }
+  return { bytes };
+}
+
 function validate(body: Record<string, unknown>): string | null {
-  const { state, questions, images, models } = body as {
+  const { state, questions, images, audio, videos, models } = body as {
     state?: unknown;
     questions?: Record<string, Question>;
     images?: unknown;
+    audio?: unknown;
+    videos?: unknown;
     models?: unknown;
   };
   if (state === undefined || state === null || (typeof state === 'string' && !state.trim())) return 'state is required';
@@ -45,12 +70,17 @@ function validate(body: Record<string, unknown>): string | null {
     let total = 0;
     for (const img of images) {
       if (typeof img !== 'string' || !IMAGE_DATA_URL_RE.test(img)) return 'images must be PNG/JPEG/WebP data URLs';
-      total += Math.floor(((img.length - img.indexOf(',') - 1) * 3) / 4);
+      total += decodedBytes(img);
     }
     if (total > MAX_IMAGE_BYTES_TOTAL) return 'images exceed 8 MiB total';
   }
+  const a = validateMedia(audio, 'audio', MAX_AUDIO, MAX_AUDIO_BYTES);
+  if (a.error) return a.error;
+  const v = validateMedia(videos, 'video', MAX_VIDEOS, MAX_VIDEO_BYTES);
+  if (v.error) return v.error;
+  if (a.bytes + v.bytes > MAX_MEDIA_BYTES_TOTAL) return 'audio and video clips exceed 16 MiB total';
   if (!Array.isArray(models) || models.length === 0 || !models.every((m) => (CLEF_MODELS as readonly string[]).includes(m))) {
-    return 'models must be a non-empty subset of ["clef", "clef-flash"]';
+    return 'models must be a non-empty subset of ["clef", "clef-flash", "clef-omni"]';
   }
   return null;
 }
@@ -73,6 +103,8 @@ async function runClef(env: Record<string, unknown>, model: ClefModel, payload: 
       ...headers,
       ...(env.CF_AIG_TOKEN ? { 'cf-aig-authorization': `Bearer ${env.CF_AIG_TOKEN}` } : {}),
       'cf-aig-metadata': JSON.stringify({ feature: 'clef-playground' }),
+      // The playground compares model latency — a cached response would skew it
+      'cf-aig-skip-cache': 'true',
     },
     body,
     signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -109,16 +141,25 @@ export async function POST(request: NextRequest) {
   if (invalid) return Response.json({ error: invalid }, { status: 400 });
   if (!(env as any).CF_API_TOKEN) return Response.json({ error: 'CF_API_TOKEN not configured' }, { status: 500 });
 
-  const { state, questions, images, models } = body as {
+  const { state, questions, images, audio, videos, models } = body as {
     state: unknown;
     questions: Record<string, Question>;
     images?: string[];
+    audio?: string[];
+    videos?: string[];
     models: ClefModel[];
   };
   const payload = { state, questions, ...(images?.length ? { images } : {}) };
+  // Audio/video are Clef-omni extensions — Clef and Clef-flash would reject them
+  const omniMedia = { ...(audio?.length ? { audio } : {}), ...(videos?.length ? { videos } : {}) };
+  const ignoredMedia = Object.keys(omniMedia);
 
   const entries = await Promise.all(
-    [...new Set(models)].map(async (m) => [m, await runClef(env as any, m, payload)] as const)
+    [...new Set(models)].map(async (m) => {
+      if (m === 'clef-omni') return [m, await runClef(env as any, m, { ...payload, ...omniMedia })] as const;
+      const result = await runClef(env as any, m, payload);
+      return [m, ignoredMedia.length ? { ...result, ignoredMedia } : result] as const;
+    })
   );
   return Response.json({ results: Object.fromEntries(entries) });
 }

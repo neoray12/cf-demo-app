@@ -9,8 +9,10 @@ import {
   Check,
   ChevronRight,
   Copy,
+  Film,
   ImagePlus,
   Loader2,
+  Music,
   Play,
   Plus,
   Scale,
@@ -27,7 +29,14 @@ import { Badge } from "@/components/ui/badge";
 // ── Types ──
 
 type QuestionType = "noul" | "choice" | "score";
-type ClefModel = "clef" | "clef-flash";
+type ClefModel = "clef" | "clef-flash" | "clef-omni";
+
+interface MediaClip {
+  dataUrl: string;
+  name: string;
+  size: number;
+  duration: number;
+}
 
 interface DraftQuestion {
   uid: string;
@@ -54,6 +63,8 @@ interface ModelResult {
   usage?: { input_tokens: number; output_tokens: number };
   latencyMs: number;
   via?: "ai-gateway" | "rest";
+  /** Audio/video were not sent to this model (Clef-omni only). */
+  ignoredMedia?: string[];
   error?: string;
 }
 
@@ -71,6 +82,8 @@ interface Preset {
   key: string;
   json?: boolean;
   vision?: boolean;
+  /** Needs audio/video — Clef-omni only */
+  omni?: boolean;
   state: L10n;
   questions: PresetQuestion[];
 }
@@ -249,16 +262,112 @@ const PRESETS: Preset[] = [
       },
     ],
   },
+  {
+    key: "omni",
+    omni: true,
+    state: {
+      zh: "檢查冷氣安裝狀況：附上機器的照片、運轉時的錄音，以及風扇的影片。",
+      en: "Review the installation: a photo of the unit, an audio recording of it running, and a video of the fan.",
+    },
+    questions: [
+      { id: "label_visible", type: "noul", instructions: { zh: "照片中看得到型號與序號標籤嗎？", en: "Is the model and serial number label visible in the photo?" } },
+      { id: "sounds_normal", type: "noul", instructions: { zh: "機器運轉聲音順暢、沒有異音或摩擦聲嗎？", en: "Does the unit sound like it is running smoothly, without rattling or grinding?" } },
+      { id: "fan_running", type: "noul", instructions: { zh: "影片中的風扇有在轉動嗎？", en: "Is the fan running in the video?" } },
+      {
+        id: "next_step",
+        type: "choice",
+        instructions: { zh: "下一步應該怎麼處理？", en: "What should happen next?" },
+        options: [
+          { key: "approve", desc: { zh: "驗收通過", en: "Approve the installation" } },
+          { key: "retake", desc: { zh: "請技師重新拍攝/錄製", en: "Ask the technician to re-capture media" } },
+          { key: "dispatch", desc: { zh: "派員到場檢修", en: "Dispatch a repair visit" } },
+        ],
+      },
+    ],
+  },
+  {
+    key: "pii",
+    state: {
+      zh: "客戶回信：您好，我的退款一直沒收到。我的身分證字號是 A123456789，信用卡末四碼 4242，手機 0912-345-678，麻煩盡快處理。",
+      en: "Customer reply: Hi, I still haven't received my refund. My SSN is 123-45-6789, card ending 4242, phone +1 415-555-0134. Please hurry.",
+    },
+    questions: [
+      { id: "contains_pii", type: "noul", instructions: { zh: "這段文字是否包含個人可識別資訊（PII）？", en: "Does this text contain personally identifiable information (PII)?" } },
+      { id: "government_id", type: "noul", instructions: { zh: "是否包含政府核發的身分證號碼？", en: "Does it contain a government-issued ID number?" } },
+      {
+        id: "dlp_action",
+        type: "choice",
+        instructions: { zh: "DLP 政策應採取什麼動作？", en: "What should the DLP policy do?" },
+        options: [
+          { key: "allow", desc: { zh: "放行", en: "Allow" } },
+          { key: "redact", desc: { zh: "遮蔽敏感欄位後放行", en: "Redact sensitive fields, then allow" } },
+          { key: "block", desc: { zh: "阻擋", en: "Block" } },
+        ],
+      },
+    ],
+  },
+  {
+    key: "spam",
+    json: true,
+    state: {
+      zh: JSON.stringify({ title: "🔥 免費取得 10,000 USDT！限時領取", body: "點擊 https://free-crypto-airdrop.example 連結錢包即可領取，名額只剩 50 個！", author_account_age_days: 1 }, null, 2),
+      en: JSON.stringify({ title: "🔥 Claim 10,000 free USDT! Limited time", body: "Connect your wallet at https://free-crypto-airdrop.example to claim — only 50 spots left!", author_account_age_days: 1 }, null, 2),
+    },
+    questions: [
+      { id: "spam", type: "noul", instructions: { zh: "這個 GitHub issue 是垃圾訊息嗎？", en: "Is this GitHub issue spam?" } },
+      {
+        id: "action",
+        type: "choice",
+        instructions: { zh: "機器人應如何處理這個 issue？", en: "How should the bot handle this issue?" },
+        options: [
+          { key: "keep", desc: { zh: "保留並分類", en: "Keep and triage" } },
+          { key: "label", desc: { zh: "標記為待確認", en: "Label for review" } },
+          { key: "close", desc: { zh: "直接關閉並鎖定", en: "Close and lock" } },
+        ],
+      },
+    ],
+  },
 ];
 
-const MODELS: Array<{ id: ClefModel; name: string; size: string }> = [
-  { id: "clef", name: "Clef", size: "27B" },
-  { id: "clef-flash", name: "Clef-flash", size: "9B" },
+// Hosted pricing / context windows (Workers AI docs, 2026-10-09). Clef models
+// bill input tokens only — no output tokens, since they don't generate text.
+const MODELS: Array<{ id: ClefModel; name: string; size: string; pricePerM: number; ctx: string; media: string }> = [
+  { id: "clef", name: "Clef", size: "27B", pricePerM: 0.24, ctx: "64K", media: "text · image" },
+  { id: "clef-flash", name: "Clef-flash", size: "9B", pricePerM: 0.038, ctx: "24K", media: "text · image" },
+  { id: "clef-omni", name: "Clef-omni", size: "30B MoE", pricePerM: 0.15, ctx: "64K", media: "text · image · audio · video" },
 ];
 
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+// Clef-omni media limits
+const MAX_AUDIO = 4;
+const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
+const MAX_AUDIO_SECONDS = 300;
+const MAX_VIDEOS = 2;
+const MAX_VIDEO_BYTES = 16 * 1024 * 1024;
+const MAX_VIDEO_SECONDS = 60;
+const MAX_MEDIA_BYTES_TOTAL = 16 * 1024 * 1024;
+
+function readDataUrl(f: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(f);
+  });
+}
+
+function mediaDuration(f: File, kind: "audio" | "video"): Promise<number> {
+  return new Promise((resolve) => {
+    const el = document.createElement(kind);
+    const url = URL.createObjectURL(f);
+    el.preload = "metadata";
+    el.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(el.duration); };
+    el.onerror = () => { URL.revokeObjectURL(url); resolve(NaN); };
+    el.src = url;
+  });
+}
 
 let uidCounter = 0;
 const uid = () => `q-${Date.now()}-${++uidCounter}`;
@@ -316,12 +425,14 @@ const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
 function Bar({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className={`w-28 shrink-0 truncate ${highlight ? "font-semibold" : "text-muted-foreground"}`} title={label}>{label}</span>
-      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+    <div className="text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`truncate ${highlight ? "font-semibold" : "text-muted-foreground"}`} title={label}>{label}</span>
+        <span className={`shrink-0 font-mono ${highlight ? "font-semibold" : "text-muted-foreground"}`}>{pct(value)}</span>
+      </div>
+      <div className="h-1.5 mt-0.5 rounded-full bg-muted overflow-hidden">
         <div className={`h-full rounded-full ${highlight ? "bg-primary" : "bg-muted-foreground/40"}`} style={{ width: `${Math.max(value * 100, 1)}%` }} />
       </div>
-      <span className={`w-12 text-right font-mono ${highlight ? "font-semibold" : "text-muted-foreground"}`}>{pct(value)}</span>
     </div>
   );
 }
@@ -390,13 +501,18 @@ export function ClefPlaygroundPage() {
   const [stateIsJson, setStateIsJson] = useState(false);
   const [questions, setQuestions] = useState<DraftQuestion[]>(initial.questions);
   const [images, setImages] = useState<string[]>([]);
-  const [selectedModels, setSelectedModels] = useState<ClefModel[]>(["clef", "clef-flash"]);
+  const [audio, setAudio] = useState<MediaClip[]>([]);
+  const [videos, setVideos] = useState<MediaClip[]>([]);
+  const [selectedModels, setSelectedModels] = useState<ClefModel[]>(["clef", "clef-flash", "clef-omni"]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<Partial<Record<ClefModel, ModelResult>> | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
+  const hasMedia = audio.length > 0 || videos.length > 0;
 
   const jsonError = useMemo(() => {
     if (!stateIsJson) return null;
@@ -412,6 +528,9 @@ export function ClefPlaygroundPage() {
     setStateIsJson(Boolean(p.json));
     setQuestions(d.questions);
     setImages([]);
+    setAudio([]);
+    setVideos([]);
+    if (p.omni) setSelectedModels((prev) => (prev.includes("clef-omni") ? prev : [...prev, "clef-omni"]));
     setResults(null);
     setError(null);
   };
@@ -425,12 +544,7 @@ export function ClefPlaygroundPage() {
     for (const f of files) {
       if (!ALLOWED_IMAGE_TYPES.includes(f.type)) { setError(t("clef.errors.imageType")); continue; }
       if (f.size > MAX_IMAGE_BYTES) { setError(t("clef.errors.imageSize")); continue; }
-      accepted.push(await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(String(r.result));
-        r.onerror = reject;
-        r.readAsDataURL(f);
-      }));
+      accepted.push(await readDataUrl(f));
     }
     setImages((prev) => {
       const next = [...prev, ...accepted];
@@ -438,6 +552,31 @@ export function ClefPlaygroundPage() {
       return next.slice(0, MAX_IMAGES);
     });
   }, [t]);
+
+  // Audio / video clips — Clef-omni extension
+  const addMedia = useCallback(async (files: File[], kind: "audio" | "video") => {
+    setError(null);
+    const [max, maxBytes, maxSeconds] = kind === "audio"
+      ? [MAX_AUDIO, MAX_AUDIO_BYTES, MAX_AUDIO_SECONDS]
+      : [MAX_VIDEOS, MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS];
+    const current = kind === "audio" ? audio : videos;
+    let totalBytes = [...audio, ...videos].reduce((n, c) => n + c.size, 0);
+    const accepted: MediaClip[] = [];
+    for (const f of files) {
+      if (!f.type.startsWith(`${kind}/`)) { setError(t(`clef.errors.${kind}Type`)); continue; }
+      if (current.length + accepted.length >= max) { setError(t(`clef.errors.${kind}Count`, { max })); break; }
+      if (f.size > maxBytes) { setError(t(`clef.errors.${kind}Size`, { mb: maxBytes / 1024 / 1024 })); continue; }
+      if (totalBytes + f.size > MAX_MEDIA_BYTES_TOTAL) { setError(t("clef.errors.mediaTotal")); continue; }
+      const duration = await mediaDuration(f, kind);
+      if (duration > maxSeconds) { setError(t(`clef.errors.${kind}Duration`, { s: maxSeconds })); continue; }
+      totalBytes += f.size;
+      accepted.push({ dataUrl: await readDataUrl(f), name: f.name, size: f.size, duration });
+    }
+    if (!accepted.length) return;
+    (kind === "audio" ? setAudio : setVideos)((prev) => [...prev, ...accepted]);
+    // Audio/video only make sense for Clef-omni — make sure it's selected
+    setSelectedModels((prev) => (prev.includes("clef-omni") ? prev : [...prev, "clef-omni"]));
+  }, [audio, videos, t]);
 
   const onPaste = (e: React.ClipboardEvent) => {
     const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
@@ -448,6 +587,8 @@ export function ClefPlaygroundPage() {
     state: stateIsJson ? JSON.parse(state) : state,
     questions: toApiQuestions(questions),
     ...(images.length ? { images } : {}),
+    ...(audio.length ? { audio: audio.map((c) => c.dataUrl) } : {}),
+    ...(videos.length ? { videos: videos.map((c) => c.dataUrl) } : {}),
   });
 
   const run = async () => {
@@ -475,8 +616,14 @@ export function ClefPlaygroundPage() {
 
   const copyCurl = async () => {
     const req = buildRequest();
-    const model = selectedModels[0] ?? "clef";
-    const body = { model, ...req, ...(req.images ? { images: req.images.map(() => "data:image/png;base64,<...>") } : {}) };
+    const model: ClefModel = hasMedia ? "clef-omni" : (selectedModels[0] ?? "clef");
+    const body = {
+      model,
+      ...req,
+      ...(req.images ? { images: req.images.map(() => "data:image/png;base64,<...>") } : {}),
+      ...(req.audio ? { audio: req.audio.map(() => "data:audio/mpeg;base64,<...>") } : {}),
+      ...(req.videos ? { videos: req.videos.map(() => "data:video/mp4;base64,<...>") } : {}),
+    };
     const curl = `curl https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/${model} \\\n  -X POST \\\n  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \\\n  -d '${JSON.stringify(body).replace(/'/g, "'\\''")}'`;
     await navigator.clipboard.writeText(curl);
     setCopied(true);
@@ -484,8 +631,12 @@ export function ClefPlaygroundPage() {
   };
 
   const shownModels = MODELS.filter((m) => results?.[m.id]);
-  const both = results?.clef && results?.["clef-flash"] && !results.clef.error && !results["clef-flash"].error;
-  const speedup = both ? results!.clef!.latencyMs / Math.max(results!["clef-flash"]!.latencyMs, 1) : null;
+  // Successful models only — used for the latency ranking and agreement check
+  const okModels = shownModels.filter((m) => !results?.[m.id]?.error);
+  const ranked = [...okModels].sort((a, b) => results![a.id]!.latencyMs - results![b.id]!.latencyMs);
+  const fastest = ranked.length > 1 ? ranked[0]! : null;
+  const slowest = ranked.length > 1 ? ranked[ranked.length - 1]! : null;
+  const speedup = fastest && slowest ? results![slowest.id]!.latencyMs / Math.max(results![fastest.id]!.latencyMs, 1) : null;
   const preset = PRESETS.find((p) => p.key === presetKey);
 
   return (
@@ -574,6 +725,51 @@ export function ClefPlaygroundPage() {
                   onChange={(e) => { void addImages(Array.from(e.target.files ?? [])); e.target.value = ""; }}
                 />
                 <span className="text-[11px] text-muted-foreground">{t("clef.imageHint", { max: MAX_IMAGES })}</span>
+              </div>
+              <div className={`rounded-lg border border-dashed p-2.5 space-y-2 ${preset?.omni && !hasMedia ? "border-orange-400" : ""}`}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant="secondary" className="text-[10px]">Clef-omni</Badge>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => audioRef.current?.click()} disabled={audio.length >= MAX_AUDIO}>
+                    <Music className="size-3.5" />
+                    {t("clef.addAudio")}
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => videoRef.current?.click()} disabled={videos.length >= MAX_VIDEOS}>
+                    <Film className="size-3.5" />
+                    {t("clef.addVideo")}
+                  </Button>
+                  <span className="text-[11px] text-muted-foreground">{t("clef.mediaHint")}</span>
+                  <input ref={audioRef} type="file" accept="audio/*" multiple hidden onChange={(e) => { void addMedia(Array.from(e.target.files ?? []), "audio"); e.target.value = ""; }} />
+                  <input ref={videoRef} type="file" accept="video/mp4,video/webm" multiple hidden onChange={(e) => { void addMedia(Array.from(e.target.files ?? []), "video"); e.target.value = ""; }} />
+                </div>
+                {audio.map((c, i) => (
+                  <div key={`a-${i}`} className="flex items-center gap-2">
+                    <audio src={c.dataUrl} controls className="h-8 flex-1 min-w-0" />
+                    <span className="text-[11px] text-muted-foreground truncate max-w-[40%]" title={c.name}>
+                      {c.name} · {Number.isFinite(c.duration) ? `${c.duration.toFixed(1)}s` : "?"} · {(c.size / 1024 / 1024).toFixed(1)} MB
+                    </span>
+                    <button onClick={() => setAudio((prev) => prev.filter((_, j) => j !== i))} className="p-1 text-muted-foreground hover:text-destructive">
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {videos.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {videos.map((c, i) => (
+                      <div key={`v-${i}`} className="relative">
+                        <video src={c.dataUrl} controls className="w-full rounded-md border bg-black aspect-video" />
+                        <div className="text-[11px] text-muted-foreground truncate mt-0.5" title={c.name}>
+                          {c.name} · {Number.isFinite(c.duration) ? `${c.duration.toFixed(1)}s` : "?"}
+                        </div>
+                        <button
+                          onClick={() => setVideos((prev) => prev.filter((_, j) => j !== i))}
+                          className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-foreground text-background flex items-center justify-center"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -723,10 +919,14 @@ export function ClefPlaygroundPage() {
                 <button
                   key={m.id}
                   onClick={() => setSelectedModels((prev) => (on ? (prev.length > 1 ? prev.filter((x) => x !== m.id) : prev) : [...prev, m.id]))}
-                  className={`inline-flex items-center gap-1.5 text-xs px-3 h-8 rounded-lg border transition-colors ${on ? "bg-orange-500/10 border-orange-400 text-orange-700 dark:text-orange-400" : "hover:bg-muted"}`}
+                  title={`${m.media} · ${t("clef.contextWindow")} ${m.ctx}`}
+                  className={`inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-lg border transition-colors text-left ${on ? "bg-orange-500/10 border-orange-400 text-orange-700 dark:text-orange-400" : "hover:bg-muted"}`}
                 >
-                  {on ? <Check className="size-3" /> : <span className="size-3" />}
-                  {m.name} <span className="text-muted-foreground">{m.size}</span>
+                  {on ? <Check className="size-3 shrink-0" /> : <span className="size-3 shrink-0" />}
+                  <span>
+                    <span className="block">{m.name} <span className="text-muted-foreground">{m.size}</span></span>
+                    <span className="block text-[10px] text-muted-foreground">${m.pricePerM}/M · {m.ctx}</span>
+                  </span>
                 </button>
               );
             })}
@@ -758,13 +958,13 @@ export function ClefPlaygroundPage() {
           )}
           {results && (
             <>
-              {speedup && (
+              {fastest && slowest && speedup && (
                 <div className="flex items-center gap-2 text-xs rounded-lg bg-orange-500/10 text-orange-700 dark:text-orange-400 px-3 py-2">
                   <Zap className="size-3.5" />
-                  {t("clef.speedup", { x: speedup.toFixed(1) })}
+                  {t("clef.speedup", { fast: fastest.name, slow: slowest.name, x: speedup.toFixed(1) })}
                 </div>
               )}
-              <div className={`grid gap-3 ${shownModels.length > 1 ? "md:grid-cols-2" : ""}`}>
+              <div className={`grid gap-3 ${shownModels.length === 2 ? "sm:grid-cols-2" : shownModels.length > 2 ? "sm:grid-cols-2 xl:grid-cols-3" : ""}`}>
                 {shownModels.map((m) => {
                   const r = results[m.id]!;
                   return (
@@ -777,8 +977,16 @@ export function ClefPlaygroundPage() {
                         <div className="flex gap-1.5 flex-wrap text-[11px]">
                           <span className="px-2 py-0.5 rounded-md bg-muted">{r.latencyMs} ms</span>
                           {r.usage && <span className="px-2 py-0.5 rounded-md bg-muted">{r.usage.input_tokens} tokens</span>}
+                          {r.usage && (
+                            <span className="px-2 py-0.5 rounded-md bg-muted" title={t("clef.costTooltip", { price: m.pricePerM })}>
+                              ≈ ${(r.usage.input_tokens * m.pricePerM).toFixed(2)} / 1M {t("clef.calls")}
+                            </span>
+                          )}
                           {r.via && <span className="px-2 py-0.5 rounded-md bg-muted">{r.via === "ai-gateway" ? "AI Gateway" : "REST"}</span>}
                         </div>
+                        {r.ignoredMedia && (
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400">{t("clef.ignoredMedia")}</p>
+                        )}
                       </CardHeader>
                       <CardContent className="space-y-4">
                         {r.error ? (
@@ -787,8 +995,8 @@ export function ClefPlaygroundPage() {
                           questions.map((q) => {
                             const a = r.answers?.[q.id];
                             if (!a) return null;
-                            const other = m.id === "clef" ? results["clef-flash"] : results.clef;
-                            const disagree = both && decisionOf(a) !== decisionOf(other?.answers?.[q.id]);
+                            const decisions = new Set(okModels.map((om) => decisionOf(results[om.id]?.answers?.[q.id])));
+                            const disagree = okModels.length > 1 && decisions.size > 1;
                             return (
                               <div key={q.uid} className="space-y-1.5">
                                 <div className="flex items-start gap-1.5">

@@ -388,14 +388,17 @@
   },
   "clef": {
     "title": "Clef Decision Model Playground",
-    "description": "Clef (27B) and Clef-flash (9B) are Cloudflare's own open-source decision models: instead of generating text they return a probability for every option of every question — ideal for triage, moderation, and scoring.",
+    "description": "Cloudflare's own open-weight decision model family: Clef (27B, now faster), Clef-flash (9B, now $0.038/M), and the new Clef-omni (30B MoE: text, image, audio, and video). Instead of generating text they return a probability for every option of every question — ideal for triage, moderation, and scoring.",
     "scenario": "Example scenarios",
     "presets": {
       "triage": "Ticket triage",
       "phishing": "Phishing detection",
       "moderation": "Content moderation",
       "judge": "LLM answer grading",
-      "vision": "Screenshot classification (Vision)"
+      "vision": "Screenshot classification (Vision)",
+      "omni": "Installation check (audio/video)",
+      "pii": "PII detection (DLP)",
+      "spam": "GitHub spam issue"
     },
     "text": "Text",
     "statePlaceholder": "Content to evaluate: text, JSON, chat logs…",
@@ -418,7 +421,7 @@
     "run": "Run",
     "running": "Clef is deciding…",
     "emptyState": "Pick a scenario or write your own questions, then click \"Run\" to compare both models",
-    "speedup": "Clef-flash is {{x}}× faster than Clef",
+    "speedup": "{{fast}} is fastest, {{x}}× faster than {{slow}}",
     "yes": "Yes",
     "no": "No",
     "confidence": "Confidence",
@@ -430,7 +433,23 @@
       "duplicateId": "Question ids must be unique",
       "imageType": "Only PNG, JPEG, and WebP images are supported",
       "imageSize": "Each image must be at most 4 MiB",
-      "imageCount": "At most {{max}} images"
-    }
+      "imageCount": "At most {{max}} images",
+      "audioType": "Choose an audio file (wav, mp3…)",
+      "videoType": "Choose a video file (mp4, webm)",
+      "audioCount": "At most {{max}} audio clips",
+      "videoCount": "At most {{max}} videos",
+      "audioSize": "Each audio clip must be at most {{mb}} MB",
+      "videoSize": "Each video must be at most {{mb}} MB",
+      "audioDuration": "Audio must be at most {{s}} seconds",
+      "videoDuration": "Video must be at most {{s}} seconds",
+      "mediaTotal": "Audio and video together must be at most 16 MB"
+    },
+    "addAudio": "Add audio",
+    "addVideo": "Add video",
+    "mediaHint": "Audio wav/mp3 up to 4 clips (8 MB, 300 s each); video mp4/webm up to 2 (16 MB, 60 s each), 16 MB total",
+    "contextWindow": "Context window",
+    "costTooltip": "Input tokens only (${{price}} per million); Clef does not bill output tokens",
+    "calls": "calls",
+    "ignoredMedia": "Audio/video are Clef-omni only — this model evaluated text and images only"
   }
 }
