@@ -388,17 +388,23 @@
   },
   "clef": {
     "title": "Clef 決策模型 Playground",
-    "description": "Cloudflare 自家訓練的開源決策模型家族：Clef（27B，更快）、Clef-flash（9B，降價至 $0.038/M）與新的 Clef-omni（30B MoE，支援文字、圖片、音訊與影片）。不產生文字，而是對每個問題的每個選項回傳機率，適合分流、審核、評分等結構化決策。",
+    "description": "Cloudflare 自家訓練的開源決策模型家族：Clef（27B，更快）、Clef-flash（9B，降價至 $0.038/M）與新的 Clef-omni（30B MoE，支援文字、圖片、音訊與影片）。不產生文字，而是對每個問題的每個選項回傳機率，適合分流、審核、評分等結構化決策。選一個台灣客戶情境，範例素材會自動載入，按「執行」即可看到結果。",
     "scenario": "範例情境",
     "presets": {
       "triage": "工單分流",
       "phishing": "釣魚郵件偵測",
       "moderation": "內容審核",
       "judge": "LLM 回覆評分",
-      "vision": "截圖分類（Vision）",
-      "omni": "設備驗收（音訊/影片）",
       "pii": "PII 偵測（DLP）",
-      "spam": "GitHub 垃圾 issue"
+      "spam": "GitHub 垃圾 issue",
+      "customerCall": "客服來電分流",
+      "scamCall": "假檢警詐騙電話",
+      "scamSms": "詐騙簡訊截圖",
+      "invoice": "電子發票報帳",
+      "rider": "街景：外送機車",
+      "stall": "夜市攤位巡檢",
+      "traffic": "路口機車流量",
+      "bus": "公車多語播報稽核"
     },
     "text": "文字",
     "statePlaceholder": "要評估的內容：文字、JSON、對話紀錄…",
@@ -442,7 +448,8 @@
       "videoSize": "單段影片上限 {{mb}} MB",
       "audioDuration": "音訊長度上限 {{s}} 秒",
       "videoDuration": "影片長度上限 {{s}} 秒",
-      "mediaTotal": "音訊與影片合計上限 16 MB"
+      "mediaTotal": "音訊與影片合計上限 16 MB",
+      "sampleLoad": "範例素材載入失敗，請重試"
     },
     "addAudio": "加入音訊",
     "addVideo": "加入影片",
@@ -450,6 +457,18 @@
     "contextWindow": "Context window",
     "costTooltip": "只計算輸入 token（${{price}} / 百萬 tokens），Clef 不收輸出 token 費用",
     "calls": "次呼叫",
-    "ignoredMedia": "音訊/影片僅支援 Clef-omni，此模型只評估文字與圖片"
+    "ignoredMedia": "音訊/影片僅支援 Clef-omni，此模型只評估文字與圖片",
+    "groups": {
+      "tw": "台灣客戶情境（音訊 / 圖片 / 影片，點一下自動載入範例）",
+      "text": "純文字情境"
+    },
+    "kinds": {
+      "image": "圖片",
+      "audio": "音訊",
+      "video": "影片"
+    },
+    "useCase": "誰會用、解決什麼問題",
+    "samples": "範例素材",
+    "samplesHint": "點一下加入或移除，可與自己上傳的檔案混用"
   }
 }

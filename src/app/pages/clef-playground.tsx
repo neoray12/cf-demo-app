@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Copy,
   Film,
+  Image as ImageIcon,
   ImagePlus,
   Loader2,
   Music,
@@ -25,13 +26,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { PRESETS, SAMPLES, type Preset, type QuestionType, type Sample } from "./clef-presets";
 
 // ── Types ──
 
-type QuestionType = "noul" | "choice" | "score";
 type ClefModel = "clef" | "clef-flash" | "clef-omni";
 
+interface ImageClip {
+  dataUrl: string;
+  sampleId?: string;
+}
+
 interface MediaClip {
+  sampleId?: string;
   dataUrl: string;
   name: string;
   size: number;
@@ -67,267 +74,6 @@ interface ModelResult {
   ignoredMedia?: string[];
   error?: string;
 }
-
-// ── Presets (bilingual, the state text is what the model evaluates) ──
-
-type L10n = { zh: string; en: string };
-interface PresetQuestion {
-  id: string;
-  type: QuestionType;
-  instructions: L10n;
-  options?: Array<{ key: string; desc: L10n }>;
-  levels?: L10n[];
-}
-interface Preset {
-  key: string;
-  json?: boolean;
-  vision?: boolean;
-  /** Needs audio/video — Clef-omni only */
-  omni?: boolean;
-  state: L10n;
-  questions: PresetQuestion[];
-}
-
-const PRESETS: Preset[] = [
-  {
-    key: "triage",
-    state: {
-      zh: "過去一小時所有客戶在結帳頁面都失敗，畫面顯示 502 錯誤。我們的黑色星期五活動今晚就要上線，請立刻處理！",
-      en: "Checkout has been failing for every customer for the last hour with a 502 error. Our Black Friday campaign goes live tonight, please fix this now!",
-    },
-    questions: [
-      { id: "urgent", type: "noul", instructions: { zh: "這個支援請求緊急嗎？", en: "Is this support request urgent?" } },
-      {
-        id: "team",
-        type: "choice",
-        instructions: { zh: "應該由哪個團隊處理？", en: "Which team should handle this request?" },
-        options: [
-          { key: "billing", desc: { zh: "付款、發票與退款", en: "Payments, invoices, and refunds" } },
-          { key: "technical", desc: { zh: "服務中斷、錯誤與設定", en: "Outages, errors, and configuration" } },
-          { key: "sales", desc: { zh: "方案與升級", en: "Plans and upgrades" } },
-        ],
-      },
-      {
-        id: "severity",
-        type: "score",
-        instructions: { zh: "對客戶的影響有多嚴重？", en: "How severe is the customer impact?" },
-        levels: [
-          { zh: "無影響", en: "No impact" },
-          { zh: "輕微", en: "Minor" },
-          { zh: "嚴重", en: "Major" },
-          { zh: "重大", en: "Critical" },
-        ],
-      },
-    ],
-  },
-  {
-    key: "phishing",
-    state: {
-      zh: "寄件者：security@paypa1-support.com\n主旨：【緊急】您的帳戶已被暫停\n\n親愛的用戶，我們偵測到異常登入，您的帳戶將在 24 小時內永久停用。請立即點擊以下連結驗證身分並輸入信用卡資料：http://paypa1-verify.xyz/login",
-      en: "From: security@paypa1-support.com\nSubject: [URGENT] Your account has been suspended\n\nDear user, we detected unusual sign-in activity and your account will be permanently disabled within 24 hours. Click the link below immediately to verify your identity and enter your credit card details: http://paypa1-verify.xyz/login",
-    },
-    questions: [
-      { id: "phishing", type: "noul", instructions: { zh: "這封郵件是釣魚郵件嗎？", en: "Is this email a phishing attempt?" } },
-      {
-        id: "tactic",
-        type: "choice",
-        instructions: { zh: "主要使用的社交工程手法是什麼？", en: "What is the primary social-engineering tactic?" },
-        options: [
-          { key: "urgency", desc: { zh: "製造急迫感", en: "Creating urgency" } },
-          { key: "impersonation", desc: { zh: "冒充品牌或機構", en: "Brand or authority impersonation" } },
-          { key: "reward", desc: { zh: "利誘獎賞", en: "Promise of a reward" } },
-          { key: "none", desc: { zh: "無明顯手法", en: "No clear tactic" } },
-        ],
-      },
-      {
-        id: "action",
-        type: "choice",
-        instructions: { zh: "郵件閘道應採取什麼動作？", en: "What should the email gateway do?" },
-        options: [
-          { key: "deliver", desc: { zh: "正常投遞", en: "Deliver normally" } },
-          { key: "warn", desc: { zh: "加上警告標籤後投遞", en: "Deliver with a warning banner" } },
-          { key: "quarantine", desc: { zh: "隔離", en: "Quarantine" } },
-        ],
-      },
-    ],
-  },
-  {
-    key: "moderation",
-    state: {
-      zh: "這家餐廳的服務生態度超爛，我等了一小時才上菜。老闆你最好小心點，下次再這樣我就讓你好看。",
-      en: "The waiter at this restaurant was terrible and I waited an hour for my food. Owner, you'd better watch out — if this happens again I'll make you regret it.",
-    },
-    questions: [
-      { id: "toxic", type: "noul", instructions: { zh: "這則留言含有不當或有害內容嗎？", en: "Does this comment contain toxic or harmful content?" } },
-      {
-        id: "category",
-        type: "choice",
-        instructions: { zh: "最符合的內容類別是？", en: "Which content category fits best?" },
-        options: [
-          { key: "complaint", desc: { zh: "一般抱怨", en: "Ordinary complaint" } },
-          { key: "harassment", desc: { zh: "騷擾或人身攻擊", en: "Harassment or personal attack" } },
-          { key: "threat", desc: { zh: "威脅", en: "Threat" } },
-          { key: "hate", desc: { zh: "仇恨言論", en: "Hate speech" } },
-        ],
-      },
-      {
-        id: "action",
-        type: "choice",
-        instructions: { zh: "平台應如何處理？", en: "How should the platform handle it?" },
-        options: [
-          { key: "publish", desc: { zh: "直接發布", en: "Publish" } },
-          { key: "review", desc: { zh: "送人工審核", en: "Send to human review" } },
-          { key: "remove", desc: { zh: "移除", en: "Remove" } },
-        ],
-      },
-    ],
-  },
-  {
-    key: "judge",
-    json: true,
-    state: {
-      zh: JSON.stringify(
-        {
-          question: "Cloudflare Workers 的 CPU 時間上限是多少？",
-          answer: "Workers 付費方案預設每個請求 30 秒 CPU 時間，可設定到最多 5 分鐘；免費方案為 10 毫秒。",
-        },
-        null,
-        2
-      ),
-      en: JSON.stringify(
-        {
-          question: "What is the CPU time limit for Cloudflare Workers?",
-          answer: "On the Workers Paid plan the default is 30 seconds of CPU time per request, configurable up to 5 minutes; the Free plan allows 10 ms.",
-        },
-        null,
-        2
-      ),
-    },
-    questions: [
-      {
-        id: "correctness",
-        type: "score",
-        instructions: { zh: "回答的正確性", en: "How correct is the answer?" },
-        levels: [
-          { zh: "錯誤", en: "Wrong" },
-          { zh: "部分正確", en: "Partially correct" },
-          { zh: "大致正確", en: "Mostly correct" },
-          { zh: "完全正確", en: "Fully correct" },
-        ],
-      },
-      {
-        id: "completeness",
-        type: "score",
-        instructions: { zh: "回答的完整度", en: "How complete is the answer?" },
-        levels: [
-          { zh: "不完整", en: "Incomplete" },
-          { zh: "普通", en: "Adequate" },
-          { zh: "完整", en: "Complete" },
-        ],
-      },
-      { id: "hallucination", type: "noul", instructions: { zh: "回答中是否有捏造的內容？", en: "Does the answer contain fabricated information?" } },
-    ],
-  },
-  {
-    key: "vision",
-    vision: true,
-    state: {
-      zh: "請根據附上的網頁截圖判斷。",
-      en: "Judge based on the attached web page screenshot.",
-    },
-    questions: [
-      {
-        id: "page_type",
-        type: "choice",
-        instructions: { zh: "這是哪一種網頁？", en: "What kind of page is this?" },
-        options: [
-          { key: "landing", desc: { zh: "產品/行銷首頁", en: "Product or marketing landing page" } },
-          { key: "login", desc: { zh: "登入頁", en: "Login page" } },
-          { key: "docs", desc: { zh: "技術文件", en: "Documentation" } },
-          { key: "error", desc: { zh: "錯誤頁", en: "Error page" } },
-          { key: "dashboard", desc: { zh: "後台儀表板", en: "Dashboard" } },
-        ],
-      },
-      { id: "has_form", type: "noul", instructions: { zh: "頁面上是否有可輸入的表單？", en: "Does the page contain an input form?" } },
-      {
-        id: "design",
-        type: "score",
-        instructions: { zh: "視覺設計品質", en: "Visual design quality" },
-        levels: [
-          { zh: "差", en: "Poor" },
-          { zh: "普通", en: "Average" },
-          { zh: "良好", en: "Good" },
-          { zh: "優秀", en: "Excellent" },
-        ],
-      },
-    ],
-  },
-  {
-    key: "omni",
-    omni: true,
-    state: {
-      zh: "檢查冷氣安裝狀況：附上機器的照片、運轉時的錄音，以及風扇的影片。",
-      en: "Review the installation: a photo of the unit, an audio recording of it running, and a video of the fan.",
-    },
-    questions: [
-      { id: "label_visible", type: "noul", instructions: { zh: "照片中看得到型號與序號標籤嗎？", en: "Is the model and serial number label visible in the photo?" } },
-      { id: "sounds_normal", type: "noul", instructions: { zh: "機器運轉聲音順暢、沒有異音或摩擦聲嗎？", en: "Does the unit sound like it is running smoothly, without rattling or grinding?" } },
-      { id: "fan_running", type: "noul", instructions: { zh: "影片中的風扇有在轉動嗎？", en: "Is the fan running in the video?" } },
-      {
-        id: "next_step",
-        type: "choice",
-        instructions: { zh: "下一步應該怎麼處理？", en: "What should happen next?" },
-        options: [
-          { key: "approve", desc: { zh: "驗收通過", en: "Approve the installation" } },
-          { key: "retake", desc: { zh: "請技師重新拍攝/錄製", en: "Ask the technician to re-capture media" } },
-          { key: "dispatch", desc: { zh: "派員到場檢修", en: "Dispatch a repair visit" } },
-        ],
-      },
-    ],
-  },
-  {
-    key: "pii",
-    state: {
-      zh: "客戶回信：您好，我的退款一直沒收到。我的身分證字號是 A123456789，信用卡末四碼 4242，手機 0912-345-678，麻煩盡快處理。",
-      en: "Customer reply: Hi, I still haven't received my refund. My SSN is 123-45-6789, card ending 4242, phone +1 415-555-0134. Please hurry.",
-    },
-    questions: [
-      { id: "contains_pii", type: "noul", instructions: { zh: "這段文字是否包含個人可識別資訊（PII）？", en: "Does this text contain personally identifiable information (PII)?" } },
-      { id: "government_id", type: "noul", instructions: { zh: "是否包含政府核發的身分證號碼？", en: "Does it contain a government-issued ID number?" } },
-      {
-        id: "dlp_action",
-        type: "choice",
-        instructions: { zh: "DLP 政策應採取什麼動作？", en: "What should the DLP policy do?" },
-        options: [
-          { key: "allow", desc: { zh: "放行", en: "Allow" } },
-          { key: "redact", desc: { zh: "遮蔽敏感欄位後放行", en: "Redact sensitive fields, then allow" } },
-          { key: "block", desc: { zh: "阻擋", en: "Block" } },
-        ],
-      },
-    ],
-  },
-  {
-    key: "spam",
-    json: true,
-    state: {
-      zh: JSON.stringify({ title: "🔥 免費取得 10,000 USDT！限時領取", body: "點擊 https://free-crypto-airdrop.example 連結錢包即可領取，名額只剩 50 個！", author_account_age_days: 1 }, null, 2),
-      en: JSON.stringify({ title: "🔥 Claim 10,000 free USDT! Limited time", body: "Connect your wallet at https://free-crypto-airdrop.example to claim — only 50 spots left!", author_account_age_days: 1 }, null, 2),
-    },
-    questions: [
-      { id: "spam", type: "noul", instructions: { zh: "這個 GitHub issue 是垃圾訊息嗎？", en: "Is this GitHub issue spam?" } },
-      {
-        id: "action",
-        type: "choice",
-        instructions: { zh: "機器人應如何處理這個 issue？", en: "How should the bot handle this issue?" },
-        options: [
-          { key: "keep", desc: { zh: "保留並分類", en: "Keep and triage" } },
-          { key: "label", desc: { zh: "標記為待確認", en: "Label for review" } },
-          { key: "close", desc: { zh: "直接關閉並鎖定", en: "Close and lock" } },
-        ],
-      },
-    ],
-  },
-];
 
 // Hosted pricing / context windows (Workers AI docs, 2026-10-09). Clef models
 // bill input tokens only — no output tokens, since they don't generate text.
@@ -500,7 +246,7 @@ export function ClefPlaygroundPage() {
   const [state, setState] = useState(initial.state);
   const [stateIsJson, setStateIsJson] = useState(false);
   const [questions, setQuestions] = useState<DraftQuestion[]>(initial.questions);
-  const [images, setImages] = useState<string[]>([]);
+  const [images, setImages] = useState<ImageClip[]>([]);
   const [audio, setAudio] = useState<MediaClip[]>([]);
   const [videos, setVideos] = useState<MediaClip[]>([]);
   const [selectedModels, setSelectedModels] = useState<ClefModel[]>(["clef", "clef-flash", "clef-omni"]);
@@ -513,16 +259,45 @@ export function ClefPlaygroundPage() {
   const audioRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
   const hasMedia = audio.length > 0 || videos.length > 0;
+  const loadToken = useRef(0);
 
   const jsonError = useMemo(() => {
     if (!stateIsJson) return null;
     try { JSON.parse(state); return null; } catch (e) { return (e as Error).message; }
   }, [state, stateIsJson]);
 
+  const sampleName = (sm: Sample) => sm.name[lang];
+
+  // Fetch bundled sample files and turn them into data URLs. Samples are
+  // trusted (small, ours), so they skip the per-file validation uploads get.
+  const fetchSample = useCallback(async (sm: Sample) => {
+    const blob = await (await fetch(sm.url)).blob();
+    const file = new File([blob], sm.url.split("/").pop()!, { type: sm.mime });
+    return { sm, file, dataUrl: await readDataUrl(file) };
+  }, []);
+
+  const clipOf = (r: { sm: Sample; file: File; dataUrl: string }): MediaClip => ({
+    sampleId: r.sm.id,
+    dataUrl: r.dataUrl,
+    name: r.file.name,
+    size: r.file.size,
+    duration: r.sm.duration ?? NaN,
+  });
+
+  const attachPresetSamples = useCallback(async (p: Preset) => {
+    const token = ++loadToken.current;
+    const loaded = await Promise.all((p.samples ?? []).map((id) => fetchSample(SAMPLES.find((x) => x.id === id)!)));
+    if (token !== loadToken.current) return; // a newer preset was picked meanwhile
+    setImages(loaded.filter((r) => r.sm.kind === "image").map((r) => ({ dataUrl: r.dataUrl, sampleId: r.sm.id })));
+    setAudio(loaded.filter((r) => r.sm.kind === "audio").map(clipOf));
+    setVideos(loaded.filter((r) => r.sm.kind === "video").map(clipOf));
+  }, [fetchSample]);
+
   const loadPreset = (key: string) => {
     const p = PRESETS.find((x) => x.key === key);
     if (!p) return;
     const d = presetToDraft(p, lang);
+    const needsOmni = (p.samples ?? []).some((id) => SAMPLES.find((x) => x.id === id)?.kind !== "image");
     setPresetKey(key);
     setState(d.state);
     setStateIsJson(Boolean(p.json));
@@ -530,21 +305,57 @@ export function ClefPlaygroundPage() {
     setImages([]);
     setAudio([]);
     setVideos([]);
-    if (p.omni) setSelectedModels((prev) => (prev.includes("clef-omni") ? prev : [...prev, "clef-omni"]));
+    // Audio/video are Clef-omni only — comparing it against models that can't
+    // hear the clip would just be noise, so those scenarios run Clef-omni alone.
+    setSelectedModels(needsOmni ? ["clef-omni"] : ["clef", "clef-flash", "clef-omni"]);
     setResults(null);
     setError(null);
+    void attachPresetSamples(p).catch(() => setError(t("clef.errors.sampleLoad")));
   };
+
+  // Toggle a single sample from the library on/off
+  const toggleSample = async (sm: Sample) => {
+    setError(null);
+    const attached =
+      sm.kind === "image" ? images.some((c) => c.sampleId === sm.id)
+      : sm.kind === "audio" ? audio.some((c) => c.sampleId === sm.id)
+      : videos.some((c) => c.sampleId === sm.id);
+    if (attached) {
+      if (sm.kind === "image") setImages((prev) => prev.filter((c) => c.sampleId !== sm.id));
+      else (sm.kind === "audio" ? setAudio : setVideos)((prev) => prev.filter((c) => c.sampleId !== sm.id));
+      return;
+    }
+    const limit = sm.kind === "image" ? MAX_IMAGES : sm.kind === "audio" ? MAX_AUDIO : MAX_VIDEOS;
+    const count = sm.kind === "image" ? images.length : sm.kind === "audio" ? audio.length : videos.length;
+    if (count >= limit) { setError(t(`clef.errors.${sm.kind}Count`, { max: limit })); return; }
+    try {
+      const r = await fetchSample(sm);
+      if (sm.kind === "image") setImages((prev) => [...prev, { dataUrl: r.dataUrl, sampleId: sm.id }]);
+      else {
+        (sm.kind === "audio" ? setAudio : setVideos)((prev) => [...prev, clipOf(r)]);
+        setSelectedModels((prev) => (prev.includes("clef-omni") ? prev : [...prev, "clef-omni"]));
+      }
+    } catch {
+      setError(t("clef.errors.sampleLoad"));
+    }
+  };
+
+  // First scenario ships with its sample already attached
+  useEffect(() => {
+    void attachPresetSamples(PRESETS[0]!).catch(() => {});
+    setSelectedModels(["clef-omni"]);
+  }, [attachPresetSamples]);
 
   const updateQuestion = (u: string, patch: Partial<DraftQuestion>) =>
     setQuestions((qs) => qs.map((q) => (q.uid === u ? { ...q, ...patch } : q)));
 
   const addImages = useCallback(async (files: File[]) => {
     setError(null);
-    const accepted: string[] = [];
+    const accepted: ImageClip[] = [];
     for (const f of files) {
       if (!ALLOWED_IMAGE_TYPES.includes(f.type)) { setError(t("clef.errors.imageType")); continue; }
       if (f.size > MAX_IMAGE_BYTES) { setError(t("clef.errors.imageSize")); continue; }
-      accepted.push(await readDataUrl(f));
+      accepted.push({ dataUrl: await readDataUrl(f) });
     }
     setImages((prev) => {
       const next = [...prev, ...accepted];
@@ -586,7 +397,7 @@ export function ClefPlaygroundPage() {
   const buildRequest = () => ({
     state: stateIsJson ? JSON.parse(state) : state,
     questions: toApiQuestions(questions),
-    ...(images.length ? { images } : {}),
+    ...(images.length ? { images: images.map((c) => c.dataUrl) } : {}),
     ...(audio.length ? { audio: audio.map((c) => c.dataUrl) } : {}),
     ...(videos.length ? { videos: videos.map((c) => c.dataUrl) } : {}),
   });
@@ -656,18 +467,37 @@ export function ClefPlaygroundPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">{t("clef.scenario")}</CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-wrap gap-1.5">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.key}
-                  onClick={() => loadPreset(p.key)}
-                  className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
-                    presetKey === p.key ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"
-                  }`}
-                >
-                  {t(`clef.presets.${p.key}`)}
-                </button>
+            <CardContent className="space-y-3">
+              {(["tw", "text"] as const).map((group) => (
+                <div key={group} className="space-y-1.5">
+                  <div className="text-[11px] font-medium text-muted-foreground">{t(`clef.groups.${group}`)}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PRESETS.filter((p) => p.group === group).map((p) => {
+                      const kinds = new Set((p.samples ?? []).map((id) => SAMPLES.find((x) => x.id === id)?.kind));
+                      return (
+                        <button
+                          key={p.key}
+                          onClick={() => loadPreset(p.key)}
+                          className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
+                            presetKey === p.key ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"
+                          }`}
+                        >
+                          {kinds.has("audio") && <Music className="size-3" />}
+                          {kinds.has("video") && <Film className="size-3" />}
+                          {kinds.has("image") && <ImageIcon className="size-3" />}
+                          {t(`clef.presets.${p.key}`)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               ))}
+              {preset?.useCase && (
+                <div className="rounded-lg border-l-4 border-orange-400 bg-orange-500/5 px-3 py-2 text-xs leading-relaxed">
+                  <div className="font-medium text-orange-700 dark:text-orange-400 mb-0.5">{t("clef.useCase")}</div>
+                  {preset.useCase[lang]}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -696,9 +526,9 @@ export function ClefPlaygroundPage() {
               />
               {jsonError && <p className="text-xs text-destructive">{t("clef.errors.invalidJson")}: {jsonError}</p>}
               <div className="flex items-center gap-2 flex-wrap">
-                {images.map((src, i) => (
+                {images.map((c, i) => (
                   <div key={i} className="relative">
-                    <img src={src} alt="" className="size-16 object-cover rounded-md border" />
+                    <img src={c.dataUrl} alt="" className="size-16 object-cover rounded-md border" />
                     <button
                       onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
                       className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-foreground text-background flex items-center justify-center"
@@ -710,7 +540,7 @@ export function ClefPlaygroundPage() {
                 {images.length < MAX_IMAGES && (
                   <button
                     onClick={() => fileRef.current?.click()}
-                    className={`size-16 rounded-md border border-dashed flex flex-col items-center justify-center text-[10px] text-muted-foreground hover:bg-muted ${preset?.vision && !images.length ? "border-orange-400 text-orange-600" : ""}`}
+                    className={`size-16 rounded-md border border-dashed flex flex-col items-center justify-center text-[10px] text-muted-foreground hover:bg-muted`}
                   >
                     <ImagePlus className="size-4 mb-0.5" />
                     {t("clef.addImage")}
@@ -726,7 +556,7 @@ export function ClefPlaygroundPage() {
                 />
                 <span className="text-[11px] text-muted-foreground">{t("clef.imageHint", { max: MAX_IMAGES })}</span>
               </div>
-              <div className={`rounded-lg border border-dashed p-2.5 space-y-2 ${preset?.omni && !hasMedia ? "border-orange-400" : ""}`}>
+              <div className={`rounded-lg border border-dashed p-2.5 space-y-2 `}>
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="secondary" className="text-[10px]">Clef-omni</Badge>
                   <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => audioRef.current?.click()} disabled={audio.length >= MAX_AUDIO}>
@@ -770,6 +600,40 @@ export function ClefPlaygroundPage() {
                     ))}
                   </div>
                 )}
+              </div>
+              <div className="rounded-lg bg-muted/40 p-2.5 space-y-2">
+                <div className="text-xs font-medium">{t("clef.samples")} <span className="font-normal text-muted-foreground">· {t("clef.samplesHint")}</span></div>
+                {(["image", "audio", "video"] as const).map((kind) => (
+                  <div key={kind} className="flex items-center gap-1.5 flex-wrap">
+                    <span className="w-14 shrink-0 text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                      {kind === "image" ? <ImageIcon className="size-3" /> : kind === "audio" ? <Music className="size-3" /> : <Film className="size-3" />}
+                      {t(`clef.kinds.${kind}`)}
+                    </span>
+                    {SAMPLES.filter((sm) => sm.kind === kind).map((sm) => {
+                      const on = [...images, ...audio, ...videos].some((c) => c.sampleId === sm.id);
+                      return (
+                        <button
+                          key={sm.id}
+                          onClick={() => void toggleSample(sm)}
+                          title={sm.source[lang]}
+                          className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border transition-colors ${on ? "bg-orange-500/10 border-orange-400 text-orange-700 dark:text-orange-400" : "bg-background hover:bg-muted"}`}
+                        >
+                          {on ? <Check className="size-3" /> : <Plus className="size-3" />}
+                          {sampleName(sm)}
+                          {sm.duration ? <span className="text-muted-foreground">{Math.round(sm.duration)}s</span> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+                {(() => {
+                  const used = SAMPLES.filter((sm) => [...images, ...audio, ...videos].some((c) => c.sampleId === sm.id));
+                  return used.length ? (
+                    <ul className="text-[10px] text-muted-foreground space-y-0.5">
+                      {used.map((sm) => <li key={sm.id}>{sampleName(sm)}：{sm.source[lang]}</li>)}
+                    </ul>
+                  ) : null;
+                })()}
               </div>
             </CardContent>
           </Card>

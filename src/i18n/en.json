@@ -388,17 +388,23 @@
   },
   "clef": {
     "title": "Clef Decision Model Playground",
-    "description": "Cloudflare's own open-weight decision model family: Clef (27B, now faster), Clef-flash (9B, now $0.038/M), and the new Clef-omni (30B MoE: text, image, audio, and video). Instead of generating text they return a probability for every option of every question — ideal for triage, moderation, and scoring.",
+    "description": "Cloudflare's own open-weight decision model family: Clef (27B, now faster), Clef-flash (9B, now $0.038/M), and the new Clef-omni (30B MoE: text, image, audio, and video). Instead of generating text they return a probability for every option of every question — ideal for triage, moderation, and scoring. Pick a Taiwan customer scenario, the sample media loads automatically, then press Run.",
     "scenario": "Example scenarios",
     "presets": {
       "triage": "Ticket triage",
       "phishing": "Phishing detection",
       "moderation": "Content moderation",
       "judge": "LLM answer grading",
-      "vision": "Screenshot classification (Vision)",
-      "omni": "Installation check (audio/video)",
       "pii": "PII detection (DLP)",
-      "spam": "GitHub spam issue"
+      "spam": "GitHub spam issue",
+      "customerCall": "Support call triage",
+      "scamCall": "Fake-prosecutor scam call",
+      "scamSms": "Scam SMS screenshot",
+      "invoice": "E-invoice expense check",
+      "rider": "Street photo: delivery scooter",
+      "stall": "Night market stall check",
+      "traffic": "Intersection scooter traffic",
+      "bus": "Bus multilingual announcement audit"
     },
     "text": "Text",
     "statePlaceholder": "Content to evaluate: text, JSON, chat logs…",
@@ -442,7 +448,8 @@
       "videoSize": "Each video must be at most {{mb}} MB",
       "audioDuration": "Audio must be at most {{s}} seconds",
       "videoDuration": "Video must be at most {{s}} seconds",
-      "mediaTotal": "Audio and video together must be at most 16 MB"
+      "mediaTotal": "Audio and video together must be at most 16 MB",
+      "sampleLoad": "Could not load the sample, please retry"
     },
     "addAudio": "Add audio",
     "addVideo": "Add video",
@@ -450,6 +457,18 @@
     "contextWindow": "Context window",
     "costTooltip": "Input tokens only (${{price}} per million); Clef does not bill output tokens",
     "calls": "calls",
-    "ignoredMedia": "Audio/video are Clef-omni only — this model evaluated text and images only"
+    "ignoredMedia": "Audio/video are Clef-omni only — this model evaluated text and images only",
+    "groups": {
+      "tw": "Taiwan customer scenarios (audio / image / video — sample loads automatically)",
+      "text": "Text-only scenarios"
+    },
+    "kinds": {
+      "image": "Images",
+      "audio": "Audio",
+      "video": "Video"
+    },
+    "useCase": "Who uses it and what it solves",
+    "samples": "Sample media",
+    "samplesHint": "Click to add or remove; mix with your own uploads"
   }
 }

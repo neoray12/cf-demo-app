@@ -85,7 +85,7 @@ function validate(body: Record<string, unknown>): string | null {
   return null;
 }
 
-async function runClef(env: Record<string, unknown>, model: ClefModel, payload: Record<string, unknown>) {
+async function runClef(env: Record<string, unknown>, model: ClefModel, payload: Record<string, unknown>, skipGateway = false) {
   const accountId = (env.CF_ACCOUNT_ID as string) || '5efa272dc28e4e3933324c44165b6dbe';
   const gatewayId = (env.AI_GATEWAY_ID as string) || 'nkcf-gateway-01';
   const body = JSON.stringify({ ...payload, model });
@@ -95,9 +95,12 @@ async function runClef(env: Record<string, unknown>, model: ClefModel, payload: 
   };
   const started = Date.now();
 
-  // Prefer AI Gateway so the call shows up in gateway logs/analytics
+  // Prefer AI Gateway so the call shows up in gateway logs/analytics — except
+  // for media requests: the gateway adds 20-35 s to large base64 bodies while
+  // Workers AI answers in well under a second, which would make the latency
+  // comparison meaningless.
   let via: 'ai-gateway' | 'rest' = 'ai-gateway';
-  let res = await fetch(`https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/workers-ai/@cf/cloudflare/${model}`, {
+  let res = skipGateway ? null : await fetch(`https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/workers-ai/@cf/cloudflare/${model}`, {
     method: 'POST',
     headers: {
       ...headers,
@@ -153,11 +156,12 @@ export async function POST(request: NextRequest) {
   // Audio/video are Clef-omni extensions — Clef and Clef-flash would reject them
   const omniMedia = { ...(audio?.length ? { audio } : {}), ...(videos?.length ? { videos } : {}) };
   const ignoredMedia = Object.keys(omniMedia);
+  const hasMedia = Boolean(images?.length || audio?.length || videos?.length);
 
   const entries = await Promise.all(
     [...new Set(models)].map(async (m) => {
-      if (m === 'clef-omni') return [m, await runClef(env as any, m, { ...payload, ...omniMedia })] as const;
-      const result = await runClef(env as any, m, payload);
+      if (m === 'clef-omni') return [m, await runClef(env as any, m, { ...payload, ...omniMedia }, hasMedia)] as const;
+      const result = await runClef(env as any, m, payload, hasMedia);
       return [m, ignoredMedia.length ? { ...result, ignoredMedia } : result] as const;
     })
   );
