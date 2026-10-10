@@ -20,6 +20,10 @@ zone_name = "neokung.work"
 pattern = "*.chat-sandbox.neokung.work/*"
 zone_name = "neokung.work"
 
+# Idle reaper (see reapIdleSandboxes in src/index.ts)
+[triggers]
+crons = ["*/5 * * * *"]
+
 [observability]
 enabled = true
 
@@ -32,7 +36,9 @@ enabled = true
 class_name = "Sandbox"
 image = "./Dockerfile"
 instance_type = "lite"
-max_instances = 5
+# Was 5 — five long-lived sessions (or zombies) were enough to block every new
+# session. A "lite" instance is 1/16 vCPU / 256 MiB, so headroom is cheap.
+max_instances = 10
 
   [containers.constraints]
   regions = [ "APAC" ]

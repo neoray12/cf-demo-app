@@ -38,9 +38,16 @@ interface ChatMessage {
   images?: string[];
   reasoning?: string;
   toolCalls?: ToolCallInfo[];
+  /** Reasoning / text / tool calls in the order they actually happened. */
+  parts?: MessagePart[];
   /** Auto Router: the model AI Gateway actually routed this turn to. */
   routedModel?: { model: string; reason: string | null };
 }
+
+type MessagePart =
+  | { type: "reasoning"; text: string }
+  | { type: "text"; text: string }
+  | { type: "tool"; id: string };
 
 interface PendingImage {
   id: string;
@@ -157,6 +164,19 @@ function genId() { return `msg-${Date.now()}-${++msgCounter}`; }
 
 // ── Helper components ──
 
+// Seconds since `active` became true — tells the user a long step is still
+// working (cold-starting sandbox, slow reasoning model) rather than hung.
+function useElapsedSeconds(active: boolean): number {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    if (!active) { setSecs(0); return; }
+    const started = Date.now();
+    const id = setInterval(() => setSecs(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return secs;
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
@@ -272,6 +292,7 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
     : [result.stdout, ...textResults].filter(Boolean).join("\n").trim();
   const errorText = [result.error, result.stderr].filter(Boolean).join("\n").trim();
   const language = result.language ?? (isDynamicWorker || isCodeMode ? "javascript" : "python");
+  const elapsed = useElapsedSeconds(isCalling);
   const buttonLabel = isCodeMode
     ? t("chat.tool.codemode")
     : isDynamicWorker
@@ -289,7 +310,7 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
         }`}
       >
         {isCodeMode ? <Braces className="size-3 shrink-0" /> : isDynamicWorker ? <Zap className="size-3 shrink-0" /> : <Terminal className="size-3 shrink-0" />}
-        <span>{isCalling ? t("chat.tool.runningCode") : buttonLabel}</span>
+        <span>{isCalling ? `${t("chat.tool.runningCode")}${elapsed >= 3 ? ` ${elapsed}s` : ""}` : buttonLabel}</span>
         {isCalling ? (
           <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
         ) : (
@@ -381,13 +402,14 @@ function WebPreviewDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const [showInline, setShowInline] = useState(false);
   const isCalling = toolCall.status === "calling";
   const result = (toolCall.result ?? {}) as WebPreviewResult;
+  const elapsed = useElapsedSeconds(isCalling);
 
   if (isCalling) {
     return (
       <div className="my-2">
         <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
           <Globe className="size-3 shrink-0" />
-          <span>{t("chat.tool.creatingPreview")}</span>
+          <span>{t("chat.tool.creatingPreview")}{elapsed >= 3 ? ` ${elapsed}s` : ""}</span>
           <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
         </span>
       </div>
@@ -824,10 +846,24 @@ function AssistantMessage({
   isLoading: boolean;
   onRetry: () => void;
 }) {
+  const { t } = useTranslation();
   const deferredContent = useDeferredValue(message.content);
+  const deferredParts = useDeferredValue(message.parts);
   const renderedContent = isStreaming ? deferredContent : message.content;
+  const parts = (isStreaming ? deferredParts : message.parts) ?? [];
   const isError = renderedContent.startsWith("❌");
-  const showLoading = isStreaming && !message.content;
+  const toolById = new Map((message.toolCalls ?? []).map((tc) => [tc.id, tc]));
+  const hasTextPart = parts.some((p) => p.type === "text" && p.text);
+  // Parts are the source of truth while they exist; plain content is the
+  // fallback for messages that never got parts (e.g. "stopped" notices).
+  const showContentFallback = Boolean(renderedContent) && !hasTextPart;
+  const last = parts[parts.length - 1];
+  // Streaming but nothing is visibly in progress (no text arriving, no running
+  // tool) — either waiting for the first token or for the model to write its
+  // answer after a tool finished. Show that explicitly instead of a dead UI.
+  const awaitingModel =
+    isStreaming && (!last || (last.type === "tool" && toolById.get(last.id)?.status === "done") || last.type === "reasoning");
+  const waitingSecs = useElapsedSeconds(awaitingModel);
 
   return (
     <div className="max-w-full">
@@ -842,16 +878,30 @@ function AssistantMessage({
           </span>
         </div>
       )}
-      {/* Reasoning */}
-      {message.reasoning && <ReasoningDisplay text={message.reasoning} />}
 
-      {/* Tool calls */}
-      {message.toolCalls?.map((tc) => (
-        <ToolCallDisplay key={tc.id} toolCall={tc} />
-      ))}
+      {parts.length === 0 && (
+        <>
+          {message.reasoning && <ReasoningDisplay text={message.reasoning} />}
+          {message.toolCalls?.map((tc) => <ToolCallDisplay key={tc.id} toolCall={tc} />)}
+        </>
+      )}
 
-      {/* Content with Markdown */}
-      {renderedContent ? (
+      {parts.map((part, i) => {
+        if (part.type === "reasoning") return part.text ? <ReasoningDisplay key={`r${i}`} text={part.text} /> : null;
+        if (part.type === "tool") {
+          const tc = toolById.get(part.id);
+          return tc ? <ToolCallDisplay key={`t${part.id}`} toolCall={tc} /> : null;
+        }
+        if (!part.text) return null;
+        const isLastPart = i === parts.length - 1;
+        return (
+          <div key={`x${i}`} className="group/msg relative">
+            <MarkdownRenderer content={part.text} isStreaming={isStreaming && isLastPart} />
+          </div>
+        );
+      })}
+
+      {showContentFallback && (
         <div className="group/msg relative">
           {isError ? (
             <div className="flex items-center gap-2 text-sm text-destructive">
@@ -867,23 +917,25 @@ function AssistantMessage({
               )}
             </div>
           ) : (
-            <>
-              <MarkdownRenderer content={renderedContent} isStreaming={isStreaming} />
-              {!isStreaming && (
-                <div className="mt-1 opacity-60 md:opacity-0 md:group-hover/msg:opacity-100 transition-opacity">
-                  <MessageActions text={message.content} onRetry={onRetry} showRetry={isLastAssistant && !isLoading} />
-                </div>
-              )}
-            </>
+            <MarkdownRenderer content={renderedContent} isStreaming={isStreaming} />
           )}
         </div>
-      ) : showLoading ? (
+      )}
+
+      {awaitingModel && (
         <div className="flex items-center gap-1.5 py-1">
           <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
           <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
           <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+          {waitingSecs >= 4 && <span className="text-xs text-muted-foreground ml-1">{t("chat.thinking", { s: waitingSecs })}</span>}
         </div>
-      ) : null}
+      )}
+
+      {!isStreaming && message.content && !isError && (
+        <div className="mt-1 opacity-60 md:opacity-0 md:hover:opacity-100 transition-opacity">
+          <MessageActions text={message.content} onRetry={onRetry} showRetry={isLastAssistant && !isLoading} />
+        </div>
+      )}
 
       {/* Sources from tool calls */}
       {message.toolCalls && message.toolCalls.length > 0 && (
@@ -1235,7 +1287,21 @@ export function ChatPage() {
       let accText = "";
       let accReasoning = "";
       let toolCalls: ToolCallInfo[] = [];
+      let parts: MessagePart[] = [];
       let routedModel: ChatMessage["routedModel"];
+      // Append to the trailing part of the same kind, otherwise start a new one —
+      // this is what keeps "text → tool → text" in the order it happened.
+      // Some providers emit tool-call without a preceding tool-call-start
+      const ensureTool = (id: string, name: string) => {
+        if (toolCalls.some((tc) => tc.id === id)) return;
+        toolCalls = [...toolCalls, { id, name, status: "calling" }];
+        parts = [...parts, { type: "tool", id }];
+      };
+      const appendPart = (type: "text" | "reasoning", text: string) => {
+        const last = parts[parts.length - 1];
+        if (last && last.type === type) parts = [...parts.slice(0, -1), { type, text: last.text + text }];
+        else parts = [...parts, { type, text }];
+      };
 
       // 50ms batched flush
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1244,8 +1310,9 @@ export function ChatPage() {
         const t = accText;
         const r = accReasoning;
         const tc = [...toolCalls];
+        const pt = parts;
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc, routedModel } : m)
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc, parts: pt, routedModel } : m)
         );
       };
       const scheduleFlush = () => {
@@ -1271,19 +1338,23 @@ export function ChatPage() {
                   if (!debugFirstToken) debugFirstToken = Date.now() - debugStart;
                   gotTextContent = true;
                   accText += event.text;
+                  appendPart("text", event.text);
                   scheduleFlush();
                   break;
                 case "reasoning-delta":
                   if (!debugFirstToken) debugFirstToken = Date.now() - debugStart;
                   accReasoning += event.text;
+                  appendPart("reasoning", event.text);
                   scheduleFlush();
                   break;
                 case "tool-call-start":
                   toolCalls = [...toolCalls, { id: event.toolCallId, name: event.toolName, status: "calling" }];
+                  parts = [...parts, { type: "tool", id: event.toolCallId }];
                   debugToolNames.push(event.toolName);
                   scheduleFlush();
                   break;
                 case "tool-call":
+                  ensureTool(event.toolCallId, event.toolName);
                   toolCalls = toolCalls.map((tc) =>
                     tc.id === event.toolCallId ? { ...tc, args: event.args } : tc
                   );
@@ -1291,6 +1362,7 @@ export function ChatPage() {
                   break;
                 case "tool-result":
                   hasToolResults = true;
+                  ensureTool(event.toolCallId, event.toolName);
                   toolCalls = toolCalls.map((tc) =>
                     tc.id === event.toolCallId ? { ...tc, status: "done" as const, result: event.result } : tc
                   );
@@ -1342,7 +1414,7 @@ export function ChatPage() {
         console.warn("[Chat] No text content received, retrying...");
         // Reset assistant message for retry
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content: "", toolCalls: [], reasoning: "" } : m)
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content: "", toolCalls: [], reasoning: "", parts: [] } : m)
         );
         ({ gotTextContent, gotError } = await doFetch());
       }

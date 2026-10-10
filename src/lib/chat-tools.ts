@@ -105,7 +105,7 @@ const EXECUTE_JS_TIMEOUT_MS = 10_000;
 export function buildExecuteJsTool(env: Record<string, unknown>) {
   return {
     description:
-      '在 Cloudflare Dynamic Worker（V8 isolate，毫秒級啟動）中執行 JavaScript 程式碼。適用於快速計算、演算法、字串/JSON 處理。用 console.log() 輸出結果；也可以 return 一個值。沙箱無檔案系統且網路被封鎖——若使用者想看網路封鎖的效果，請實際執行含 fetch 的程式碼讓錯誤真實呈現，不要只用文字解釋。需要 Python/pandas/畫圖時請改用 executeCode。',
+      '在 Cloudflare Dynamic Worker（V8 isolate，毫秒級啟動）中執行 JavaScript 程式碼。適用於快速計算、演算法、字串/JSON 處理。程式碼直接寫成一般語句即可（可含函式宣告與 await），不需要自己包成函式；務必用 console.log() 輸出結果。沙箱無檔案系統且網路被封鎖——若使用者想看網路封鎖的效果，請實際執行含 fetch 的程式碼讓錯誤真實呈現，不要只用文字解釋。需要 Python/pandas/畫圖時請改用 executeCode。',
     inputSchema: z.object({
       code: z.string().describe('要執行的 JavaScript 程式碼，用 console.log() 輸出結果，可使用 await'),
     }),
@@ -166,6 +166,7 @@ export function buildExecuteJsTool(env: Record<string, unknown>) {
         language: 'javascript',
         success: !data.error,
         stdout,
+        ...(!data.error && !stdout ? { note: '程式沒有任何輸出——請在程式中用 console.log() 印出結果後重新執行。' } : {}),
         stderr: '',
         results: [],
         error: data.error,

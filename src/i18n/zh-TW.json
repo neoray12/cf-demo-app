@@ -242,7 +242,8 @@
       "modelNoVision": "此模型不支援圖片，請切換到 Claude 或 GPT-5",
       "imageTooLarge": "圖片過大（上限 {{mb}}MB）",
       "tooManyImages": "最多只能附加 {{max}} 張圖片"
-    }
+    },
+    "thinking": "思考中… {{s}} 秒"
   },
   "crawler": {
     "title": "網站爬蟲",

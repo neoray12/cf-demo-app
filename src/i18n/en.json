@@ -242,7 +242,8 @@
       "modelNoVision": "This model cannot read images — switch to Claude or GPT-5",
       "imageTooLarge": "Image too large ({{mb}}MB max)",
       "tooManyImages": "You can attach at most {{max}} images"
-    }
+    },
+    "thinking": "Thinking… {{s}}s"
   },
   "crawler": {
     "title": "Web Crawler",

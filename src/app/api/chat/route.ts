@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { cookies } from 'next/headers';
 import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
-import { chatSandboxConfigured, uploadFile as sandboxUploadFile } from '@/lib/chat-sandbox';
+import { chatSandboxConfigured, uploadFile as sandboxUploadFile, warmSandbox } from '@/lib/chat-sandbox';
 import { signCodeModeSession, codeModeSecret, describeTools, buildCodeModeModule, RETURN_SHAPE_HINT } from '@/lib/codemode';
 import { buildToolSet, safeTool, isWebSearchProvider, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
 
@@ -93,7 +93,7 @@ function sanitizeMessages(
 }
 
 export async function POST(request: NextRequest) {
-  const { env, cf } = await getCloudflareContext();
+  const { env, cf, ctx } = await getCloudflareContext();
   // POP that served this chat request — not necessarily the same colo the
   // sandbox container executes in (that's reported separately per tool call).
   const edgeColo = ((cf as { colo?: string } | undefined)?.colo as string | undefined) ?? null;
@@ -319,6 +319,11 @@ export async function POST(request: NextRequest) {
       .replace(/^-+|-+$/g, '');
     const sandboxSessionId = `sbx-${sanitizedSessionId || 'anon'}`;
 
+    // Boot the container now, while the model is still thinking — the first
+    // executeCode/createWebPreview call then finds it warm instead of paying
+    // the full cold start (and risking the tool timeout) itself.
+    if (chatSandboxConfigured(env as any)) ctx.waitUntil(warmSandbox(env as any, sandboxSessionId));
+
     // Upload any attached CSV/XLSX into the sandbox before building the
     // tools, so executeCode's description can tell the model exactly where
     // to find them — the model can't discover files on its own inside the sandbox.
@@ -407,7 +412,7 @@ export async function POST(request: NextRequest) {
   // spanned every step of a multi-step run (tool-call argument streaming, tool
   // execution, then the answer), so a long Code Mode script — Kimi streams a
   // 1.4k-char script in ~50s — used up the budget before the answer step began.
-  const IDLE_MS = 60_000;
+  const IDLE_MS = 90_000;
   const HARD_CAP_MS = 240_000;
   function createStream(attempt: number) {
     const ac = new AbortController();

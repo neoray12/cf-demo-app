@@ -75,7 +75,9 @@ function sandboxFor(env: Env, sessionId: string) {
 
 const COLO_PIN_PREFIX = 'chat-sandbox:colo-pin:';
 const COLO_PIN_TTL_SECONDS = 60 * 60 * 24; // sandboxes sleep after 20m; 24h is plenty
-const MAX_PLACEMENT_ATTEMPTS = 3;
+// Each re-roll is another full container cold start, so keep this low: three
+// sequential boots alone could outlast the main app's tool timeout.
+const MAX_PLACEMENT_ATTEMPTS = 2;
 
 function avoidedColos(env: Env): string[] {
   return (env.AVOID_COLOS || '')
@@ -125,6 +127,66 @@ async function resolveSandboxId(env: Env, sessionId: string): Promise<string> {
   if (existing) return existing;
   await env.KV.put(pinKey, chosen, { expirationTtl: COLO_PIN_TTL_SECONDS });
   return chosen;
+}
+
+// ── Idle reaper ──
+//
+// Observed in production: containers created days or months ago were still
+// "running" despite sleepAfter, so all `max_instances` slots were held by dead
+// sessions and every new session hung waiting for a slot (the main app then
+// timed out and the model fell back to other tools). sleepAfter is therefore
+// treated as best-effort and a cron-driven reaper is the hard backstop: every
+// request records when a sandbox was last used, and anything idle for longer
+// than REAP_IDLE_MS is destroyed.
+
+const SEEN_PREFIX = 'chat-sandbox:seen:';
+const SEEN_TTL_SECONDS = 60 * 60 * 6;
+// Preview URLs are documented as ~20 min, sleepAfter is 20m — reap just after.
+const REAP_IDLE_MS = 25 * 60 * 1000;
+const LEGACY_REAPED_FLAG = 'chat-sandbox:legacy-reaped:v1';
+// Sandboxes found running/queued before the reaper existed (never tracked).
+const LEGACY_SANDBOX_IDS = [
+  'sbx-9800c46a7ed84ee18156d4ed-g2',
+  'sbx-d940fec1fc684a29b1fa749e',
+  'sbx-94f79a9ea19a46a9a9a19cc6',
+  'sbx-d9b4cd019df8494e8e89d004',
+  'sbx-378701c510d5493ebd96485c',
+  'sbx-4196d491ada54f5385fd6957',
+  'sbx-b814b0fac593405b82d64e5a',
+  'sbx-b814b0fac593405b82d64e5a-g2',
+  'sbx-9800c46a7ed84ee18156d4ed',
+];
+
+async function touch(env: Env, sandboxId: string): Promise<void> {
+  await env.KV.put(`${SEEN_PREFIX}${sandboxId}`, String(Date.now()), { expirationTtl: SEEN_TTL_SECONDS }).catch(() => {});
+}
+
+async function reapIdleSandboxes(env: Env): Promise<{ reaped: string[]; kept: number }> {
+  const reaped: string[] = [];
+  let kept = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await env.KV.list({ prefix: SEEN_PREFIX, cursor });
+    for (const key of page.keys) {
+      const lastSeen = Number(await env.KV.get(key.name));
+      const id = key.name.slice(SEEN_PREFIX.length);
+      if (Number.isFinite(lastSeen) && Date.now() - lastSeen < REAP_IDLE_MS) { kept++; continue; }
+      await sandboxFor(env, id).destroy().catch((e) => console.warn(`[REAPER] destroy ${id} failed:`, (e as Error).message));
+      await env.KV.delete(key.name).catch(() => {});
+      reaped.push(id);
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+
+  if (!(await env.KV.get(LEGACY_REAPED_FLAG))) {
+    for (const id of LEGACY_SANDBOX_IDS) {
+      await sandboxFor(env, id).destroy().catch(() => {});
+      reaped.push(id);
+    }
+    await env.KV.put(LEGACY_REAPED_FLAG, String(Date.now()));
+  }
+  console.log(`[REAPER] reaped=${reaped.length} kept=${kept}`, reaped.join(','));
+  return { reaped, kept };
 }
 
 // Demo-facing telemetry: which physical container/POP actually ran the code,
@@ -204,6 +266,28 @@ app.use('/api/*', async (c, next) => {
 app.get('/health', (c) => c.json({ ok: true, service: 'chat-sandbox' }));
 
 /**
+ * POST /api/warmup
+ * Boot (and place) the session's container ahead of the first tool call, so
+ * the cold start overlaps with the model's own thinking time instead of
+ * stacking on top of it. Body: { sessionId }
+ */
+app.post('/api/warmup', async (c) => {
+  const body = await c.req.json<{ sessionId?: string }>().catch(() => ({} as { sessionId?: string }));
+  if (!isValidSessionId(body.sessionId)) {
+    return c.json({ error: 'Invalid sessionId (lowercase alphanumeric + hyphens, max 32 chars)' }, 400);
+  }
+  const started = Date.now();
+  try {
+    const resolvedId = await resolveSandboxId(c.env, body.sessionId);
+    await touch(c.env, resolvedId);
+    const r = await sandboxFor(c.env, resolvedId).exec('true');
+    return c.json({ ready: r.success, ms: Date.now() - started });
+  } catch (err) {
+    return c.json({ ready: false, ms: Date.now() - started, error: (err as Error).message }, 502);
+  }
+});
+
+/**
  * POST /api/execute
  * Run code in the session's sandbox via the code interpreter.
  * Body: { sessionId, code, language? }
@@ -225,6 +309,7 @@ app.post('/api/execute', async (c) => {
 
   console.log(`[EXECUTE] ${sessionId}: ${language}, ${code.length} chars`);
   const resolvedId = await resolveSandboxId(c.env, sessionId);
+  await touch(c.env, resolvedId);
   const sandbox = sandboxFor(c.env, resolvedId);
 
   try {
@@ -292,6 +377,7 @@ app.post('/api/preview', async (c) => {
 
   console.log(`[PREVIEW] ${sessionId}: ${files.length} file(s)`);
   const resolvedId = await resolveSandboxId(c.env, sessionId);
+  await touch(c.env, resolvedId);
   const sandbox = sandboxFor(c.env, resolvedId);
 
   try {
@@ -387,6 +473,7 @@ app.post('/api/upload', async (c) => {
 
   console.log(`[UPLOAD] ${sessionId}: ${fileName} (${size} bytes)`);
   const resolvedId = await resolveSandboxId(c.env, sessionId);
+  await touch(c.env, resolvedId);
   const sandbox = sandboxFor(c.env, resolvedId);
   const path = `${UPLOAD_DIR}/${fileName}`;
 
@@ -431,5 +518,9 @@ export default {
     if (proxied) return proxied;
 
     return app.fetch(request, env, ctx);
+  },
+
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(reapIdleSandboxes(env));
   },
 };

@@ -8,7 +8,10 @@ interface SandboxEnv {
   CHAT_SANDBOX_SECRET?: string;
 }
 
-const FETCH_TIMEOUT_MS = 45_000;
+// Must stay below the chat stream's idle-abort window (IDLE_MS in
+// /api/chat): a tool call emits no stream events while it runs.
+const FETCH_TIMEOUT_MS = 55_000;
+const WARMUP_TIMEOUT_MS = 90_000;
 
 export function chatSandboxConfigured(env: SandboxEnv): boolean {
   return Boolean(env.CHAT_SANDBOX_URL && env.CHAT_SANDBOX_SECRET);
@@ -35,6 +38,26 @@ async function sandboxFetch(
       ...(options.headers || {}),
     },
   });
+}
+
+/**
+ * Boot the session's container in the background. Called when a chat request
+ * starts, so the cold start (container boot + colo placement) overlaps with the
+ * model's own thinking time instead of stacking on top of the first tool call.
+ * Never throws — it is purely an optimisation.
+ */
+export async function warmSandbox(env: SandboxEnv, sessionId: string): Promise<void> {
+  if (!chatSandboxConfigured(env)) return;
+  try {
+    await fetch(`${env.CHAT_SANDBOX_URL}/api/warmup`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(WARMUP_TIMEOUT_MS),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.CHAT_SANDBOX_SECRET}` },
+      body: JSON.stringify({ sessionId }),
+    });
+  } catch (err) {
+    console.warn('[Chat API] sandbox warmup failed:', (err as Error).message);
+  }
 }
 
 // Demo telemetry: which physical container/POP ran the code, and whether it
@@ -95,7 +118,7 @@ export async function executeCode(
     const message = (err as Error).message || String(err);
     // Cold starts can exceed the fetch timeout on the very first call
     const friendly = /timeout|timed out|abort/i.test(message)
-      ? '沙箱啟動中或執行逾時，請稍後再試一次。'
+      ? '沙箱正在冷啟動（容器剛開機），這次逾時了。請用相同的工具與程式碼立即重試一次，通常第二次就會成功。'
       : message;
     return { success: false, stdout: '', stderr: '', results: [], error: friendly, sandbox: null };
   }
@@ -119,7 +142,7 @@ export async function createPreview(
   } catch (err) {
     const message = (err as Error).message || String(err);
     const friendly = /timeout|timed out|abort/i.test(message)
-      ? '沙箱啟動中或部署逾時，請稍後再試一次。'
+      ? '沙箱正在冷啟動（容器剛開機），這次逾時了。請用相同的檔案立即重試一次，通常第二次就會成功。'
       : message;
     return { error: friendly, sandbox: null };
   }
