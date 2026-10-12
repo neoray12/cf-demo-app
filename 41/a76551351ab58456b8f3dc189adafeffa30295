@@ -1,0 +1,29 @@
+agents.md
+  s_c99689345dfe55::t_5c8e8154d60dba 66-69
+src/app/components/chat/mcp-panel.tsx
+  s_c99689345dfe55::t_889fbc71f691ef 10-16,21
+src/app/pages/chat.tsx
+  s_c99689345dfe55::t_a8b5cbbb4d4466 129
+src/lib/mcp-client.ts
+  s_c99689345dfe55::t_8b3af67aaa97d6 64
+wrangler.dev.toml
+  s_c99689345dfe55::t_7d3745e31c0a74 28
+wrangler.toml
+  s_c99689345dfe55::t_4ed0afba50167c 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "41a76551351ab58456b8f3dc189adafeffa30295",
+  "prompts": {},
+  "sessions": {
+    "s_c99689345dfe55": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "edd74119-cfaa-48d0-98c5-3319a08bf286",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
