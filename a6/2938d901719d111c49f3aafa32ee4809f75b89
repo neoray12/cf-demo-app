@@ -1,0 +1,19 @@
+agents.md
+  s_c99689345dfe55::t_219c450a0c9edf 68-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a62938d901719d111c49f3aafa32ee4809f75b89",
+  "prompts": {},
+  "sessions": {
+    "s_c99689345dfe55": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "edd74119-cfaa-48d0-98c5-3319a08bf286",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
