@@ -65,7 +65,9 @@
   - `cf-radar` — Radar（OAuth）
   - `saas` — SAP & Salesforce，走 MCP Server Portal「SaaS MCP Portal」`https://saasmcp.neokung.work/mcp`（OAuth，Access policy「Allow Neo Azure AD & MFA」）
     - **不要直連** `sap-mcp` / `salesforce-mcp.neokung.work` 或 `*.workers.dev`：Gateway 路由、DLP 與 Portal logs 只對經過 Portal 的流量生效
-    - Portal 工具名稱會加 server ID 前綴 `{server_id}_{tool}`，所以 tool key 形如 `tool_saas_sap-s4-hana-mcp_sap_list_customers`（需 ≤ 64 字元）；Gateway HTTP 政策要比對 **upstream** host（`cf-demo-mcp-proxy-*.neo-cloudflare.workers.dev`），不是 Portal 網址
+    - Portal 內的 server 是 `sap-mcp` / `salesforce-mcp`（AI Controls，auth_type **oauth**、Require user auth），upstream 為 Access 保護的 `sap-mcp.neokung.work/mcp`、`salesforce-mcp.neokung.work/mcp`；Access 本身就是 OAuth authorization server，Worker 驗 Access JWT
+    - **不要**把 `*.workers.dev`（`sap-s4-hana-mcp` / `salesforce-crm-mcp`，unauthenticated）放進 Portal：Worker 讓 `initialize`/`tools/list` 免驗證（同步會成功），但 `tools/call` 一定要 Access JWT → 401 → Portal 回 `needsReauth`，模型會一直叫 `portal_toggle_servers`
+    - Portal 工具名稱會加 server ID 前綴 `{server_id}_{tool}`，所以 tool key 形如 `tool_saas_sap-mcp_sap_list_customers`（需 ≤ 64 字元）；Gateway HTTP 政策要比對 **upstream** host（`sap-mcp.neokung.work` / `salesforce-mcp.neokung.work`），不是 Portal 網址
     - `neokung.work` 有 Zone Hold（含子網域）：在 hold 生效期間建立 Portal，custom hostname 建不起來，會回 **1014**。要重建 Portal 前先暫時解除 hold
 
 #### MCP 相關檔案
