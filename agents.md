@@ -63,6 +63,10 @@
   - `cf-docs` — Cloudflare Docs（公開）
   - `cf-observability` — Workers Observability（OAuth）
   - `cf-radar` — Radar（OAuth）
+  - `saas` — SAP & Salesforce，走 MCP Server Portal「SaaS MCP Portal」`https://saasmcp.neokung.work/mcp`（OAuth，Access policy「Allow Neo Azure AD & MFA」）
+    - **不要直連** `sap-mcp` / `salesforce-mcp.neokung.work` 或 `*.workers.dev`：Gateway 路由、DLP 與 Portal logs 只對經過 Portal 的流量生效
+    - Portal 工具名稱會加 server ID 前綴 `{server_id}_{tool}`，所以 tool key 形如 `tool_saas_sap-s4-hana-mcp_sap_list_customers`（需 ≤ 64 字元）；Gateway HTTP 政策要比對 **upstream** host（`cf-demo-mcp-proxy-*.neo-cloudflare.workers.dev`），不是 Portal 網址
+    - `neokung.work` 有 Zone Hold（含子網域）：在 hold 生效期間建立 Portal，custom hostname 建不起來，會回 **1014**。要重建 Portal 前先暫時解除 hold
 
 #### MCP 相關檔案
 

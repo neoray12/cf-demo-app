@@ -126,6 +126,7 @@ const MCP_SERVER_LABELS: Record<string, string> = {
   "cf-docs": "Cloudflare Docs",
   "cf-observability": "Workers Observability",
   "cf-radar": "Radar",
+  saas: "SAP & Salesforce",
 };
 
 // MCP tool display name keys
