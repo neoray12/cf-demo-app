@@ -554,9 +554,9 @@
     "title": "MCP 卡控",
     "intro": "SAP 與 Salesforce 的 MCP 流量先經 MCP Server Portal，再通過 Cloudflare Gateway HTTP 政策與 DLP 檢查。每個場景對應一條 Gateway 規則，可在不同層級攔截工具呼叫或回應。",
     "flowTitle": "Demo 流程",
-    "flow1": "先送出會被擋下的 prompt 的「放行版本」，確認成功寫入",
+    "flow1": "先送出之後會被擋下的 prompt（此時規則尚未開啟，確認成功寫入 Salesforce）",
     "flow2": "在 Dashboard 開啟對應規則",
-    "flow3": "約 15 秒後再送一次擋下的 prompt，確認被攔截",
+    "flow3": "等約 15 秒後再送出同一個 prompt，確認被攔截",
     "levels": {
       "tool": "工具",
       "action": "動作",

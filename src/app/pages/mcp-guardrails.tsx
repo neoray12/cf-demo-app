@@ -15,25 +15,27 @@ const LEVEL_STYLE: Record<GuardrailLevel, string> = {
   response: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
 };
 
+function PromptRow({ label, text, tryLabel, onTry }: { label: string; text: string; tryLabel: string; onTry: (text: string) => void }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <div className="text-xs font-medium text-muted-foreground">{label}</div>
+        <p className="text-sm break-words">{text}</p>
+      </div>
+      <Button variant="outline" size="sm" className="shrink-0" onClick={() => onTry(text)}>
+        <MessageSquare className="size-3.5" />
+        {tryLabel}
+      </Button>
+    </div>
+  );
+}
+
 export function McpGuardrailsPage() {
   const { t } = useTranslation();
   const router = useRouter();
 
   const tryInChat = (text: string) =>
     router.push("/?prompt=" + encodeURIComponent(text) + "&mcp=saas");
-
-  const PromptRow = ({ label, text }: { label: string; text: string }) => (
-    <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <div className="text-xs font-medium text-muted-foreground">{label}</div>
-        <p className="text-sm break-words">{text}</p>
-      </div>
-      <Button variant="outline" size="sm" className="shrink-0" onClick={() => tryInChat(text)}>
-        <MessageSquare className="size-3.5" />
-        {t("guardrails.tryInChat")}
-      </Button>
-    </div>
-  );
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
@@ -117,10 +119,10 @@ export function McpGuardrailsPage() {
             </Button>
 
             <div className="space-y-2">
-              <PromptRow label={t("guardrails.allowPrompt")} text={t(s.allowPromptKey)} />
-              <PromptRow label={t("guardrails.blockPrompt")} text={t(s.blockPromptKey)} />
+              <PromptRow tryLabel={t("guardrails.tryInChat")} onTry={tryInChat} label={t("guardrails.allowPrompt")} text={t(s.allowPromptKey)} />
+              <PromptRow tryLabel={t("guardrails.tryInChat")} onTry={tryInChat} label={t("guardrails.blockPrompt")} text={t(s.blockPromptKey)} />
               {s.resetPromptKey && (
-                <PromptRow label={t("guardrails.resetPrompt")} text={t(s.resetPromptKey)} />
+                <PromptRow tryLabel={t("guardrails.tryInChat")} onTry={tryInChat} label={t("guardrails.resetPrompt")} text={t(s.resetPromptKey)} />
               )}
             </div>
           </CardContent>

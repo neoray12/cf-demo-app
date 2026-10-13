@@ -554,9 +554,9 @@
     "title": "MCP Guardrails",
     "intro": "SAP and Salesforce MCP traffic goes through the MCP Server Portal, then Cloudflare Gateway HTTP policies and DLP. Each scenario maps to one Gateway rule that blocks a tool call or response at a different level.",
     "flowTitle": "Demo flow",
-    "flow1": "Send the allowed prompt first and confirm the write succeeds",
+    "flow1": "Send the prompt that will be blocked while the rule is still off, and confirm the write to Salesforce succeeds",
     "flow2": "Open the matching rule in the Dashboard",
-    "flow3": "After about 15 seconds, send the blocked prompt again and watch it get stopped",
+    "flow3": "After about 15 seconds, send the same prompt again and watch it get blocked",
     "levels": {
       "tool": "Tool",
       "action": "Action",
