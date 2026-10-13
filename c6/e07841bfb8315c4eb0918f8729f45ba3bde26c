@@ -1,0 +1,25 @@
+src/app/api/chat/route.ts
+  s_caa00abd3b347d::t_dfc42dd4648346 470,544-547,560-567,695-698
+src/app/pages/chat.tsx
+  s_caa00abd3b347d::t_f3c7827020ab4f 30-31,734,743-744,762,770-774,876-878,1320,1391-1397,1466
+src/i18n/en.json
+  s_caa00abd3b347d::t_86a38bcc6f6468 178
+src/i18n/zh-TW.json
+  s_caa00abd3b347d::t_d68cd68f3755b4 178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c6e07841bfb8315c4eb0918f8729f45ba3bde26c",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
