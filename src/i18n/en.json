@@ -175,6 +175,7 @@
       }
     },
     "tool": {
+      "failed": "Failed",
       "searchKnowledge": "Search Knowledge Base",
       "executeCode": "Run Code",
       "executeJs": "Run JavaScript",

@@ -467,6 +467,7 @@ export async function POST(request: NextRequest) {
 
   // Process text-delta: split on <think>/</think> boundaries when needed
   function processTextDelta(controller: ReadableStreamDefaultController, raw: string) {
+    if (!raw) return;
     if (!needsThinkParsing) {
       send(controller, { type: 'text-delta', text: raw });
       return;
@@ -540,8 +541,10 @@ export async function POST(request: NextRequest) {
           processTextDelta(controller, part.text);
           break;
         case 'reasoning-delta':
-          hasTextContent = true;
-          send(controller, { type: 'reasoning-delta', text: part.text });
+          if (part.text) {
+            hasTextContent = true;
+            send(controller, { type: 'reasoning-delta', text: part.text });
+          }
           break;
         case 'tool-input-start':
           hasToolCalls = true;
@@ -553,6 +556,14 @@ export async function POST(request: NextRequest) {
         case 'tool-result':
           send(controller, { type: 'tool-result', toolCallId: part.toolCallId, toolName: part.toolName, result: part.output });
           toolResults.push({ toolName: part.toolName, result: part.output });
+          break;
+        case 'tool-error':
+          send(controller, {
+            type: 'tool-error',
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            error: String((part.error as Error)?.message ?? part.error),
+          });
           break;
         case 'finish':
           // Flush any remaining thinkBuffer
@@ -681,8 +692,10 @@ export async function POST(request: NextRequest) {
           processTextDelta(controller, part.text);
           break;
         case 'reasoning-delta':
-          hasText = true;
-          send(controller, { type: 'reasoning-delta', text: part.text });
+          if (part.text) {
+            hasText = true;
+            send(controller, { type: 'reasoning-delta', text: part.text });
+          }
           break;
         case 'finish':
           if (thinkBuffer) {

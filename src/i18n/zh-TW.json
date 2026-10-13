@@ -175,6 +175,7 @@
       }
     },
     "tool": {
+      "failed": "執行失敗",
       "searchKnowledge": "搜尋知識庫",
       "executeCode": "執行程式碼",
       "executeJs": "執行 JavaScript",

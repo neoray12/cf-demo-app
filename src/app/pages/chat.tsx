@@ -27,7 +27,8 @@ interface ToolCallInfo {
   name: string;
   args?: unknown;
   result?: unknown;
-  status: "calling" | "done";
+  status: "calling" | "done" | "error";
+  error?: string;
 }
 
 interface ChatMessage {
@@ -730,6 +731,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   if (toolCall.name === "searchKnowledge" || toolCall.name === "searchKnowledgeByImage") return <KnowledgeResultsDisplay toolCall={toolCall} />;
   const label = friendlyToolName(toolCall.name, t);
   const isCalling = toolCall.status === "calling";
+  const isFailed = toolCall.status === "error";
 
   return (
     <div className="my-2">
@@ -738,6 +740,8 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
         className={`inline-flex items-center gap-1.5 text-xs rounded-lg transition-colors ${
           isCalling
             ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 px-3 py-1.5"
+            : isFailed
+            ? "bg-destructive/10 text-destructive hover:bg-destructive/15 cursor-pointer px-3 py-1.5"
             : "bg-muted hover:bg-muted/80 text-muted-foreground cursor-pointer px-3 py-1.5"
         }`}
       >
@@ -755,6 +759,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
             <span>{isCalling ? `${label}...` : label}</span>
           </>
         )}
+        {isFailed && <span className="font-medium">· {t("chat.tool.failed")}</span>}
         {isCalling && (
           <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
         )}
@@ -762,6 +767,11 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           <ChevronRight className={`size-3 transition-transform ${expanded ? "rotate-90" : ""}`} />
         )}
       </button>
+      {expanded && isFailed && toolCall.error && (
+        <div className="mt-1.5 ml-3 p-3 rounded-lg bg-destructive/10 text-destructive text-xs font-mono overflow-x-auto max-h-[200px] md:max-h-[300px] overflow-y-auto">
+          <pre className="whitespace-pre-wrap break-words">{toolCall.error}</pre>
+        </div>
+      )}
       {expanded && toolCall.result != null && (
         <div className="mt-1.5 ml-3 p-3 rounded-lg bg-muted/50 text-xs font-mono overflow-x-auto max-h-[200px] md:max-h-[300px] overflow-y-auto">
           <pre className="whitespace-pre-wrap break-words">
@@ -863,7 +873,9 @@ function AssistantMessage({
   // tool) — either waiting for the first token or for the model to write its
   // answer after a tool finished. Show that explicitly instead of a dead UI.
   const awaitingModel =
-    isStreaming && (!last || (last.type === "tool" && toolById.get(last.id)?.status === "done") || last.type === "reasoning");
+    isStreaming &&
+    !(message.toolCalls ?? []).some((tc) => tc.status === "calling") &&
+    (!last || (last.type === "tool" && toolById.get(last.id)?.status !== "calling") || last.type === "reasoning");
   const waitingSecs = useElapsedSeconds(awaitingModel);
 
   return (
@@ -1305,6 +1317,7 @@ export function ChatPage() {
         parts = [...parts, { type: "tool", id }];
       };
       const appendPart = (type: "text" | "reasoning", text: string) => {
+        if (!text) return;
         const last = parts[parts.length - 1];
         if (last && last.type === type) parts = [...parts.slice(0, -1), { type, text: last.text + text }];
         else parts = [...parts, { type, text }];
@@ -1372,6 +1385,13 @@ export function ChatPage() {
                   ensureTool(event.toolCallId, event.toolName);
                   toolCalls = toolCalls.map((tc) =>
                     tc.id === event.toolCallId ? { ...tc, status: "done" as const, result: event.result } : tc
+                  );
+                  scheduleFlush();
+                  break;
+                case "tool-error":
+                  ensureTool(event.toolCallId, event.toolName);
+                  toolCalls = toolCalls.map((tc) =>
+                    tc.id === event.toolCallId ? { ...tc, status: "error" as const, error: event.error } : tc
                   );
                   scheduleFlush();
                   break;
@@ -1443,7 +1463,7 @@ export function ChatPage() {
       if ((err as Error).name === "AbortError") {
         // Smart abort: check if we had partial content
         const lastMsg = messagesRef.current.find((m) => m.id === assistantMsgId);
-        if (lastMsg && !lastMsg.content && lastMsg.toolCalls?.some((tc) => tc.status === "done")) {
+        if (lastMsg && !lastMsg.content && lastMsg.toolCalls?.some((tc) => tc.status !== "calling")) {
           setMessages((prev) =>
             prev.map((m) => m.id === assistantMsgId
               ? { ...m, content: "⚠️ 已停止。工具查詢已完成但回覆被中斷。" }
