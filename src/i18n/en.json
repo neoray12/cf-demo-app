@@ -244,7 +244,25 @@
       "imageTooLarge": "Image too large ({{mb}}MB max)",
       "tooManyImages": "You can attach at most {{max}} images"
     },
-    "thinking": "Thinking… {{s}}s"
+    "thinking": "Thinking… {{s}}s",
+    "timeline": {
+      "processing": "Processing… {{s}}s total",
+      "summary": "Process · {{s}}s total · {{n}} tools",
+      "waiting": "Waiting for model",
+      "reasoning": "Reasoning",
+      "tool": "Calling {{name}}",
+      "composing": "Composing answer",
+      "writing": "Writing reply",
+      "blocked": "Blocked",
+      "failed": "Failed"
+    },
+    "gatewayBlock": {
+      "title": "Blocked by Cloudflare Gateway",
+      "request": "Request blocked",
+      "response": "The tool response may contain sensitive data and was blocked by response-side DLP (check the Gateway log to confirm)",
+      "rule": "Rule",
+      "requestId": "Request ID"
+    }
   },
   "crawler": {
     "title": "Web Crawler",

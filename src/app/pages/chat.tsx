@@ -20,6 +20,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTranslation } from "react-i18next";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
+import { ProcessTimeline, type ChatTimeline } from "../components/chat/process-timeline";
+import { GatewayBlockCard } from "../components/chat/gateway-block-card";
+import type { TimelineEvent } from "@/lib/chat-timeline";
+import type { GatewayBlock } from "@/lib/mcp-guardrails";
 
 // ── Types ──
 interface ToolCallInfo {
@@ -43,6 +47,8 @@ interface ChatMessage {
   parts?: MessagePart[];
   /** Auto Router: the model AI Gateway actually routed this turn to. */
   routedModel?: { model: string; reason: string | null };
+  /** Per-turn processing timeline — front-end only, never sent to the server. */
+  timeline?: ChatTimeline;
 }
 
 type MessagePart =
@@ -724,6 +730,8 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const [expanded, setExpanded] = useState(false);
   const mcp = parseMcpToolName(toolCall.name, t);
 
+  const blocked = toolCall.result as (GatewayBlock & { source: string; tool: string }) | undefined;
+  if (blocked?.blocked === true) return <GatewayBlockCard block={blocked} />;
   if (toolCall.name === "executeCode" || toolCall.name === "executeJs" || toolCall.name === "codemode") return <CodeExecutionDisplay toolCall={toolCall} />;
   if (toolCall.name === "createWebPreview") return <WebPreviewDisplay toolCall={toolCall} />;
   if (toolCall.name === "captureScreenshot") return <ScreenshotDisplay toolCall={toolCall} />;
@@ -868,15 +876,10 @@ function AssistantMessage({
   // Parts are the source of truth while they exist; plain content is the
   // fallback for messages that never got parts (e.g. "stopped" notices).
   const showContentFallback = Boolean(renderedContent) && !hasTextPart;
-  const last = parts[parts.length - 1];
-  // Streaming but nothing is visibly in progress (no text arriving, no running
-  // tool) — either waiting for the first token or for the model to write its
-  // answer after a tool finished. Show that explicitly instead of a dead UI.
-  const awaitingModel =
-    isStreaming &&
-    !(message.toolCalls ?? []).some((tc) => tc.status === "calling") &&
-    (!last || (last.type === "tool" && toolById.get(last.id)?.status !== "calling") || last.type === "reasoning");
-  const waitingSecs = useElapsedSeconds(awaitingModel);
+  const toolLabel = (name: string) => {
+    const mcp = parseMcpToolName(name, t);
+    return mcp ? `${mcp.serverLabel} · ${mcp.toolName}` : friendlyToolName(name, t);
+  };
 
   return (
     <div className="max-w-full">
@@ -935,13 +938,8 @@ function AssistantMessage({
         </div>
       )}
 
-      {awaitingModel && (
-        <div className="flex items-center gap-1.5 py-1">
-          <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
-          <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
-          <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
-          {waitingSecs >= 4 && <span className="text-xs text-muted-foreground ml-1">{t("chat.thinking", { s: waitingSecs })}</span>}
-        </div>
+      {message.timeline && (
+        <ProcessTimeline timeline={message.timeline} streaming={isStreaming} toolLabel={toolLabel} />
       )}
 
       {!isStreaming && message.content && !isError && (
@@ -1229,7 +1227,7 @@ export function ChatPage() {
     // Add assistant placeholder
     const assistantMsgId = genId();
     streamingMsgIdRef.current = assistantMsgId;
-    const assistantMsg: ChatMessage = { id: assistantMsgId, role: "assistant", content: "", reasoning: "", toolCalls: [] };
+    const assistantMsg: ChatMessage = { id: assistantMsgId, role: "assistant", content: "", reasoning: "", toolCalls: [], timeline: { events: [], endAt: null } };
 
     setMessages((prev) => [...prev, assistantMsg]);
     setIsLoading(true);
@@ -1243,6 +1241,7 @@ export function ChatPage() {
 
     // doFetch: single streaming fetch attempt, returns flags
     const doFetch = async (): Promise<{ gotTextContent: boolean; gotError: boolean; hasToolResults: boolean }> => {
+      const t0 = performance.now();
       let gotTextContent = false;
       let gotError = false;
       let hasToolResults = false;
@@ -1308,6 +1307,14 @@ export function ChatPage() {
       let toolCalls: ToolCallInfo[] = [];
       let parts: MessagePart[] = [];
       let routedModel: ChatMessage["routedModel"];
+      const events: TimelineEvent[] = [];
+      const record = (ev: TimelineEvent) => events.push(ev);
+      const now = () => performance.now() - t0;
+      // Only the first of a run of same-kind deltas matters for step boundaries.
+      const recordDelta = (kind: "text" | "reasoning") => {
+        if (events[events.length - 1]?.kind !== kind) record({ t: now(), kind });
+      };
+      const recordToolStart = (id: string, name: string) => record({ t: now(), kind: "tool-start", id, name });
       // Append to the trailing part of the same kind, otherwise start a new one —
       // this is what keeps "text → tool → text" in the order it happened.
       // Some providers emit tool-call without a preceding tool-call-start
@@ -1315,6 +1322,7 @@ export function ChatPage() {
         if (toolCalls.some((tc) => tc.id === id)) return;
         toolCalls = [...toolCalls, { id, name, status: "calling" }];
         parts = [...parts, { type: "tool", id }];
+        recordToolStart(id, name);
       };
       const appendPart = (type: "text" | "reasoning", text: string) => {
         if (!text) return;
@@ -1325,18 +1333,19 @@ export function ChatPage() {
 
       // 50ms batched flush
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
-      const flushUpdate = () => {
+      const flushUpdate = (endAt: number | null = null) => {
         flushTimer = null;
         const t = accText;
         const r = accReasoning;
         const tc = [...toolCalls];
         const pt = parts;
+        const timeline = { events: [...events], endAt };
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc, parts: pt, routedModel } : m)
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc, parts: pt, routedModel, timeline } : m)
         );
       };
       const scheduleFlush = () => {
-        if (!flushTimer) flushTimer = setTimeout(flushUpdate, 50);
+        if (!flushTimer) flushTimer = setTimeout(() => flushUpdate(), 50);
       };
 
       try {
@@ -1358,18 +1367,21 @@ export function ChatPage() {
                   if (!debugFirstToken) debugFirstToken = Date.now() - debugStart;
                   gotTextContent = true;
                   accText += event.text;
+                  if (event.text) recordDelta("text");
                   appendPart("text", event.text);
                   scheduleFlush();
                   break;
                 case "reasoning-delta":
                   if (!debugFirstToken) debugFirstToken = Date.now() - debugStart;
                   accReasoning += event.text;
+                  if (event.text) recordDelta("reasoning");
                   appendPart("reasoning", event.text);
                   scheduleFlush();
                   break;
                 case "tool-call-start":
                   toolCalls = [...toolCalls, { id: event.toolCallId, name: event.toolName, status: "calling" }];
                   parts = [...parts, { type: "tool", id: event.toolCallId }];
+                  recordToolStart(event.toolCallId, event.toolName);
                   debugToolNames.push(event.toolName);
                   scheduleFlush();
                   break;
@@ -1386,6 +1398,7 @@ export function ChatPage() {
                   toolCalls = toolCalls.map((tc) =>
                     tc.id === event.toolCallId ? { ...tc, status: "done" as const, result: event.result } : tc
                   );
+                  record({ t: now(), kind: "tool-end", id: event.toolCallId, outcome: event.result?.blocked === true ? "blocked" : "done" });
                   scheduleFlush();
                   break;
                 case "tool-error":
@@ -1393,6 +1406,7 @@ export function ChatPage() {
                   toolCalls = toolCalls.map((tc) =>
                     tc.id === event.toolCallId ? { ...tc, status: "error" as const, error: event.error } : tc
                   );
+                  record({ t: now(), kind: "tool-end", id: event.toolCallId, outcome: "error" });
                   scheduleFlush();
                   break;
                 case "error":
@@ -1426,7 +1440,7 @@ export function ChatPage() {
       } finally {
         // Final flush — clear timer and do immediate update
         if (flushTimer) clearTimeout(flushTimer);
-        flushUpdate();
+        flushUpdate(now());
       }
 
       return { gotTextContent, gotError, hasToolResults };
@@ -1441,7 +1455,7 @@ export function ChatPage() {
         console.warn("[Chat] No text content received, retrying...");
         // Reset assistant message for retry
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content: "", toolCalls: [], reasoning: "", parts: [] } : m)
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content: "", toolCalls: [], reasoning: "", parts: [], timeline: { events: [], endAt: null } } : m)
         );
         ({ gotTextContent, gotError } = await doFetch());
       }

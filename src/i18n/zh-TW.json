@@ -244,7 +244,25 @@
       "imageTooLarge": "圖片過大（上限 {{mb}}MB）",
       "tooManyImages": "最多只能附加 {{max}} 張圖片"
     },
-    "thinking": "思考中… {{s}} 秒"
+    "thinking": "思考中… {{s}} 秒",
+    "timeline": {
+      "processing": "處理中… 共 {{s}} 秒",
+      "summary": "處理過程 · 共 {{s}} 秒 · {{n}} 個工具",
+      "waiting": "等待模型",
+      "reasoning": "推理",
+      "tool": "呼叫 {{name}}",
+      "composing": "整理答案",
+      "writing": "撰寫回覆",
+      "blocked": "已攔截",
+      "failed": "失敗"
+    },
+    "gatewayBlock": {
+      "title": "已被 Cloudflare Gateway 攔截",
+      "request": "請求被擋下",
+      "response": "工具回應可能含敏感資料，被回應端 DLP 擋下（請到 Gateway log 確認）",
+      "rule": "規則",
+      "requestId": "Request ID"
+    }
   },
   "crawler": {
     "title": "網站爬蟲",
