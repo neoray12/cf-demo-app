@@ -30,7 +30,7 @@ DLP profile 與 Gateway 規則名稱都以 `MCP Demo: ` 開頭，預設**停用*
 
 | # | 場景 | 自訂 DLP regex（草案，spike 後定稿） | 放行範例 | 擋下範例 |
 |---|------|------|------|------|
-| 1 | 工具層級：禁止寫入 CRM | `"name"\s*:\s*"sf_(create\|update)_[a-z]+"` | 「列出 5 筆 Account」 | 「在 Salesforce 建立一筆潛在客戶：陳志明，公司『Demo 半導體』，來源 Web」 |
+| 1 | 工具層級：禁止寫入 CRM | `sf_(create\|update)_(account\|contact\|opportunity\|lead\|case)` | 「列出 5 筆 Account」 | 「在 Salesforce 建立一筆潛在客戶：陳志明，公司『Demo 半導體』，來源 Web」 |
 | 2 | 動作層級：禁止結案商機 | `"stage"\s*:\s*"Closed` | 「把商機 X 的階段改成 Negotiation/Review」 | 「把商機 X 的階段改成 Closed Won」 |
 | 3 | 參數層級：SOQL 不得查人員資料 | `(?i)FROM\s+(Contact\|User)\b` | 「用 SOQL 查 5 筆 Account 名稱」 | 「用 SOQL 撈出所有 Contact 的姓名、Email、電話」 |
 | 4 | 回應 DLP：個資不得回到 LLM | Email：`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`（可加台灣手機 `09\d{2}-?\d{3}-?\d{3}`） | 「列出 5 筆 Account」 | 「列出 5 位 Contact 和他們的 Email」 |
@@ -78,9 +78,27 @@ DLP profile 與 Gateway 規則名稱都以 `MCP Demo: ` 開頭，預設**停用*
 - 單元測試：場景 regex 對真實的 Portal → upstream request / response 樣本（spike 取得）做比對，確認該擋的擋、該放的放。
 - 本地 `npm run dev` 端到端：四個場景各跑「規則關 → 實際寫入/讀取成功」「規則開 → 被攔截卡片」。
 
-## 待 spike 驗證
+## Spike 結果（2026-10-13，經 Portal 實測）
 
-1. Portal 轉給 upstream 的 JSON-RPC body：工具名稱是否已去掉 `{server_id}_` 前綴、`params.name` / `arguments` 是否在前 1KB。
-2. Response 方向的 DLP 實際行為與錯誤格式（Portal 回給 client 的內容）。
-3. 規則切換的傳播時間。
-4. Portal 轉送的流量在 Gateway 中的規則優先序是否會被既有 Allow 規則搶先。
+已建立的資源（全部預設停用）：
+
+| 場景 | DLP profile | Gateway 規則 | body_phase |
+|---|---|---|---|
+| 1 | `7800aa22-8d08-4d80-8fd9-370044598a30` regex `sf_(create\|update)_(account\|contact\|opportunity\|lead\|case)` | `4c6f7183-708e-4fb8-abc3-3f3e18f75eaf` | upload |
+| 2 | `113f67d0-6e94-4c30-adad-923420858c92` regex `"stage"\s{0,3}:\s{0,3}"Closed` | `e50d7a14-ae32-4b57-9911-ad63394a6c7f` | upload |
+| 3 | `0e8c9d18-4836-4f2a-aac4-67fa35656c2c` regex `(?i)FROM\s{1,5}(Contacts?\|Users?)\b` | `5e050c10-4b80-4352-b691-79f36730d759` | upload |
+| 4 | `3a4d540b-b846-419f-8b6b-70222f175e98` 有上限的 Email regex | `0b3b9c32-c2dd-4318-8467-9388df53dfee` | download |
+
+實測結論：
+
+- **沒開規則時寫入真的生效**：`sf_create_lead`、`sf_create_opportunity`、`sf_update_opportunity` 都寫入了 dev org。既有、已啟用的 `Neo-HTTP-MCPSalesforce-DLPPII-Block` 不會干擾（帶 email / 電話的 Contact 清單照常回傳）。
+- **場景 1、2、3 有效**，讀取不受影響：Closed Won 被擋、Negotiation/Review 放行；`FROM Contact` 不分大小寫都擋、`FROM Account` 放行。
+- **場景 3 的繞過**：子查詢 `(SELECT Email FROM Contacts)` 一開始沒被擋，已把 regex 改成 `Contacts?|Users?`。demo 時可以拿來講「規則要持續調校」。
+- **傳播時間**：啟用後約 11 秒、停用後約 30 秒內就生效。UI 的「生效中…」提示抓 15–30 秒即可。
+- **被擋時的錯誤**：MCP SDK 拋出 `McpError`，`code === -30403`，`data = { rule_id, request_id }`，message 為 `Request blocked | rule_id: … | request_id: …`。攔截卡片就用這個判斷。
+- **身分**：使用者的 tool call 在 Gateway log 裡帶 `email`（背景同步沒有），所以之後可以加上依身分的規則。
+- **場景 4 沒有效果**：upstream（`agents/mcp` 的 `createMcpHandler`）回應是 `text/event-stream`，Gateway DLP 不掃 SSE 串流回應。要讓場景 4 生效，Salesforce worker 必須設定 `enableJsonResponse: true`，改回傳 `application/json`。此修改需要部署 `cf-demo-mcp-proxy-salesforce`。
+- **限制**：DLP regex 不能有無上限的量詞（`+`、`*`），否則回 `3305 pattern matches more than 1024 bytes`。word_list 每個帳號只能有 1 個，已被 SAP 規則佔用。
+- **測試資料**：dev org 留下 Lead `00Qhg000003VgCXEA0` 與商機 `006hg000001fNCzAAM`（階段 Negotiation/Review），可以直接當作場景 2 的 demo 商機。
+
+App 的 `/api/mcp-guardrails` 改為依名稱前綴 `MCP Demo: ` 找到上述資源；「建立 / 同步規則」只在資源遺失時重建。
