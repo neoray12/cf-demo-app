@@ -1,0 +1,21 @@
+src/lib/chat-timeline.test.ts
+  s_caa00abd3b347d::t_ce58006a43b35d 1-92
+src/lib/chat-timeline.ts
+  s_caa00abd3b347d::t_ccea3a8afd67a3 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "025ef274d9b9ac4a47d78f427c5a089dce72cda8",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
