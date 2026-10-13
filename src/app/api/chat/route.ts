@@ -11,7 +11,9 @@ import { buildToolSet, safeTool, isWebSearchProvider, type ToolSetConfig, type U
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
-回答時請使用繁體中文，除非使用者使用其他語言提問。回答要精確、簡潔、直接，避免冗長的鋪陳和重複說明。優先給出結論，再補充必要細節。`;
+回答時請使用繁體中文，除非使用者使用其他語言提問。回答要精確、簡潔、直接，避免冗長的鋪陳和重複說明。優先給出結論，再補充必要細節。
+
+如果工具結果含有 "blocked": true，代表該動作被組織的資安政策攔截：不要重試、不要改用其他工具繞過，直接告訴使用者哪個動作被攔截。`;
 
 const TOOL_CAPABLE_WORKERS_AI = [
   /llama.*instruct/i,

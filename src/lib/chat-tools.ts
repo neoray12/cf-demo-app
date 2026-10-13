@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { classifyMcpError } from '@/lib/mcp-guardrails';
 import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview } from '@/lib/chat-sandbox';
@@ -495,6 +496,15 @@ export async function buildMcpTools(
               .map((c) => c.text);
             return { source: server.name, result: textParts.join('\n') || JSON.stringify(result.content) };
           } catch (err) {
+            const block = classifyMcpError(err, serverId);
+            if (block) {
+              console.warn('[Chat API] MCP tool blocked by Gateway', {
+                toolKey,
+                ruleId: block.ruleId,
+                direction: block.direction,
+              });
+              return { ...block, source: server.name, tool: tool.name };
+            }
             console.error(`[Chat API] MCP tool error (${toolKey}):`, err);
             return { error: `MCP tool failed: ${(err as Error).message}` };
           }

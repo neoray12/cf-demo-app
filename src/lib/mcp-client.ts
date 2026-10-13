@@ -181,11 +181,13 @@ export async function callMcpTool(
     await client.connect(sseTransport);
   }
 
-  const result = await client.callTool({ name: toolName, arguments: args });
-  await client.close();
-
-  return {
-    content: (result.content || []) as Array<{ type: string; text?: string }>,
-    isError: result.isError as boolean | undefined,
-  };
+  try {
+    const result = await client.callTool({ name: toolName, arguments: args });
+    return {
+      content: (result.content || []) as Array<{ type: string; text?: string }>,
+      isError: result.isError as boolean | undefined,
+    };
+  } finally {
+    await client.close().catch(() => {});
+  }
 }
