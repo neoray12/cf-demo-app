@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-10-13-mcp-guardrails-design.md
+  s_caa00abd3b347d::t_83c23ba2edd799 1,4,8-10,14-15,17,19,21,23-27,29,31-32,34-39,43-45,47,49-54,56-58,60,62,64-71,73,75-76,78,80-86,88,90,92-94,96-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "cd0960e3168a7a2936cf82b41ee4ca1cd3ccbb0c",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
