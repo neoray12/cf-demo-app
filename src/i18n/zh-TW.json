@@ -262,6 +262,39 @@
       "response": "工具回應可能含敏感資料，被回應端 DLP 擋下（請到 Gateway log 確認）",
       "rule": "規則",
       "requestId": "Request ID"
+    },
+    "categories": {
+      "basics": {
+        "title": "Cloudflare 入門",
+        "desc": "Workers、AI Gateway、R2 基礎問答"
+      },
+      "sandbox": {
+        "title": "Sandbox 示範",
+        "desc": "在隔離容器中執行程式碼與預覽網頁"
+      },
+      "dw": {
+        "title": "Dynamic Workers 示範",
+        "desc": "即時產生並執行 Worker 程式碼"
+      },
+      "browser": {
+        "title": "瀏覽器工具示範",
+        "desc": "截圖、摘要網頁與搜尋最新資訊"
+      },
+      "safety": {
+        "title": "AI 安全測試",
+        "desc": "測試 Guardrails 對有害內容與提示注入的攔截"
+      },
+      "guardrails": {
+        "title": "MCP 卡控示範",
+        "desc": "Gateway 政策攔截 Salesforce MCP 工具呼叫"
+      },
+      "count": "{{count}} 個範例"
+    },
+    "guardrailSuggestions": {
+      "connectFirst": "請先在 MCP 面板連線 SAP & Salesforce，再送出",
+      "resetTitle": "還原：商機階段改回 Prospecting",
+      "viewPolicy": "查看政策說明 →",
+      "viewPolicyDesc": "四個卡控場景的 Gateway 政策、DLP 規則與示範流程"
     }
   },
   "crawler": {

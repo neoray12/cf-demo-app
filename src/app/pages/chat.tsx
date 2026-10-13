@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, ChevronDown, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, BookOpen, Braces, Search, Database, Route, Lock } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, ChevronDown, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Search, Database, Route, Lock } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,9 +19,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTranslation } from "react-i18next";
+import { useRouter } from "next/navigation";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
 import { ProcessTimeline, type ChatTimeline } from "../components/chat/process-timeline";
 import { GatewayBlockCard } from "../components/chat/gateway-block-card";
+import { SuggestionCategories, type SuggestionSendOpts } from "../components/chat/suggestion-categories";
 import type { TimelineEvent } from "@/lib/chat-timeline";
 import type { GatewayBlock } from "@/lib/mcp-guardrails";
 
@@ -1181,7 +1183,27 @@ export function ChatPage() {
   const [pendingAttachment, setPendingAttachment] = useState<{ name: string; contentBase64: string; size: number } | null>(null);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  // Shown when an MCP demo prompt was prefilled but its server isn't connected.
+  const [mcpConnectHint, setMcpConnectHint] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+
+  // `/?prompt=...&mcp=saas` (e.g. from /mcp-guardrails "try in chat"): prefill
+  // the input without sending, open the MCP panel if that server isn't
+  // connected, then drop the params so a reload doesn't prefill again.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const prompt = params.get("prompt");
+    const mcp = params.get("mcp");
+    if (!prompt && !mcp) return;
+    if (prompt) setInput(prompt);
+    if (mcp && !connectedMcpServers.includes(mcp)) {
+      setShowMcpPanel(true);
+      if (prompt) setMcpConnectHint(true);
+    }
+    router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -1562,6 +1584,7 @@ export function ChatPage() {
     isNearBottomRef.current = true;
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setInput("");
+    setMcpConnectHint(false);
     const attachment = pendingAttachment;
     setPendingAttachment(null);
     setPendingImages([]);
@@ -1685,6 +1708,7 @@ export function ChatPage() {
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
+    setMcpConnectHint(false);
     e.target.style.height = "auto";
     e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
   };
@@ -1706,48 +1730,22 @@ export function ChatPage() {
 
   const hasMessages = messages.length > 0;
 
-  const suggestions = [
-    { title: t("chat.suggestions.workers.title"), desc: t("chat.suggestions.workers.prompt") },
-    { title: t("chat.suggestions.aiGateway.title"), desc: t("chat.suggestions.aiGateway.prompt") },
-    { title: t("chat.suggestions.r2.title"), desc: t("chat.suggestions.r2.prompt") },
-  ];
-
-  const sandboxSuggestions = [
-    { title: t("chat.sandboxSuggestions.factorial.title"), desc: t("chat.sandboxSuggestions.factorial.prompt"), icon: Terminal },
-    { title: t("chat.sandboxSuggestions.fibonacci.title"), desc: t("chat.sandboxSuggestions.fibonacci.prompt"), icon: Terminal },
-    { title: t("chat.sandboxSuggestions.countdown.title"), desc: t("chat.sandboxSuggestions.countdown.prompt"), icon: Globe },
-  ];
-
-  const browserSuggestions = [
-    { title: t("chat.browserSuggestions.screenshot.title"), desc: t("chat.browserSuggestions.screenshot.prompt"), icon: Camera },
-    { title: t("chat.browserSuggestions.summarize.title"), desc: t("chat.browserSuggestions.summarize.prompt"), icon: BookOpen },
-    { title: t("chat.browserSuggestions.birthdayWeek.title"), desc: t("chat.browserSuggestions.birthdayWeek.prompt"), icon: Search },
-    { title: t("chat.browserSuggestions.news.title"), desc: t("chat.browserSuggestions.news.prompt"), icon: Search },
-  ];
-
-  const dynamicWorkerSuggestions = [
-    { title: t("chat.dwSuggestions.speed.title"), desc: t("chat.dwSuggestions.speed.prompt"), icon: Zap },
-    { title: t("chat.dwSuggestions.compare.title"), desc: t("chat.dwSuggestions.compare.prompt"), icon: Zap },
-    { title: t("chat.dwSuggestions.blocked.title"), desc: t("chat.dwSuggestions.blocked.prompt"), icon: Zap },
-  ];
-
-  // Sandbox demo prompts need tools enabled to actually invoke executeCode /
-  // createWebPreview — otherwise clicking one just gets a plain-text answer
-  // with no sandbox involved, which defeats the point of the suggestion.
-  const handleSandboxSuggestion = (desc: string) => {
-    toolsEnabledRef.current = true;
-    setToolsEnabled(true);
-    handleSend(desc);
+  // Suggestion cards: tool demos need tools enabled to actually invoke
+  // executeCode / createWebPreview / MCP tools. Write the ref synchronously —
+  // setToolsEnabled alone would still send the stale value this tick.
+  const handleSuggestion = (prompt: string, opts: SuggestionSendOpts) => {
+    if (opts.tools) {
+      toolsEnabledRef.current = true;
+      setToolsEnabled(true);
+    }
+    if (opts.mcp && !connectedMcpServers.includes(opts.mcp)) {
+      setInput(prompt);
+      setShowMcpPanel(true);
+      setMcpConnectHint(true);
+      return;
+    }
+    handleSend(prompt);
   };
-
-  const safetySuggestions = [
-    { title: t("chat.safetySuggestions.bully.title"), desc: t("chat.safetySuggestions.bully.prompt") },
-    { title: t("chat.safetySuggestions.hate.title"), desc: t("chat.safetySuggestions.hate.prompt") },
-    { title: t("chat.safetySuggestions.violence.title"), desc: t("chat.safetySuggestions.violence.prompt") },
-    { title: t("chat.safetySuggestions.pii.title"), desc: t("chat.safetySuggestions.pii.prompt") },
-    { title: t("chat.safetySuggestions.injection1.title"), desc: t("chat.safetySuggestions.injection1.prompt") },
-    { title: t("chat.safetySuggestions.injection2.title"), desc: t("chat.safetySuggestions.injection2.prompt") },
-  ];
 
   const lastAssistantIdx = messages.length - 1;
   const lastAssistantMsg = messages[lastAssistantIdx]?.role === "assistant" ? messages[lastAssistantIdx] : undefined;
@@ -1874,87 +1872,7 @@ export function ChatPage() {
                     <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{t("chat.title")}</h1>
                     <p className="text-base text-muted-foreground mt-1">{t("chat.description")}</p>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    {suggestions.map((s) => (
-                      <button
-                        key={s.title}
-                        onClick={() => handleSend(s.desc)}
-                        className="text-left rounded-2xl border border-border/60 px-4 py-3.5 hover:bg-muted/50 active:bg-muted/70 transition-colors"
-                      >
-                        <div className="text-sm font-medium">{s.title}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="pt-2">
-                    <p className="text-xs font-medium text-muted-foreground/70 mb-2">{t("chat.sandboxLabel")}</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {sandboxSuggestions.map((s) => (
-                        <button
-                          key={s.title}
-                          onClick={() => handleSandboxSuggestion(s.desc)}
-                          className="text-left rounded-2xl border border-sky-300/40 dark:border-sky-800/40 px-4 py-3.5 hover:bg-sky-50/50 dark:hover:bg-sky-950/20 active:bg-sky-50 dark:active:bg-sky-950/30 transition-colors"
-                        >
-                          <div className="flex items-center gap-1.5 text-sm font-medium">
-                            <s.icon className="size-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
-                            {s.title}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="pt-2">
-                    <p className="text-xs font-medium text-muted-foreground/70 mb-2">{t("chat.dwLabel")}</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {dynamicWorkerSuggestions.map((s) => (
-                        <button
-                          key={s.title}
-                          onClick={() => handleSandboxSuggestion(s.desc)}
-                          className="text-left rounded-2xl border border-amber-300/40 dark:border-amber-800/40 px-4 py-3.5 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 active:bg-amber-50 dark:active:bg-amber-950/30 transition-colors"
-                        >
-                          <div className="flex items-center gap-1.5 text-sm font-medium">
-                            <s.icon className="size-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                            {s.title}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="pt-2">
-                    <p className="text-xs font-medium text-muted-foreground/70 mb-2">{t("chat.browserLabel")}</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {browserSuggestions.map((s) => (
-                        <button
-                          key={s.title}
-                          onClick={() => handleSandboxSuggestion(s.desc)}
-                          className="text-left rounded-2xl border border-violet-300/40 dark:border-violet-800/40 px-4 py-3.5 hover:bg-violet-50/50 dark:hover:bg-violet-950/20 active:bg-violet-50 dark:active:bg-violet-950/30 transition-colors"
-                        >
-                          <div className="flex items-center gap-1.5 text-sm font-medium">
-                            <s.icon className="size-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
-                            {s.title}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="pt-2">
-                    <p className="text-xs font-medium text-muted-foreground/70 mb-2">{t("chat.safetyLabel")}</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {safetySuggestions.map((s) => (
-                        <button
-                          key={s.title}
-                          onClick={() => handleSend(s.desc)}
-                          className="text-left rounded-2xl border border-destructive/30 px-4 py-3.5 hover:bg-destructive/5 active:bg-destructive/10 transition-colors"
-                        >
-                          <div className="text-sm font-medium text-destructive">{s.title}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{s.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <SuggestionCategories onSend={handleSuggestion} />
                 </div>
               </div>
             ) : (
@@ -2028,6 +1946,9 @@ export function ChatPage() {
               onChange={handleFileSelect}
               className="hidden"
             />
+            {mcpConnectHint && (
+              <p className="text-center text-[11px] text-amber-600 dark:text-amber-400 mb-1.5">{t("chat.guardrailSuggestions.connectFirst")}</p>
+            )}
             <div className="relative rounded-3xl border bg-muted/30 focus-within:border-foreground/20 transition-colors">
               {pendingAttachment && (
                 <div className="flex items-center gap-1.5 px-4 md:px-5 pt-3">

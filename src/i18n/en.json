@@ -262,6 +262,39 @@
       "response": "The tool response may contain sensitive data and was blocked by response-side DLP (check the Gateway log to confirm)",
       "rule": "Rule",
       "requestId": "Request ID"
+    },
+    "categories": {
+      "basics": {
+        "title": "Cloudflare Basics",
+        "desc": "Q&A on Workers, AI Gateway and R2"
+      },
+      "sandbox": {
+        "title": "Sandbox Demo",
+        "desc": "Run code and preview pages in an isolated container"
+      },
+      "dw": {
+        "title": "Dynamic Workers Demo",
+        "desc": "Generate and run Worker code on the fly"
+      },
+      "browser": {
+        "title": "Browser Tools Demo",
+        "desc": "Screenshot, summarize pages and search the web"
+      },
+      "safety": {
+        "title": "AI Safety Test",
+        "desc": "See Guardrails block harmful content and prompt injection"
+      },
+      "guardrails": {
+        "title": "MCP Guardrails Demo",
+        "desc": "Gateway policies blocking Salesforce MCP tool calls"
+      },
+      "count": "{{count}} examples"
+    },
+    "guardrailSuggestions": {
+      "connectFirst": "Connect SAP & Salesforce in the MCP panel first, then send",
+      "resetTitle": "Reset: set the opportunity stage back to Prospecting",
+      "viewPolicy": "View policy details →",
+      "viewPolicyDesc": "Gateway policies, DLP rules and demo flow for the four scenarios"
     }
   },
   "crawler": {
