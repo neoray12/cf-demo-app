@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-10-13-mcp-guardrails.md
+  s_caa00abd3b347d::t_2c61813955cf14 1-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2833a2d3acc207b3bbec9e4172e91d7d492b5d62",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
