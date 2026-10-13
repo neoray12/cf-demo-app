@@ -1,0 +1,19 @@
+src/app/api/mcp/auth/callback/route.ts
+  s_caa00abd3b347d::t_7fae803de1b3af 93-103,105-108,114-115,118-127,129,131-132,134-137,140-144,147-148,150,153-161,163-168,171-172,176-178,180-185,192-193,196-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2052a655c8cda0f2e845a1509daccf14a4a8a1c1",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
