@@ -70,6 +70,11 @@
   - 放行 / 擋下兩個 prompt，各有「在聊天中試試」按鈕
 - 頁首說明 demo 流程：先跑擋下的 prompt（成功寫入）→ 到 Dashboard 開規則 → 等約 15 秒 → 再跑一次（被擋）。
 
+### A1b. 首頁「MCP 卡控示範」類別
+
+- 是首頁建議類別之一（見設計 C），點開後顯示各場景要被擋下的 prompt 卡片，以及「查看政策說明 →」連到 `/mcp-guardrails`。
+- 點卡片的行為和其他建議卡片一樣，直接送出，並同步打開「工具」（沿用 `toolsEnabledRef`）。如果 `saas` 還沒連線，就不送出，改為打開 MCP 面板並提示先連線。
+
 ### A2. 帶 prompt 進聊天
 
 - 「在聊天中試試」導向 `/?prompt=<encoded>&mcp=saas`。
@@ -110,6 +115,16 @@
 - 工具名稱用易讀格式：`tool_saas_salesforce-mcp_sf_create_lead` 顯示為「Salesforce · sf_create_lead」；內建工具沿用現有的 i18n 名稱。
 - 被 Gateway 攔截的工具，在時間軸上標 🛡。
 - 時間軸只存在前端訊息狀態（`ChatMessage.timeline`），不送回後端，也不影響模型 context。
+
+## 設計 C：首頁建議改為可展開的類別
+
+現在首頁一次列出 5 組、約 20 張範例卡片，太擠。改成先列「類別」，點開才顯示該類別的範例：
+
+- 類別（依序）：Cloudflare 入門（原本最上面 3 張）、Sandbox 示範、Dynamic Workers 示範、瀏覽器工具示範、AI 安全測試、**MCP 卡控示範**（新）。
+- 類別卡片：圖示、名稱、一句話說明、範例數量，沿用各組現有的配色（sky / amber / violet / destructive；MCP 用 emerald）。
+- 點類別卡片 → 在類別區塊下方展開該類別的範例；再點一次收合。一次只展開一個類別（手風琴），點另一個類別會切換過去。預設全部收合。
+- 範例卡片的樣式與點擊行為維持現狀（Sandbox / DW / 瀏覽器類別會同步打開「工具」）。
+- 把首頁建議抽成獨立元件 `src/app/components/chat/suggestion-categories.tsx`。`chat.tsx` 已超過 2,000 行，只傳入 `onSend(prompt, { tools?: boolean, mcp?: string })`。
 
 ## 錯誤處理
 
