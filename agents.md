@@ -118,6 +118,29 @@
 | `src/app/pages/clef-playground.tsx` | Playground UI（預設情境、問題建構器、機率視覺化） |
 | `src/app/(dashboard)/clef/page.tsx` | `/clef` 路由 |
 
+### 7. MCP 卡控 Demo（Gateway + DLP 對 MCP tool call 卡控）
+
+設計與實測紀錄：`docs/superpowers/specs/2026-10-13-mcp-guardrails-design.md`。
+
+- 四條 Gateway HTTP 規則（名稱前綴 `MCP Demo:`，**預設停用、由簡報者在 Dashboard 開關**，App 不呼叫管理 API）都比對 upstream host `salesforce-mcp.neokung.work` + 自訂 DLP profile + `http.body_phase`：
+  1. 工具層級：`sf_(create|update)_*` 寫入工具（upload）— rule `4c6f7183-708e-4fb8-abc3-3f3e18f75eaf`
+  2. 動作層級：`"stage":"Closed…"` 結案商機（upload）— rule `e50d7a14-ae32-4b57-9911-ad63394a6c7f`；demo 商機 `006hg000001fNCzAAM`「MCP Demo 商機 (Spike)」
+  3. 參數層級：SOQL `FROM Contact(s)/User(s)`（upload）— rule `5e050c10-4b80-4352-b691-79f36730d759`
+  4. 回應 DLP：工具回應含 Email（download）— rule `0b3b9c32-c2dd-4318-8467-9388df53dfee`
+- **Salesforce MCP worker 必須 `enableJsonResponse: true`**：Gateway DLP 不掃 SSE（`text/event-stream`）回應，否則場景 4 無效
+- 被擋時 MCP client 收到：request 方向 `McpError -30403`（`data.rule_id` / `request_id`）；response 方向 `McpError -32603 Internal Error`（無 rule ID，只在 `saas` Portal 上解讀為「可能被攔截」）。`classifyMcpError()` 把它轉成 `{ blocked: true, … }` 工具結果，前端畫 🛡 卡片，system prompt 要求模型不要重試或繞過
+- DLP regex 限制：Rust regex、無 lookaround、不能有無上限量詞（`+`/`*` 會回 3305）；word_list 每帳號只能 1 個（已被 SAP 規則使用）
+- 規則啟用約 11 秒、停用約 30 秒生效
+- 首頁建議改為可展開類別（含「MCP 卡控示範」）；聊天訊息下方顯示處理過程時間軸（`buildTimeline`）
+
+| 檔案 | 說明 |
+|------|------|
+| `src/lib/mcp-guardrails.ts` | 場景資料、rule ID、`classifyMcpError`、`gatewayRuleUrl` |
+| `src/lib/chat-timeline.ts` | 串流事件 → 處理過程步驟 |
+| `src/app/components/chat/suggestion-categories.tsx` | 首頁可展開類別 |
+| `src/app/components/chat/process-timeline.tsx` / `gateway-block-card.tsx` | 時間軸、攔截卡片 |
+| `src/app/pages/mcp-guardrails.tsx` | `/mcp-guardrails` 政策說明頁 |
+
 ## 技術棧
 
 - **前端**: React 19 + Vite + Tailwind CSS 4 + shadcn (new-york style)
