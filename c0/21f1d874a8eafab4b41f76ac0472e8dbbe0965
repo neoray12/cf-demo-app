@@ -1,0 +1,27 @@
+src/app/(dashboard)/mcp-guardrails/page.tsx
+  s_caa00abd3b347d::t_c127505a22ec8a 1-7
+src/app/components/app-sidebar.tsx
+  s_caa00abd3b347d::t_a2e9483b72bff6 392-401
+src/app/pages/mcp-guardrails.tsx
+  s_caa00abd3b347d::t_59108f98dfd6d1 1-131
+src/i18n/en.json
+  s_caa00abd3b347d::t_cf8caa8d6d0f12 27-28,553-578
+src/i18n/zh-TW.json
+  s_caa00abd3b347d::t_56b201dfb9e4a8 27-28,553-578
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c021f1d874a8eafab4b41f76ac0472e8dbbe0965",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
