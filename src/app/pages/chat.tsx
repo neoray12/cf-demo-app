@@ -160,6 +160,22 @@ function parseMcpToolName(rawName: string, t: TFunc): { isMcp: boolean; serverId
   };
 }
 
+// Upstream servers behind the MCP Server Portal — the Portal prefixes their
+// tool names with the server ID (`salesforce-mcp_sf_create_lead`).
+const PORTAL_SERVER_LABELS: Record<string, string> = {
+  "salesforce-mcp": "Salesforce",
+  "sap-mcp": "SAP",
+};
+
+/** "Server · tool" for an MCP tool; Portal tools show the upstream server, not the Portal. */
+function mcpToolDisplayName(rawName: string, t: TFunc): string | null {
+  const mcp = parseMcpToolName(rawName, t);
+  if (!mcp) return null;
+  const portal = mcp.toolName.match(/^([a-z0-9-]+-mcp)_(.+)$/);
+  if (portal) return `${PORTAL_SERVER_LABELS[portal[1]!] ?? portal[1]} · ${portal[2]}`;
+  return `${mcp.serverLabel} · ${mcp.toolName}`;
+}
+
 function friendlyToolName(rawName: string, t: TFunc): string {
   if (TOOL_KEYS[rawName]) return t(TOOL_KEYS[rawName]);
   const mcp = parseMcpToolName(rawName, t);
@@ -731,7 +747,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   const mcp = parseMcpToolName(toolCall.name, t);
 
   const blocked = toolCall.result as (GatewayBlock & { source: string; tool: string }) | undefined;
-  if (blocked?.blocked === true) return <GatewayBlockCard block={blocked} />;
+  if (blocked?.blocked === true) return <GatewayBlockCard block={blocked} label={mcpToolDisplayName(toolCall.name, t) ?? undefined} />;
   if (toolCall.name === "executeCode" || toolCall.name === "executeJs" || toolCall.name === "codemode") return <CodeExecutionDisplay toolCall={toolCall} />;
   if (toolCall.name === "createWebPreview") return <WebPreviewDisplay toolCall={toolCall} />;
   if (toolCall.name === "captureScreenshot") return <ScreenshotDisplay toolCall={toolCall} />;
@@ -824,7 +840,7 @@ function SourcesDisplay({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
   const { t } = useTranslation();
   const sources = [...new Set(
     toolCalls
-      .filter((tc) => tc.status === "done")
+      .filter((tc) => tc.status === "done" && (tc.result as { blocked?: unknown } | undefined)?.blocked !== true)
       .map((tc) => {
         const sourceKey = SOURCE_KEYS[tc.name];
         if (sourceKey) return t(sourceKey);
@@ -876,10 +892,7 @@ function AssistantMessage({
   // Parts are the source of truth while they exist; plain content is the
   // fallback for messages that never got parts (e.g. "stopped" notices).
   const showContentFallback = Boolean(renderedContent) && !hasTextPart;
-  const toolLabel = (name: string) => {
-    const mcp = parseMcpToolName(name, t);
-    return mcp ? `${mcp.serverLabel} · ${mcp.toolName}` : friendlyToolName(name, t);
-  };
+  const toolLabel = (name: string) => mcpToolDisplayName(name, t) ?? friendlyToolName(name, t);
 
   return (
     <div className="max-w-full">
@@ -1227,7 +1240,7 @@ export function ChatPage() {
     // Add assistant placeholder
     const assistantMsgId = genId();
     streamingMsgIdRef.current = assistantMsgId;
-    const assistantMsg: ChatMessage = { id: assistantMsgId, role: "assistant", content: "", reasoning: "", toolCalls: [], timeline: { events: [], endAt: null } };
+    const assistantMsg: ChatMessage = { id: assistantMsgId, role: "assistant", content: "", reasoning: "", toolCalls: [] };
 
     setMessages((prev) => [...prev, assistantMsg]);
     setIsLoading(true);
@@ -1242,6 +1255,10 @@ export function ChatPage() {
     // doFetch: single streaming fetch attempt, returns flags
     const doFetch = async (): Promise<{ gotTextContent: boolean; gotError: boolean; hasToolResults: boolean }> => {
       const t0 = performance.now();
+      // Fresh timeline per attempt (a retry restarts the clock).
+      setMessages((prev) =>
+        prev.map((m) => m.id === assistantMsgId ? { ...m, timeline: { events: [], endAt: null, startedAt: t0 } } : m)
+      );
       let gotTextContent = false;
       let gotError = false;
       let hasToolResults = false;
@@ -1339,7 +1356,7 @@ export function ChatPage() {
         const r = accReasoning;
         const tc = [...toolCalls];
         const pt = parts;
-        const timeline = { events: [...events], endAt };
+        const timeline = { events: [...events], endAt, startedAt: t0 };
         setMessages((prev) =>
           prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc, parts: pt, routedModel, timeline } : m)
         );
@@ -1455,7 +1472,7 @@ export function ChatPage() {
         console.warn("[Chat] No text content received, retrying...");
         // Reset assistant message for retry
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content: "", toolCalls: [], reasoning: "", parts: [], timeline: { events: [], endAt: null } } : m)
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content: "", toolCalls: [], reasoning: "", parts: [] } : m)
         );
         ({ gotTextContent, gotError } = await doFetch());
       }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Loader2, ShieldAlert, X, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { buildTimeline, type TimelineEvent, type TimelineStep } from "@/lib/chat-timeline";
@@ -7,6 +7,8 @@ export interface ChatTimeline {
   events: TimelineEvent[];
   /** ms since submit when the stream ended; null while still streaming. */
   endAt: number | null;
+  /** performance.now() at submit — anchors the live clock. */
+  startedAt: number;
 }
 
 const secs1 = (ms: number) => (Math.max(0, ms) / 1000).toFixed(1);
@@ -28,15 +30,6 @@ export function ProcessTimeline({
   const [expanded, setExpanded] = useState(false);
   const live = streaming && timeline.endAt === null;
 
-  // Event times are relative to the submit, which this component can't see —
-  // anchor to the moment it sees an empty live timeline (the placeholder is
-  // rendered right as the request starts; a retry resets events to empty).
-  const anchorRef = useRef<number>(performance.now());
-  const isFresh = live && timeline.events.length === 0;
-  useEffect(() => {
-    if (isFresh) anchorRef.current = performance.now();
-  }, [isFresh]);
-
   // Re-render once a second while live so running steps tick.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -50,7 +43,7 @@ export function ProcessTimeline({
 
   // An interrupted turn may never have recorded endAt — close it at its last event.
   const endAt = live ? null : (timeline.endAt ?? lastEventAt);
-  const now = live ? Math.max(performance.now() - anchorRef.current, lastEventAt) : (endAt ?? 0);
+  const now = live ? Math.max(performance.now() - timeline.startedAt, lastEventAt) : (endAt ?? 0);
   const steps = buildTimeline(timeline.events, endAt);
 
   const stepLabel = (s: TimelineStep) =>
@@ -99,6 +92,7 @@ export function ProcessTimeline({
     <div className="mt-1 text-xs text-muted-foreground">
       <button
         onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
         className="inline-flex items-center gap-1.5 px-2 py-1 -ml-2 rounded-lg hover:bg-muted/60 transition-colors cursor-pointer"
       >
         <ChevronRight className={`size-3 transition-transform ${expanded ? "rotate-90" : ""}`} />

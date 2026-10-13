@@ -3,7 +3,14 @@ import { useTranslation } from "react-i18next";
 import { GUARDRAIL_SCENARIOS, gatewayRuleUrl, type GatewayBlock } from "@/lib/mcp-guardrails";
 
 /** Shown in place of a tool call that Cloudflare Gateway blocked. */
-export function GatewayBlockCard({ block }: { block: GatewayBlock & { source: string; tool: string } }) {
+export function GatewayBlockCard({
+  block,
+  label,
+}: {
+  block: GatewayBlock & { source: string; tool: string };
+  /** Display name for the blocked tool; defaults to `source · tool`. */
+  label?: string;
+}) {
   const { t } = useTranslation();
   const scenario = block.scenarioId ? GUARDRAIL_SCENARIOS.find((s) => s.id === block.scenarioId) : undefined;
 
@@ -14,7 +21,7 @@ export function GatewayBlockCard({ block }: { block: GatewayBlock & { source: st
         <span className="text-sm font-medium">{t("chat.gatewayBlock.title")}</span>
       </div>
       <div className="mt-1 ml-6 font-mono text-muted-foreground break-all">
-        {block.source} · {block.tool}
+        {label ?? `${block.source} · ${block.tool}`}
       </div>
 
       <div className="mt-2 ml-6 space-y-1 text-foreground/80">
