@@ -471,5 +471,32 @@
     "useCase": "Who uses it and what it solves",
     "samples": "Sample media",
     "samplesHint": "Click to add or remove; mix with your own uploads"
+  },
+  "guardrails": {
+    "s1": {
+      "title": "Tool level: no writes to the CRM",
+      "desc": "Blocks every sf_create_* / sf_update_* write tool; read tools keep working.",
+      "allowPrompt": "List the Accounts in Salesforce",
+      "blockPrompt": "Create a lead in Salesforce: 陳志明, company 'Demo 半導體', source Web"
+    },
+    "s2": {
+      "title": "Action level: no closing opportunities",
+      "desc": "Opportunities can still be edited, but the stage cannot be set to Closed (Won / Lost).",
+      "allowPrompt": "Change the stage of the opportunity MCP Demo 商機 (Spike) to Negotiation/Review",
+      "blockPrompt": "Change the stage of the opportunity MCP Demo 商機 (Spike) to Closed Won",
+      "resetPrompt": "Change the stage of the opportunity MCP Demo 商機 (Spike) back to Prospecting"
+    },
+    "s3": {
+      "title": "Parameter level: no SOQL on people data",
+      "desc": "Inspects the SOQL parameter; queries against the Contact / User objects are blocked.",
+      "allowPrompt": "Use SOQL to fetch 5 Account names",
+      "blockPrompt": "Use SOQL to pull the name, email and phone of every Contact"
+    },
+    "s4": {
+      "title": "Response DLP: no personal data back to the LLM",
+      "desc": "Inspects responses from the MCP server; content with personal data such as email addresses never reaches the model.",
+      "allowPrompt": "List the Accounts in Salesforce",
+      "blockPrompt": "List the Salesforce Contacts and their email addresses"
+    }
   }
 }

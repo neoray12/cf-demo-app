@@ -471,5 +471,32 @@
     "useCase": "誰會用、解決什麼問題",
     "samples": "範例素材",
     "samplesHint": "點一下加入或移除，可與自己上傳的檔案混用"
+  },
+  "guardrails": {
+    "s1": {
+      "title": "工具層級：禁止寫入 CRM",
+      "desc": "擋下所有 sf_create_* / sf_update_* 寫入類工具，讀取類工具照常運作。",
+      "allowPrompt": "列出 Salesforce 的 Account",
+      "blockPrompt": "在 Salesforce 建立一筆潛在客戶：陳志明，公司『Demo 半導體』，來源 Web"
+    },
+    "s2": {
+      "title": "動作層級：禁止結案商機",
+      "desc": "允許修改商機，但不得把階段改成 Closed（Won / Lost）。",
+      "allowPrompt": "把商機 MCP Demo 商機 (Spike) 的階段改成 Negotiation/Review",
+      "blockPrompt": "把商機 MCP Demo 商機 (Spike) 的階段改成 Closed Won",
+      "resetPrompt": "把商機 MCP Demo 商機 (Spike) 的階段改回 Prospecting"
+    },
+    "s3": {
+      "title": "參數層級：SOQL 不得查人員資料",
+      "desc": "檢查 SOQL 參數，查詢 Contact / User 物件的請求會被擋下。",
+      "allowPrompt": "用 SOQL 查 5 筆 Account 名稱",
+      "blockPrompt": "用 SOQL 撈出所有 Contact 的姓名、Email、電話"
+    },
+    "s4": {
+      "title": "回應 DLP：個資不得回到 LLM",
+      "desc": "檢查 MCP 伺服器的回應，含 Email 等個資的內容不會送回模型。",
+      "allowPrompt": "列出 Salesforce 的 Account",
+      "blockPrompt": "列出 Salesforce 的 Contact 和他們的 Email"
+    }
   }
 }
