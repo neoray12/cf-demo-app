@@ -389,6 +389,16 @@ export function AppSidebar() {
                   <span>{t("sidebar.clef")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname === "/mcp-guardrails"}
+                  onClick={() => handleNavClick("/mcp-guardrails")}
+                  tooltip={t("sidebar.guardrails")}
+                >
+                  <ShieldCheck />
+                  <span>{t("sidebar.guardrails")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

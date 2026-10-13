@@ -24,7 +24,8 @@
     "lightMode": "Light Mode",
     "darkMode": "Dark Mode",
     "logout": "Log Out",
-    "clef": "Clef Decisions"
+    "clef": "Clef Decisions",
+    "guardrails": "MCP Guardrails"
   },
   "login": {
     "title": "Cloudflare Demo",
@@ -549,6 +550,31 @@
       "desc": "Inspects responses from the MCP server; content with personal data such as email addresses never reaches the model.",
       "allowPrompt": "List the Accounts in Salesforce",
       "blockPrompt": "List the Salesforce Contacts and their email addresses"
-    }
+    },
+    "title": "MCP Guardrails",
+    "intro": "SAP and Salesforce MCP traffic goes through the MCP Server Portal, then Cloudflare Gateway HTTP policies and DLP. Each scenario maps to one Gateway rule that blocks a tool call or response at a different level.",
+    "flowTitle": "Demo flow",
+    "flow1": "Send the allowed prompt first and confirm the write succeeds",
+    "flow2": "Open the matching rule in the Dashboard",
+    "flow3": "After about 15 seconds, send the blocked prompt again and watch it get stopped",
+    "levels": {
+      "tool": "Tool",
+      "action": "Action",
+      "parameter": "Parameter",
+      "response": "Response"
+    },
+    "policy": "Policy",
+    "selector": "Selector",
+    "operator": "Operator",
+    "value": "Value",
+    "actionCol": "Action",
+    "dlpRegex": "DLP regex",
+    "openRule": "Open rule in Dashboard",
+    "tryInChat": "Try in chat",
+    "allowPrompt": "Allowed prompt",
+    "blockPrompt": "Blocked prompt",
+    "resetPrompt": "Reset prompt",
+    "s3Note": "A FROM Contacts subquery used to bypass this; the regex was adjusted",
+    "s4Note": "Requires the upstream to return JSON; SSE streams are not scanned by DLP"
   }
 }

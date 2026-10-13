@@ -24,7 +24,8 @@
     "lightMode": "淺色模式",
     "darkMode": "深色模式",
     "logout": "登出",
-    "clef": "Clef 決策模型"
+    "clef": "Clef 決策模型",
+    "guardrails": "MCP 卡控"
   },
   "login": {
     "title": "Cloudflare Demo",
@@ -549,6 +550,31 @@
       "desc": "檢查 MCP 伺服器的回應，含 Email 等個資的內容不會送回模型。",
       "allowPrompt": "列出 Salesforce 的 Account",
       "blockPrompt": "列出 Salesforce 的 Contact 和他們的 Email"
-    }
+    },
+    "title": "MCP 卡控",
+    "intro": "SAP 與 Salesforce 的 MCP 流量先經 MCP Server Portal，再通過 Cloudflare Gateway HTTP 政策與 DLP 檢查。每個場景對應一條 Gateway 規則，可在不同層級攔截工具呼叫或回應。",
+    "flowTitle": "Demo 流程",
+    "flow1": "先送出會被擋下的 prompt 的「放行版本」，確認成功寫入",
+    "flow2": "在 Dashboard 開啟對應規則",
+    "flow3": "約 15 秒後再送一次擋下的 prompt，確認被攔截",
+    "levels": {
+      "tool": "工具",
+      "action": "動作",
+      "parameter": "參數",
+      "response": "回應"
+    },
+    "policy": "政策",
+    "selector": "Selector",
+    "operator": "Operator",
+    "value": "Value",
+    "actionCol": "Action",
+    "dlpRegex": "DLP regex",
+    "openRule": "在 Dashboard 開啟規則",
+    "tryInChat": "在聊天中試試",
+    "allowPrompt": "放行的 prompt",
+    "blockPrompt": "會被擋下的 prompt",
+    "resetPrompt": "重設 prompt",
+    "s3Note": "子查詢 FROM Contacts 曾經繞過，已調整 regex",
+    "s4Note": "需 upstream 回傳 JSON；SSE 串流不會被 DLP 掃描"
   }
 }
