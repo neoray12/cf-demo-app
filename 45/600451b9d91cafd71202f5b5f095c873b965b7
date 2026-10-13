@@ -1,0 +1,33 @@
+src/app/pages/chat.tsx
+  s_caa00abd3b347d::t_0f11d1d19a040f 13,22,26,1186-1187,1189-1206,1587,1711,1733-1747,1875,1949-1951
+src/i18n/en.json
+  s_caa00abd3b347d::t_898d32486e72dc 265-297
+src/i18n/zh-TW.json
+  s_caa00abd3b347d::t_350254137ce137 265-297
+src/app/components/chat/suggestion-categories.tsx
+  s_dcb3f9d92d08d5::t_eec3183d0c8a8e 1-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "45600451b9d91cafd71202f5b5f095c873b965b7",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_dcb3f9d92d08d5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2701c50d73e5943a",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
