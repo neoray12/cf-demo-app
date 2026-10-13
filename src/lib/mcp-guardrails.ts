@@ -36,7 +36,7 @@ export const GUARDRAIL_SCENARIOS: GuardrailScenario[] = [
     descKey: 'guardrails.s1.desc',
     policy: [
       { selector: 'Host', operator: 'in', value: UPSTREAM_HOST },
-      { selector: 'DLP Profile', operator: 'in', value: 'MCP Demo: Block CRM write tools' },
+      { selector: 'DLP Profile', operator: 'in', value: 'MCP Demo: Salesforce Write Tools' },
       { selector: 'Body Phase', operator: 'is', value: 'upload' },
     ],
     dlpRegex: 'sf_(create|update)_(account|contact|opportunity|lead|case)',
@@ -53,7 +53,7 @@ export const GUARDRAIL_SCENARIOS: GuardrailScenario[] = [
     descKey: 'guardrails.s2.desc',
     policy: [
       { selector: 'Host', operator: 'in', value: UPSTREAM_HOST },
-      { selector: 'DLP Profile', operator: 'in', value: 'MCP Demo: Block closing opportunities' },
+      { selector: 'DLP Profile', operator: 'in', value: 'MCP Demo: Close Opportunity' },
       { selector: 'Body Phase', operator: 'is', value: 'upload' },
     ],
     dlpRegex: '"stage"\\s{0,3}:\\s{0,3}"Closed',
@@ -71,7 +71,7 @@ export const GUARDRAIL_SCENARIOS: GuardrailScenario[] = [
     descKey: 'guardrails.s3.desc',
     policy: [
       { selector: 'Host', operator: 'in', value: UPSTREAM_HOST },
-      { selector: 'DLP Profile', operator: 'in', value: 'MCP Demo: Block SOQL on people data' },
+      { selector: 'DLP Profile', operator: 'in', value: 'MCP Demo: SOQL People Objects' },
       { selector: 'Body Phase', operator: 'is', value: 'upload' },
     ],
     dlpRegex: '(?i)FROM\\s{1,5}(Contacts?|Users?)\\b',
@@ -88,7 +88,7 @@ export const GUARDRAIL_SCENARIOS: GuardrailScenario[] = [
     descKey: 'guardrails.s4.desc',
     policy: [
       { selector: 'Host', operator: 'in', value: UPSTREAM_HOST },
-      { selector: 'DLP Profile', operator: 'in', value: 'MCP Demo: Block PII in responses' },
+      { selector: 'DLP Profile', operator: 'in', value: 'MCP Demo: Contact PII (Email)' },
       { selector: 'Body Phase', operator: 'is', value: 'download' },
     ],
     dlpRegex: '[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(\\.[A-Za-z0-9-]{1,63}){0,3}\\.[A-Za-z]{2,10}',

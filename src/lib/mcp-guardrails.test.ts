@@ -52,6 +52,14 @@ describe('classifyMcpError', () => {
     });
   });
 
+  it('classifies -30403 without data or parseable rule_id as a bare request block', () => {
+    expect(classifyMcpError(new McpError(-30403, 'Request blocked'), 'saas')).toEqual({
+      blocked: true,
+      direction: 'request',
+      message: GATEWAY_BLOCK_MESSAGE,
+    });
+  });
+
   it('classifies -32603 from a gateway-routed server as a response block', () => {
     expect(classifyMcpError(new McpError(-32603, 'Internal Error'), 'saas')).toEqual({
       blocked: true,
