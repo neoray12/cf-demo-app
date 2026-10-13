@@ -1,0 +1,23 @@
+src/app/pages/mcp-guardrails.tsx
+  s_caa00abd3b347d::t_a19aa8e02eea6d 18-19,25,27,31-38,122-123,125
+src/i18n/en.json
+  s_caa00abd3b347d::t_7afb28dca52e22 557,559
+src/i18n/zh-TW.json
+  s_caa00abd3b347d::t_488d739100c446 557,559
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "4ccda952e7f5b056cc753c18ae33c3a3634aa4c6",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
