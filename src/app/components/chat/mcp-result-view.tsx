@@ -4,8 +4,10 @@ import { useTranslation } from "react-i18next";
 import { AlertCircle, Code2 } from "lucide-react";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { viewMcpResult } from "@/lib/mcp-result-view";
+import { HighlightedCode } from "./highlighted-code";
 
 const box = "rounded-lg border border-border/50 bg-muted/30";
+const darkBox = "rounded-lg border border-zinc-700/50 bg-zinc-900 text-zinc-100 p-3 font-mono text-[12px] leading-relaxed overflow-auto";
 
 /** Expanded body of an MCP tool call: its arguments and a readable result. */
 export function McpResultView({ args, result }: { args?: unknown; result?: unknown }) {
@@ -23,13 +25,13 @@ export function McpResultView({ args, result }: { args?: unknown; result?: unkno
       {code && (
         <section>
           <div className="mb-1 text-[11px] font-medium text-muted-foreground">{t("chat.mcpResult.script")}</div>
-          <pre className={`${box} p-3 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-[240px] overflow-y-auto`}>{code}</pre>
+          <pre className={`${darkBox} max-h-[320px]`}><HighlightedCode code={code.trim()} language="javascript" /></pre>
         </section>
       )}
       {Object.keys(otherArgs).length > 0 && (
         <section>
           <div className="mb-1 text-[11px] font-medium text-muted-foreground">{t("chat.mcpResult.args")}</div>
-          <pre className={`${box} p-3 font-mono text-[11px] overflow-x-auto whitespace-pre-wrap break-words`}>{JSON.stringify(otherArgs, null, 2)}</pre>
+          <pre className={`${darkBox} max-h-[240px]`}><HighlightedCode code={JSON.stringify(otherArgs, null, 2)} language="json" /></pre>
         </section>
       )}
       {view && (
@@ -96,7 +98,7 @@ export function McpResultView({ args, result }: { args?: unknown; result?: unkno
             </div>
           )}
           {view.kind === "json" && (
-            <pre className={`${box} p-3 font-mono text-[11px] overflow-x-auto max-h-[320px] overflow-y-auto whitespace-pre-wrap break-words`}>{view.text}</pre>
+            <pre className={`${darkBox} max-h-[320px]`}><HighlightedCode code={view.text} language="json" /></pre>
           )}
         </section>
       )}

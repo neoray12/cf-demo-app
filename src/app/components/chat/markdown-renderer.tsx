@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { Check, Copy } from "lucide-react";
+import { HighlightedCode } from "./highlighted-code";
 
 function CodeCopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -34,7 +35,7 @@ function CodeBlock({ className, children }: { className?: string; children: Reac
         <CodeCopyButton text={code} />
       </div>
       <pre className="bg-zinc-900 text-zinc-100 p-4 overflow-x-auto text-[13px] leading-relaxed">
-        <code className={className}>{code}</code>
+        <HighlightedCode code={code} language={language} />
       </pre>
     </div>
   );

@@ -7,6 +7,7 @@ import { ErrorDialog, type ChatErrorState } from "../components/chat/error-dialo
 import { McpConnectionsPanel } from "../components/chat/mcp-panel";
 import { ResizableSidePanel } from "../components/chat/resizable-side-panel";
 import { McpResultView } from "../components/chat/mcp-result-view";
+import { HighlightedCode } from "../components/chat/highlighted-code";
 import { McpIcon } from "../components/icons/mcp-icon";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -353,7 +354,7 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
             <CopyButton text={code} />
           </div>
           <pre className="bg-zinc-900 text-zinc-100 p-4 overflow-x-auto text-[13px] leading-relaxed max-h-[300px] overflow-y-auto">
-            <code>{code}</code>
+            <HighlightedCode code={code} language={language} />
           </pre>
           {!isCalling && (output || errorText) && (
             <div className="border-t border-zinc-700/50">
