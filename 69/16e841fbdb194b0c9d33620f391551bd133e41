@@ -1,0 +1,27 @@
+src/app/components/chat/mcp-panel.tsx
+  s_caa00abd3b347d::t_badbb5ee40b6d0 73-74,82,358-359,363,381
+src/app/components/chat/resizable-side-panel.tsx
+  s_caa00abd3b347d::t_b1831f424105d6 1-93
+src/app/pages/chat.tsx
+  s_caa00abd3b347d::t_d9de67659e0158 8,2076,2082
+src/i18n/en.json
+  s_caa00abd3b347d::t_45bb5f1539a475 320-321
+src/i18n/zh-TW.json
+  s_caa00abd3b347d::t_b053bb1aa16835 320-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6916e841fbdb194b0c9d33620f391551bd133e41",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
