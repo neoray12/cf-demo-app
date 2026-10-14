@@ -19,7 +19,7 @@
 - 支援多個模型提供商：Workers AI、OpenAI、Anthropic、Perplexity
 - 整合 **AI Search (AutoRAG)** 進行 RAG，查詢 R2 中已爬取的資料
 - 聊天 UI 仿 ChatGPT 風格：串流回覆、Markdown 渲染、模型選擇器、建議卡片
-- 預設模型：GPT-3.5 Turbo（`openai-gpt35`）
+- 預設模型：Claude Haiku 5.5（`claude-haiku-5-5`）。Anthropic 只保留 Sonnet 5.5 / Haiku 5.5；OpenAI 只保留 GPT-6.1 Sol（`gpt-6.1-sol`）/ GPT-6 Luna（`gpt-6-luna`）。Claude 5.5 不接受非預設的 `temperature`，不要在請求加上它
 
 ### 2. 網站爬蟲 (Browser Rendering)
 - **Sidebar 子功能導航**：每個功能是獨立的子頁面，不使用 Tab
@@ -106,7 +106,7 @@
   - `max_instances` 曾被 5 個「存活數天到數月、沒有依 `sleepAfter` 休眠」的 container 佔滿，新 session 全部卡住直到逾時。現在 `workers/chat-sandbox` 每次請求會在 KV 記錄最後使用時間，cron 每 5 分鐘把閒置超過 25 分鐘的 sandbox `destroy()`（`reapIdleSandboxes`），並一次性清掉先前遺留的 `LEGACY_SANDBOX_IDS`；`max_instances` 提高到 10
   - `/api/chat` 一開始就用 `ctx.waitUntil(warmSandbox())` 呼叫 sandbox 的 `/api/warmup` 預先開機，冷啟動與模型思考時間重疊；工具逾時 55s、串流 idle 90s（工具逾時必須小於 idle 視窗）；colo 重擲上限 3→2
   - `executeJs`（`normalizeCode`）改用括號配對判斷程式形狀：以 `function fib(){}` 宣告開頭、後面接 `console.log(...)` 的腳本以前會被當成函式運算式包起來而 SyntaxError（"Unexpected identifier 'console'"），幾乎每個 DW 範例前 1–2 次都失敗
-  - 預設模型改為 `claude-haiku-4-5`（Sandbox/DW 範例實測 6–10 秒；GLM 5.3 因推理過程不串流，同樣範例要 12–88 秒且變異大；gpt-oss-120b 約 8–20 秒，是不想用外部 provider 時的替代）
+  - 預設模型改為 `claude-haiku-4-5`，2026-10-14 再換成 `claude-haiku-5-5`（Sandbox/DW 範例實測 6–10 秒；GLM 5.3 因推理過程不串流，同樣範例要 12–88 秒且變異大；gpt-oss-120b 約 8–20 秒，是不想用外部 provider 時的替代）
   - sandbox worker 的 `resolveSandboxId` 做 single-flight，app 端工具呼叫會等同 session 進行中的 warmup，避免兩邊同時 probe/re-roll 互相銷毀 container
   - **建議卡片第一次點擊會送出 `toolsEnabled:false`**（`setToolsEnabled(true)` 與送出在同一個 tick，closure 還是舊值），模型於是心算、完全不呼叫 sandbox——這就是「有時候沒有正確計算」的主因之一。現在用 `toolsEnabledRef` 同步更新
   - warmup 只在提示詞像是需要 sandbox（`SANDBOX_HINT`）或有附件時才觸發，並順便暖起 Python interpreter；`/api/warmup` 會記錄各階段耗時

@@ -94,9 +94,8 @@ const VISION_MODEL_IDS = new Set([
   "cf-auto",
   "claude-sonnet-5-5",
   "claude-haiku-5-5",
-  "claude-sonnet-4-6",
-  "claude-haiku-4-5",
-  "openai-gpt5",
+  "openai-gpt6-sol",
+  "openai-gpt6-luna",
 ]);
 
 // Cloudflare Web Search API providers — list price per 1k requests, ZDR = Zero Data Retention

@@ -89,16 +89,16 @@ export const AI_MODELS: AIModel[] = [
   },
   // OpenAI
   {
-    id: "openai-gpt35",
-    name: "GPT-3.5 Turbo",
+    id: "openai-gpt6-sol",
+    name: "GPT-6.1 Sol",
     provider: "openai",
-    providerModelId: "gpt-3.5-turbo",
+    providerModelId: "gpt-6.1-sol",
   },
   {
-    id: "openai-gpt5",
-    name: "GPT-5",
+    id: "openai-gpt6-luna",
+    name: "GPT-6 Luna",
     provider: "openai",
-    providerModelId: "gpt-5",
+    providerModelId: "gpt-6-luna",
   },
   // Perplexity
   {
@@ -120,23 +120,11 @@ export const AI_MODELS: AIModel[] = [
     provider: "anthropic",
     providerModelId: "claude-haiku-5-5",
   },
-  {
-    id: "claude-sonnet-4-6",
-    name: "Claude Sonnet 4.6",
-    provider: "anthropic",
-    providerModelId: "claude-sonnet-4-6",
-  },
-  {
-    id: "claude-haiku-4-5",
-    name: "Claude Haiku 4.5",
-    provider: "anthropic",
-    providerModelId: "claude-haiku-4-5-20251001",
-  },
 ];
 
-// Haiku 4.5 answers tool-using prompts in ~6-10 s; GLM 5.3 (hidden reasoning,
-// nothing streamed while it thinks) took 12-88 s for the same prompts.
-export const DEFAULT_MODEL_ID = "claude-haiku-4-5";
+// Haiku 5.5: fast, cheap ($0.10 / $0.50 per MTok) and good at tool use — the
+// demos (sandbox, MCP, Code Mode) run on it by default.
+export const DEFAULT_MODEL_ID = "claude-haiku-5-5";
 
 export interface BrowserRenderingEndpoint {
   id: string;

@@ -38,7 +38,7 @@ function isReasoningModel(modelId: string): boolean {
 
 // Models that require max_completion_tokens instead of max_tokens
 function usesMaxCompletionTokens(modelId: string): boolean {
-  return /gpt-5/i.test(modelId) || /gpt-4o/i.test(modelId) || /o1/i.test(modelId) || /o3/i.test(modelId) || /o4/i.test(modelId);
+  return /gpt-[56]/i.test(modelId) || /gpt-4o/i.test(modelId) || /o1/i.test(modelId) || /o3/i.test(modelId) || /o4/i.test(modelId);
 }
 
 // Detect Cloudflare Firewall for AI HTML block page and extract metadata
@@ -145,8 +145,8 @@ export async function POST(request: NextRequest) {
   // Resolve model from AI_MODELS or use defaults
   const provider: ModelProvider = rawProvider || 'workers-ai';
   const defaultModels: Record<string, string> = {
-    openai: 'gpt-3.5-turbo',
-    anthropic: 'claude-sonnet-4-6',
+    openai: 'gpt-6-luna',
+    anthropic: 'claude-sonnet-5-5',
     perplexity: 'sonar',
     'workers-ai': '@cf/openai/gpt-oss-20b',
   };
