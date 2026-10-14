@@ -70,6 +70,31 @@ export function McpResultView({ args, result }: { args?: unknown; result?: unkno
               <span className="font-mono text-[11px] whitespace-pre-wrap break-words">{view.text}</span>
             </div>
           )}
+          {view.kind === "records" && (
+            <div className={`${box} overflow-hidden`}>
+              {view.summary && <div className="px-3 py-2 text-[12px] border-b border-border/50">{view.summary}</div>}
+              <div className="max-h-[320px] overflow-auto">
+                <table className="w-full text-[11px]">
+                  <thead className="sticky top-0 bg-muted">
+                    <tr>
+                      {view.columns.map((c) => (
+                        <th key={c} className="px-2.5 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">{c}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {view.rows.map((row, i) => (
+                      <tr key={i}>
+                        {row.map((v, j) => (
+                          <td key={j} className="px-2.5 py-1.5 align-top whitespace-nowrap max-w-[240px] truncate" title={v}>{v}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
           {view.kind === "json" && (
             <pre className={`${box} p-3 font-mono text-[11px] overflow-x-auto max-h-[320px] overflow-y-auto whitespace-pre-wrap break-words`}>{view.text}</pre>
           )}

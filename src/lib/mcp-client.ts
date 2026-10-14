@@ -156,7 +156,7 @@ export async function callMcpTool(
   toolName: string,
   args: Record<string, unknown>,
   accessToken?: string,
-): Promise<{ content: Array<{ type: string; text?: string }>; isError?: boolean }> {
+): Promise<{ content: Array<{ type: string; text?: string }>; isError?: boolean; structuredContent?: Record<string, unknown> }> {
   const headers: Record<string, string> = {};
   if (accessToken) {
     headers['Authorization'] = `Bearer ${accessToken}`;
@@ -187,6 +187,7 @@ export async function callMcpTool(
     return {
       content: (result.content || []) as Array<{ type: string; text?: string }>,
       isError: result.isError as boolean | undefined,
+      structuredContent: result.structuredContent as Record<string, unknown> | undefined,
     };
   } finally {
     await client.close().catch(() => {});

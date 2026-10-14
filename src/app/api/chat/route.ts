@@ -7,7 +7,7 @@ import { cookies } from 'next/headers';
 import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { chatSandboxConfigured, uploadFile as sandboxUploadFile, warmSandbox } from '@/lib/chat-sandbox';
 import { signCodeModeSession, codeModeSecret, describeTools, buildCodeModeModule, RETURN_SHAPE_HINT } from '@/lib/codemode';
-import { buildToolSet, safeTool, isWebSearchProvider, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
+import { buildToolSet, safeTool, isWebSearchProvider, buildPortalCatalogPrompt, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
@@ -310,6 +310,7 @@ export async function POST(request: NextRequest) {
   let dynamicWorkerActive = false;
   let codeModeActive = false;
   let webSearchActive = false;
+  let portalCatalogPrompt = '';
   if (useTools) {
     const cookieStore = await cookies();
     const sessionId = cookieStore.get('session_id')?.value || 'anonymous';
@@ -408,6 +409,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[Chat API] Tools registered:', Object.keys(tools).join(', '));
+    if (mcpServerIds.length) portalCatalogPrompt = await buildPortalCatalogPrompt(env as any, sessionId, mcpServerIds);
   }
 
   const systemPrompt = codeModeActive
@@ -416,7 +418,8 @@ export async function POST(request: NextRequest) {
       (sandboxToolsActive ? SANDBOX_PROMPT : '') +
       (browserToolsActive ? BROWSER_PROMPT : '') +
       (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '') +
-      (webSearchActive ? WEB_SEARCH_PROMPT : '');
+      (webSearchActive ? WEB_SEARCH_PROMPT : '') +
+      portalCatalogPrompt;
 
   // Abort on inactivity rather than on a fixed total budget. One 60s signal
   // spanned every step of a multi-step run (tool-call argument streaming, tool

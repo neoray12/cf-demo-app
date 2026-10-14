@@ -71,6 +71,8 @@
     - `neokung.work` 有 Zone Hold（含子網域）：在 hold 生效期間建立 Portal，custom hostname 建不起來，會回 **1014**。要重建 Portal 前先暫時解除 hold
 
   - `saas-cm` — 同一個 Portal 加上 `?codemode=search_and_execute`（Portal 政策 `opt_in`）：Portal 只提供 `portal_codemode_search` / `portal_codemode_execute` 兩個工具，模型寫 JS 在 Portal 端的 Dynamic Worker 一次呼叫多個工具。用它時 App 自己的 Code Mode 要關（避免巢狀執行）；首頁「Code Mode 示範」的 Portal 範例會自動關掉並只送 `saas-cm`。Gateway 在 Code Mode 下擋掉的工具呼叫包在 execute 結果裡，不會出現 🛡 攔截卡片
+    - Portal Code Mode 的 search 不是語意搜尋：模型自己寫 JS 過濾 `codemode.tools()`，常猜錯名稱。`/api/chat` 會在連著 Portal Code Mode server 時，先用 `portal_codemode_search` 抓一次工具清單（KV `mcp-catalog:{sessionId}:{serverId}`，TTL 5 分鐘），把 `codemode.<name>(args)` 清單放進 system prompt（`src/lib/portal-catalog.ts`）
+    - Salesforce MCP worker 回傳 `structuredContent`（`{ summary, totalSize, records }` / `{ summary, record }`，同一份 JSON 也放在 text）；App 端 MCP 工具結果優先回傳 structuredContent，Code Mode 腳本可直接計算。Portal 的工具說明來自**管理員授權的背景同步**（約 2 小時一次），worker 改了說明後要在 Dashboard 對 `salesforce-mcp` 重新授權 / Sync，否則 search 看到的是舊說明
 
 #### MCP 相關檔案
 

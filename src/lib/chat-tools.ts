@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { classifyMcpError } from '@/lib/mcp-guardrails';
 import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
+import { PORTAL_CATALOG_SEARCH_CODE, formatPortalCatalog, isPortalCodeModeUrl, parsePortalCatalog, type PortalCatalogEntry } from '@/lib/portal-catalog';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview } from '@/lib/chat-sandbox';
 import { normalizeCode } from '@/lib/codemode';
 
@@ -494,6 +495,11 @@ export async function buildMcpTools(
             const textParts = result.content
               .filter((c) => c.type === 'text' && c.text)
               .map((c) => c.text);
+            // Prefer structured data (e.g. Salesforce { summary, totalSize, records })
+            // so Code Mode scripts can compute on it; fall back to the text.
+            if (result.structuredContent && !result.isError) {
+              return { source: server.name, result: result.structuredContent };
+            }
             return { source: server.name, result: textParts.join('\n') || JSON.stringify(result.content) };
           } catch (err) {
             const block = classifyMcpError(err, serverId);
@@ -514,6 +520,42 @@ export async function buildMcpTools(
   }
 
   return mcpTools;
+}
+
+/**
+ * System-prompt section listing the tools callable through each connected MCP
+ * Portal Code Mode server, so the model doesn't guess names. Cached per
+ * session + server for 5 minutes, like the tool list.
+ */
+export async function buildPortalCatalogPrompt(
+  env: Record<string, unknown>,
+  sessionId: string,
+  serverIds: string[],
+): Promise<string> {
+  const kv = env.KV as KVNamespace;
+  const servers = parseMcpServerUrls((env.MCP_SERVER_URLS as string) || '')
+    .filter((s) => serverIds.includes(s.id) && isPortalCodeModeUrl(s.url));
+  const sections = await Promise.all(servers.map(async (server) => {
+    const cacheKey = `mcp-catalog:${sessionId}:${server.id}`;
+    const cached = await kv.get(cacheKey);
+    let tools: PortalCatalogEntry[] = cached ? (JSON.parse(cached) as PortalCatalogEntry[]) : [];
+    if (!cached) {
+      try {
+        const tokenRaw = await kv.get(mcpTokenKey(sessionId, server.id));
+        if (server.authType === 'oauth' && !tokenRaw) return '';
+        const accessToken = tokenRaw ? (JSON.parse(tokenRaw) as { accessToken: string }).accessToken : undefined;
+        const result = await callMcpTool(server, 'portal_codemode_search', { code: PORTAL_CATALOG_SEARCH_CODE }, accessToken);
+        const text = result.content.filter((c) => c.type === 'text' && c.text).map((c) => c.text).join('');
+        tools = parsePortalCatalog(text);
+        if (tools.length) await kv.put(cacheKey, JSON.stringify(tools), { expirationTtl: 300 });
+      } catch (err) {
+        console.warn(`[Chat API] Portal catalog fetch failed for ${server.id}:`, (err as Error).message);
+        return '';
+      }
+    }
+    return formatPortalCatalog(server.name, tools);
+  }));
+  return sections.join('');
 }
 
 /** Everything needed to rebuild the same tool set from any isolate. */

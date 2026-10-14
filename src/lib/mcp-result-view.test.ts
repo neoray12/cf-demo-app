@@ -42,3 +42,30 @@ describe('viewMcpResult', () => {
     expect(viewMcpResult({ foo: 1 })).toEqual({ kind: 'json', text: '{\n  "foo": 1\n}' });
   });
 });
+
+describe('viewMcpResult records', () => {
+  const data = { summary: '帳戶共 2 筆（顯示 2）', totalSize: 2, records: [
+    { Id: '001A', Name: 'Edge', Industry: 'Electronics', Owner: { Name: 'Neo' } },
+    { Id: '001B', Name: 'Burlington', Phone: '(336) 222-7000' },
+  ] };
+  const expected = {
+    kind: 'records',
+    summary: '帳戶共 2 筆（顯示 2）',
+    columns: ['Id', 'Name', 'Industry', 'Owner', 'Phone'],
+    rows: [['001A', 'Edge', 'Electronics', 'Neo', ''], ['001B', 'Burlington', '', '', '(336) 222-7000']],
+  };
+
+  it('renders structured { summary, records } results (app side) as a table', () => {
+    expect(viewMcpResult({ source: 's', result: data })).toEqual({ source: 's', ...expected });
+  });
+
+  it('renders the same JSON returned as text (portal side) as a table', () => {
+    expect(viewMcpResult({ source: 's', result: JSON.stringify(data) })).toEqual({ source: 's', ...expected });
+  });
+
+  it('shows a single { summary, record } as a one-row table', () => {
+    expect(viewMcpResult({ source: 's', result: { summary: '名稱: Edge', record: { Id: '001A', Name: 'Edge' } } })).toEqual({
+      source: 's', kind: 'records', summary: '名稱: Edge', columns: ['Id', 'Name'], rows: [['001A', 'Edge']],
+    });
+  });
+});
