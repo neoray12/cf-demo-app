@@ -1199,7 +1199,8 @@ export function ChatPage() {
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   // Shown when an MCP demo prompt was prefilled but its server isn't connected.
-  const [mcpConnectHint, setMcpConnectHint] = useState(false);
+  // MCP server id an example needs but isn't connected (shown above the input).
+  const [mcpConnectHint, setMcpConnectHint] = useState<string | false>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -1214,7 +1215,7 @@ export function ChatPage() {
     if (prompt) setInput(prompt);
     if (mcp && !connectedMcpServers.includes(mcp)) {
       setShowMcpPanel(true);
-      if (prompt) setMcpConnectHint(true);
+      if (prompt) setMcpConnectHint(mcp);
     }
     router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
@@ -1750,16 +1751,7 @@ export function ChatPage() {
   // executeCode / createWebPreview / MCP tools. Write the ref synchronously —
   // setToolsEnabled alone would still send the stale value this tick.
   const handleSuggestion = (prompt: string, opts: SuggestionSendOpts) => {
-    if (opts.mcp && !connectedMcpServers.includes(opts.mcp)) {
-      // Don't touch the toggles yet — the user may send something else. The
-      // suggestion's options are applied if they send this exact prompt later.
-      pendingSuggestionRef.current = { prompt, opts };
-      setInput(prompt);
-      setShowMcpPanel(true);
-      setMcpConnectHint(true);
-      return;
-    }
-    pendingSuggestionRef.current = null;
+    // Show the example's settings right away, even if it can't be sent yet.
     if (opts.tools) {
       toolsEnabledRef.current = true;
       setToolsEnabled(true);
@@ -1768,6 +1760,17 @@ export function ChatPage() {
       codeModeEnabledRef.current = opts.codeMode;
       setCodeModeEnabled(opts.codeMode);
     }
+    if (opts.mcp && !connectedMcpServers.includes(opts.mcp)) {
+      // Its MCP server isn't connected: fill the input instead of sending.
+      // Sending this exact prompt later re-runs this check, so it can't go out
+      // with the wrong server (e.g. App Code Mode wrapping the Portal's).
+      pendingSuggestionRef.current = { prompt, opts };
+      setMcpConnectHint(opts.mcp);
+      setInput(prompt);
+      setShowMcpPanel(true);
+      return;
+    }
+    pendingSuggestionRef.current = null;
     handleSend(prompt, opts.mcp ? [opts.mcp] : undefined);
   };
 
@@ -1984,7 +1987,7 @@ export function ChatPage() {
               className="hidden"
             />
             {mcpConnectHint && (
-              <p className="text-center text-[11px] text-amber-600 dark:text-amber-400 mb-1.5">{t("chat.guardrailSuggestions.connectFirst")}</p>
+              <p className="text-center text-[11px] text-amber-600 dark:text-amber-400 mb-1.5">{t("chat.guardrailSuggestions.connectFirst", { server: MCP_SERVER_LABELS[mcpConnectHint] ?? mcpConnectHint })}</p>
             )}
             <div className="relative rounded-3xl border bg-muted/30 focus-within:border-foreground/20 transition-colors">
               {pendingAttachment && (

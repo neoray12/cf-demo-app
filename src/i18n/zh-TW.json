@@ -296,7 +296,7 @@
       }
     },
     "guardrailSuggestions": {
-      "connectFirst": "請先在 MCP 面板連線 SAP & Salesforce，再送出",
+      "connectFirst": "這個範例需要「{{server}}」：請先在 MCP 面板連線，再送出",
       "resetTitle": "還原：商機階段改回 Prospecting",
       "viewPolicy": "查看政策說明 →",
       "viewPolicyDesc": "四個卡控場景的 Gateway 政策、DLP 規則與示範流程"

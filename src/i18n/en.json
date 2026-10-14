@@ -296,7 +296,7 @@
       }
     },
     "guardrailSuggestions": {
-      "connectFirst": "Connect SAP & Salesforce in the MCP panel first, then send",
+      "connectFirst": "This example needs \"{{server}}\": connect it in the MCP panel first, then send",
       "resetTitle": "Reset: set the opportunity stage back to Prospecting",
       "viewPolicy": "View policy details →",
       "viewPolicyDesc": "Gateway policies, DLP rules and demo flow for the four scenarios"
