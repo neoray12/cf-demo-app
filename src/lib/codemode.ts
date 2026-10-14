@@ -115,7 +115,9 @@ export function describeTools(tools: Record<string, { description?: string }>): 
 export const RETURN_SHAPE_HINT =
   '工具回傳的都是物件而非字串，主要欄位：readWebPage 回 url/markdown/truncated；' +
   'executeCode 回 success/stdout/stderr/error；captureScreenshot 回 imageUrl/sourceUrl；' +
-  'createWebPreview 回 url/title；searchKnowledge 回 found/count/results。';
+  'createWebPreview 回 url/title；searchKnowledge 回 found/count/results。' +
+  'MCP 工具（codemode.tool_<server>_…）回傳 { source, result }，result 是一段給人看的純文字（不是 JSON，' +
+  '沒有 records 之類的欄位）：要統計就用字串或正規表示式解析 result，否則直接 return result 讓你整理後回答。';
 
 /**
  * Index of the bracket that closes the one opened at `open`, or -1. Skips

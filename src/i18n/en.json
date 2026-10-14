@@ -302,6 +302,9 @@
       "viewPolicyDesc": "Gateway policies, DLP rules and demo flow for the four scenarios"
     },
     "codeModeSuggestions": {
+      "appList": {
+        "title": "App Code Mode · First 10 customers"
+      },
       "appAgg": {
         "title": "App Code Mode · Cross-object rollup"
       },
@@ -316,7 +319,8 @@
       },
       "agg": "List the first 5 Salesforce Accounts, then for each one find its number of opportunities and their total amount, and put it all in one table",
       "cases": "List all Salesforce support cases, count them by status and priority, and show the 3 newest",
-      "compare": "List the first 5 SAP customers and the first 5 Salesforce Accounts, find companies with similar names, and show both IDs"
+      "compare": "List the first 5 SAP customers and the first 5 Salesforce Accounts, find companies with similar names, and show both IDs",
+      "list": "List the first 10 Salesforce customers (Accounts) as a table"
     },
     "mcpPanelResize": "Drag to resize the MCP panel (double-click to reset)"
   },

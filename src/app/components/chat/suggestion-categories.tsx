@@ -181,6 +181,7 @@ export function SuggestionCategories({
       icon: Braces,
       opts: { tools: true },
       items: [
+        { title: t("chat.codeModeSuggestions.appList.title"), desc: t("chat.codeModeSuggestions.list"), icon: Braces, opts: { tools: true, codeMode: true, mcp: "saas" } },
         { title: t("chat.codeModeSuggestions.appAgg.title"), desc: t("chat.codeModeSuggestions.agg"), icon: Braces, opts: { tools: true, codeMode: true, mcp: "saas" } },
         { title: t("chat.codeModeSuggestions.appCases.title"), desc: t("chat.codeModeSuggestions.cases"), icon: Braces, opts: { tools: true, codeMode: true, mcp: "saas" } },
         { title: t("chat.codeModeSuggestions.portalAgg.title"), desc: t("chat.codeModeSuggestions.agg"), icon: Braces, opts: { tools: true, codeMode: false, mcp: "saas-cm" } },
