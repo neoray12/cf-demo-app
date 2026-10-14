@@ -1,0 +1,35 @@
+agents.md
+  s_caa00abd3b347d::t_7888b64efc2e7d 73-74
+src/app/components/chat/mcp-panel.tsx
+  s_caa00abd3b347d::t_52e98093113dd7 22
+src/app/components/chat/suggestion-categories.tsx
+  s_caa00abd3b347d::t_1c3e53200a84c9 8,25-27,37-38,41,88-96,175-189,265
+src/app/pages/chat.tsx
+  s_caa00abd3b347d::t_611534d7423ea2 139,1164-1171,1313,1316,1589,1593,1751-1754,1761
+src/i18n/en.json
+  s_caa00abd3b347d::t_2e33810fa9e035 292-296,303-319
+src/i18n/zh-TW.json
+  s_caa00abd3b347d::t_af89bb8bafca5e 292-296,303-319
+src/lib/mcp-client.ts
+  s_caa00abd3b347d::t_8cc839a4f0d7cf 65
+src/lib/mcp-guardrails.ts
+  s_caa00abd3b347d::t_cda3bbc0e2b2b7 103
+wrangler.toml
+  s_caa00abd3b347d::t_25f41828006a6a 59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c10781a970eaa15509be15609e923cbd61a0aac7",
+  "prompts": {},
+  "sessions": {
+    "s_caa00abd3b347d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53ce7f9b-a101-47f6-8d68-f1a0e64336e2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
