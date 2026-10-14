@@ -92,6 +92,8 @@ const MAX_IMAGES = 4;
 // is selected would otherwise fail deep in the provider with an opaque error.
 const VISION_MODEL_IDS = new Set([
   "cf-auto",
+  "claude-sonnet-5-5",
+  "claude-haiku-5-5",
   "claude-sonnet-4-6",
   "claude-haiku-4-5",
   "openai-gpt5",

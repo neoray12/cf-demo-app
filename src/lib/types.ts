@@ -109,6 +109,18 @@ export const AI_MODELS: AIModel[] = [
   },
   // Anthropic
   {
+    id: "claude-sonnet-5-5",
+    name: "Claude Sonnet 5.5",
+    provider: "anthropic",
+    providerModelId: "claude-sonnet-5-5",
+  },
+  {
+    id: "claude-haiku-5-5",
+    name: "Claude Haiku 5.5",
+    provider: "anthropic",
+    providerModelId: "claude-haiku-5-5",
+  },
+  {
     id: "claude-sonnet-4-6",
     name: "Claude Sonnet 4.6",
     provider: "anthropic",
