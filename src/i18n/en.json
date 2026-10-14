@@ -322,7 +322,13 @@
       "compare": "List the first 5 SAP customers and the first 5 Salesforce Accounts, find companies with similar names, and show both IDs",
       "list": "List the first 10 Salesforce customers (Accounts) as a table"
     },
-    "mcpPanelResize": "Drag to resize the MCP panel (double-click to reset)"
+    "mcpPanelResize": "Drag to resize the MCP panel (double-click to reset)",
+    "mcpResult": {
+      "script": "Script",
+      "args": "Arguments",
+      "result": "Result",
+      "toolCount": "{{count}} tools"
+    }
   },
   "crawler": {
     "title": "Web Crawler",

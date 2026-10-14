@@ -322,7 +322,13 @@
       "compare": "同時列出 SAP 前 5 個客戶與 Salesforce 前 5 個 Account，找出名稱相近的公司並列出兩邊的 ID",
       "list": "列出 Salesforce 前 10 筆客戶（Account），整理成表格"
     },
-    "mcpPanelResize": "拖曳調整 MCP 面板寬度（雙擊恢復預設）"
+    "mcpPanelResize": "拖曳調整 MCP 面板寬度（雙擊恢復預設）",
+    "mcpResult": {
+      "script": "腳本",
+      "args": "參數",
+      "result": "結果",
+      "toolCount": "{{count}} 個工具"
+    }
   },
   "crawler": {
     "title": "網站爬蟲",

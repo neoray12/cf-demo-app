@@ -6,6 +6,7 @@ import { ModelSelector } from "../components/chat/model-selector";
 import { ErrorDialog, type ChatErrorState } from "../components/chat/error-dialog";
 import { McpConnectionsPanel } from "../components/chat/mcp-panel";
 import { ResizableSidePanel } from "../components/chat/resizable-side-panel";
+import { McpResultView } from "../components/chat/mcp-result-view";
 import { McpIcon } from "../components/icons/mcp-icon";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -800,7 +801,8 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           <pre className="whitespace-pre-wrap break-words">{toolCall.error}</pre>
         </div>
       )}
-      {expanded && toolCall.result != null && (
+      {expanded && mcp && !isFailed && <McpResultView args={toolCall.args} result={toolCall.result} />}
+      {expanded && !mcp && toolCall.result != null && (
         <div className="mt-1.5 ml-3 p-3 rounded-lg bg-muted/50 text-xs font-mono overflow-x-auto max-h-[200px] md:max-h-[300px] overflow-y-auto">
           <pre className="whitespace-pre-wrap break-words">
             {typeof toolCall.result === "string"
