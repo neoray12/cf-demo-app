@@ -183,6 +183,7 @@
 - 確保 `account_id` 設定為 `5efa272dc28e4e3933324c44165b6dbe` (Neo-Cloudflare)
 - `wrangler.toml` 的 `[vars]` 放非敏感環境變數，secrets 絕不放在 `[vars]`
 - `wrangler.dev.toml` 用於本地開發，不含 `[ai]` binding（會影響 edge-preview proxy）
+- `wrangler.toml` 設了 `[placement] region = "aws:ap-northeast-1"`（東京）：中華電信行動（AS17421）等 ISP 有時會把台灣使用者路由到 **HKG**，Worker 與 AI Gateway 就從香港呼叫 Anthropic，而香港不在 Anthropic 支援地區 → `403 forbidden: Request not allowed`（2026-10-14 實測：HKG 0/6 成功、TPE 75/76 成功；Workers AI 模型不受影響）。不要拿掉 placement，也不要改成 `aws:ap-east-1`（香港）
 
 ## 協作規範
 

@@ -11,6 +11,13 @@ binding = "ASSETS"
 [observability]
 enabled = true
 
+# Run the Worker near Tokyo regardless of which colo the visitor enters.
+# Some Taiwan ISPs (e.g. CHT Mobile, AS17421) intermittently route to HKG,
+# and Anthropic rejects requests egressing from Hong Kong (unsupported region)
+# with 403 "Request not allowed". Tokyo is in Anthropic's supported list.
+[placement]
+region = "aws:ap-northeast-1"
+
 # Workers AI + AI Gateway
 [ai]
 binding = "AI"
