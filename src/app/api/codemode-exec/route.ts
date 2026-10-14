@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
-import { verifyCodeModeSession, codeModeSecret } from '@/lib/codemode';
+import { verifyCodeModeSession, codeModeSecret, resolveCodeModeToolName } from '@/lib/codemode';
 import { buildToolSet } from '@/lib/chat-tools';
 
 /**
@@ -25,12 +25,17 @@ export async function POST(request: NextRequest) {
 
   const { env } = await getCloudflareContext();
   const session = await verifyCodeModeSession(codeModeSecret(env as any), body.token);
-  if (!session || !session.toolNames.includes(body.name)) {
+  if (!session) {
     return Response.json({ error: 'Invalid or expired Code Mode token' }, { status: 403 });
+  }
+  // Scripts call the identifier form (`tool_saas_cm_…`) of hyphenated MCP keys.
+  const name = resolveCodeModeToolName(body.name, session.toolNames);
+  if (!name) {
+    return Response.json({ error: `Unknown tool: ${body.name}` }, { status: 200 });
   }
 
   const { tools } = await buildToolSet(env as any, session);
-  const tool = tools[body.name];
+  const tool = tools[name];
   if (!tool) {
     return Response.json({ error: `Unknown tool: ${body.name}` }, { status: 200 });
   }

@@ -1169,6 +1169,7 @@ export function ChatPage() {
   // Portal Code Mode connection), so the model doesn't also see the other
   // connected servers' tools. null = every connected server.
   const turnMcpServersRef = useRef<string[] | null>(null);
+  const pendingSuggestionRef = useRef<{ prompt: string; opts: SuggestionSendOpts } | null>(null);
   const [webSearchProvider, setWebSearchProvider] = useState<WebSearchProviderId>("ceramic");
   // Auto Router session-affinity key; a new chat starts a new conversation
   const conversationIdRef = useRef<string>(crypto.randomUUID());
@@ -1726,7 +1727,7 @@ export function ChatPage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (input.trim() || pendingImages.length) handleSend(input);
+      sendInput();
     }
   };
 
@@ -1744,6 +1745,16 @@ export function ChatPage() {
   // executeCode / createWebPreview / MCP tools. Write the ref synchronously —
   // setToolsEnabled alone would still send the stale value this tick.
   const handleSuggestion = (prompt: string, opts: SuggestionSendOpts) => {
+    if (opts.mcp && !connectedMcpServers.includes(opts.mcp)) {
+      // Don't touch the toggles yet — the user may send something else. The
+      // suggestion's options are applied if they send this exact prompt later.
+      pendingSuggestionRef.current = { prompt, opts };
+      setInput(prompt);
+      setShowMcpPanel(true);
+      setMcpConnectHint(true);
+      return;
+    }
+    pendingSuggestionRef.current = null;
     if (opts.tools) {
       toolsEnabledRef.current = true;
       setToolsEnabled(true);
@@ -1752,13 +1763,20 @@ export function ChatPage() {
       codeModeEnabledRef.current = opts.codeMode;
       setCodeModeEnabled(opts.codeMode);
     }
-    if (opts.mcp && !connectedMcpServers.includes(opts.mcp)) {
-      setInput(prompt);
-      setShowMcpPanel(true);
-      setMcpConnectHint(true);
+    handleSend(prompt, opts.mcp ? [opts.mcp] : undefined);
+  };
+
+  // Send button / Enter. A prompt that a suggestion filled in (while its MCP
+  // server wasn't connected yet) is sent with that suggestion's options.
+  const sendInput = () => {
+    if (!input.trim() && !pendingImages.length) return;
+    const pending = pendingSuggestionRef.current;
+    if (pending && pending.prompt === input) {
+      handleSuggestion(pending.prompt, pending.opts);
       return;
     }
-    handleSend(prompt, opts.mcp ? [opts.mcp] : undefined);
+    pendingSuggestionRef.current = null;
+    handleSend(input);
   };
 
   const lastAssistantIdx = messages.length - 1;
@@ -2035,7 +2053,7 @@ export function ChatPage() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => { if (input.trim() || pendingImages.length) handleSend(input); }}
+                    onClick={() => { sendInput(); }}
                     disabled={!input.trim() && pendingImages.length === 0}
                     className="h-8 px-4 rounded-full bg-foreground text-background text-xs font-medium flex items-center justify-center disabled:bg-muted-foreground/30 disabled:text-muted-foreground/50 transition-colors hover:bg-foreground/80"
                   >

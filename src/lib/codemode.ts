@@ -90,9 +90,24 @@ export async function verifyCodeModeSession(secret: string, token: string): Prom
  * the "no reply" fallback. Return-shape guidance lives in the system prompt
  * instead, where it doesn't perturb argument generation.
  */
+/**
+ * MCP tool keys contain hyphens (`tool_saas-cm_…`, `tool_saas_salesforce-mcp_…`),
+ * which can't follow `codemode.` in JS. The model is shown — and writes — this
+ * identifier form; /api/codemode-exec maps it back with resolveCodeModeToolName.
+ */
+export function codeModeIdentifier(name: string): string {
+  return name.replace(/[^A-Za-z0-9_$]/g, '_');
+}
+
+/** The tool key a script asked for (exact key or its identifier form), or null if not in the session. */
+export function resolveCodeModeToolName(requested: string, toolNames: string[]): string | null {
+  if (toolNames.includes(requested)) return requested;
+  return toolNames.find((n) => codeModeIdentifier(n) === requested) ?? null;
+}
+
 export function describeTools(tools: Record<string, { description?: string }>): string {
   return Object.entries(tools)
-    .map(([name, t]) => `  codemode.${name}(args) — ${t.description?.split('\n')[0] ?? ''}`)
+    .map(([name, t]) => `  codemode.${codeModeIdentifier(name)}(args) — ${t.description?.split('\n')[0] ?? ''}`)
     .join('\n');
 }
 
