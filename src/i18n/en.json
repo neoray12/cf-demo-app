@@ -289,13 +289,34 @@
         "title": "MCP Guardrails Demo",
         "desc": "Gateway policies blocking Salesforce MCP tool calls"
       },
-      "count": "{{count}} examples"
+      "count": "{{count}} examples",
+      "codemode": {
+        "title": "Code Mode demos",
+        "desc": "Run the same question with the app's Code Mode and with the MCP Portal's Code Mode"
+      }
     },
     "guardrailSuggestions": {
       "connectFirst": "Connect SAP & Salesforce in the MCP panel first, then send",
       "resetTitle": "Reset: set the opportunity stage back to Prospecting",
       "viewPolicy": "View policy details →",
       "viewPolicyDesc": "Gateway policies, DLP rules and demo flow for the four scenarios"
+    },
+    "codeModeSuggestions": {
+      "appAgg": {
+        "title": "App Code Mode · Cross-object rollup"
+      },
+      "appCases": {
+        "title": "App Code Mode · Case stats"
+      },
+      "portalAgg": {
+        "title": "Portal Code Mode · Cross-object rollup"
+      },
+      "portalCompare": {
+        "title": "Portal Code Mode · SAP × Salesforce match"
+      },
+      "agg": "List the first 5 Salesforce Accounts, then for each one find its number of opportunities and their total amount, and put it all in one table",
+      "cases": "List all Salesforce support cases, count them by status and priority, and show the 3 newest",
+      "compare": "List the first 5 SAP customers and the first 5 Salesforce Accounts, find companies with similar names, and show both IDs"
     }
   },
   "crawler": {

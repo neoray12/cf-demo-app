@@ -100,7 +100,7 @@ export const GUARDRAIL_SCENARIOS: GuardrailScenario[] = [
 ];
 
 /** MCP servers whose traffic goes through Cloudflare Gateway (via the MCP Server Portal). */
-export const GATEWAY_ROUTED_MCP_SERVERS: ReadonlySet<string> = new Set(['saas']);
+export const GATEWAY_ROUTED_MCP_SERVERS: ReadonlySet<string> = new Set(['saas', 'saas-cm']);
 
 const ACCOUNT_ID = '5efa272dc28e4e3933324c44165b6dbe';
 

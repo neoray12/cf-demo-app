@@ -62,6 +62,7 @@ const SERVER_LABELS: Record<string, { name: string; description: string }> = {
   'cf-observability': { name: 'Workers Observability', description: '偵錯並取得應用程式日誌與分析' },
   'cf-radar': { name: 'Radar', description: '取得全球網路流量洞察與趨勢' },
   'saas': { name: 'SAP & Salesforce', description: '透過 MCP Server Portal 連接 SAP 與 Salesforce，查詢業務資料與執行操作' },
+  'saas-cm': { name: 'SAP & Salesforce (Code Mode)', description: '同一個 MCP Server Portal 開啟 Code Mode：只提供 search / execute 兩個工具，模型寫 JS 一次呼叫多個工具' },
 };
 
 /**

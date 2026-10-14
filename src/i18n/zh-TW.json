@@ -289,13 +289,34 @@
         "title": "MCP 卡控示範",
         "desc": "Gateway 政策攔截 Salesforce MCP 工具呼叫"
       },
-      "count": "{{count}} 個範例"
+      "count": "{{count}} 個範例",
+      "codemode": {
+        "title": "Code Mode 示範",
+        "desc": "同一題分別用 App 端與 MCP Portal 端的 Code Mode 執行"
+      }
     },
     "guardrailSuggestions": {
       "connectFirst": "請先在 MCP 面板連線 SAP & Salesforce，再送出",
       "resetTitle": "還原：商機階段改回 Prospecting",
       "viewPolicy": "查看政策說明 →",
       "viewPolicyDesc": "四個卡控場景的 Gateway 政策、DLP 規則與示範流程"
+    },
+    "codeModeSuggestions": {
+      "appAgg": {
+        "title": "App Code Mode · 跨物件彙總"
+      },
+      "appCases": {
+        "title": "App Code Mode · 案件統計"
+      },
+      "portalAgg": {
+        "title": "Portal Code Mode · 跨物件彙總"
+      },
+      "portalCompare": {
+        "title": "Portal Code Mode · SAP × Salesforce 比對"
+      },
+      "agg": "列出 Salesforce 前 5 個 Account，再分別查出每個 Account 的商機數量與總金額，整理成一張表",
+      "cases": "列出 Salesforce 所有客服案件，依狀態與優先順序統計數量，並列出最新的 3 筆",
+      "compare": "同時列出 SAP 前 5 個客戶與 Salesforce 前 5 個 Account，找出名稱相近的公司並列出兩邊的 ID"
     }
   },
   "crawler": {

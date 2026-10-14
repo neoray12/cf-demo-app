@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import {
   BookOpen,
+  Braces,
   Camera,
   Cloud,
   Globe,
@@ -21,6 +22,9 @@ import { GUARDRAIL_SCENARIOS } from "@/lib/mcp-guardrails";
 
 export interface SuggestionSendOpts {
   tools?: boolean;
+  /** true/false sets the app's Code Mode toggle; undefined leaves it alone. */
+  codeMode?: boolean;
+  /** MCP server that must be connected; the turn is sent with only this server. */
   mcp?: string;
 }
 
@@ -30,9 +34,11 @@ interface SuggestionItem {
   icon?: LucideIcon;
   /** Navigate instead of sending a prompt. */
   href?: string;
+  /** Overrides the category's send options for this example. */
+  opts?: SuggestionSendOpts;
 }
 
-type CategoryId = "basics" | "sandbox" | "dw" | "browser" | "safety" | "guardrails";
+type CategoryId = "basics" | "sandbox" | "dw" | "codemode" | "browser" | "safety" | "guardrails";
 
 interface CategoryStyle {
   /** Category card classes (idle). */
@@ -78,6 +84,15 @@ const STYLES: Record<CategoryId, CategoryStyle> = {
     itemIcon: "text-amber-600 dark:text-amber-400",
     itemTitle: "",
     grid: "sm:grid-cols-3",
+  },
+  codemode: {
+    card: "border-teal-300/40 dark:border-teal-800/40 hover:bg-teal-50/50 dark:hover:bg-teal-950/20",
+    cardActive: "bg-teal-50 dark:bg-teal-950/30 border-teal-400/70 dark:border-teal-700/70",
+    icon: "text-teal-600 dark:text-teal-400",
+    item: "border-teal-300/40 dark:border-teal-800/40 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 active:bg-teal-50 dark:active:bg-teal-950/30",
+    itemIcon: "text-teal-600 dark:text-teal-400",
+    itemTitle: "",
+    grid: "sm:grid-cols-2",
   },
   browser: {
     card: "border-violet-300/40 dark:border-violet-800/40 hover:bg-violet-50/50 dark:hover:bg-violet-950/20",
@@ -158,6 +173,21 @@ export function SuggestionCategories({
       ],
     },
     {
+      // Same questions run through the app's own Code Mode (all Salesforce
+      // tools wrapped in one JS sandbox) and through the MCP Portal's Code
+      // Mode (portal exposes only search/execute). The app toggle must be off
+      // for the Portal variant, otherwise the code execution would be nested.
+      id: "codemode",
+      icon: Braces,
+      opts: { tools: true },
+      items: [
+        { title: t("chat.codeModeSuggestions.appAgg.title"), desc: t("chat.codeModeSuggestions.agg"), icon: Braces, opts: { tools: true, codeMode: true, mcp: "saas" } },
+        { title: t("chat.codeModeSuggestions.appCases.title"), desc: t("chat.codeModeSuggestions.cases"), icon: Braces, opts: { tools: true, codeMode: true, mcp: "saas" } },
+        { title: t("chat.codeModeSuggestions.portalAgg.title"), desc: t("chat.codeModeSuggestions.agg"), icon: Braces, opts: { tools: true, codeMode: false, mcp: "saas-cm" } },
+        { title: t("chat.codeModeSuggestions.portalCompare.title"), desc: t("chat.codeModeSuggestions.compare"), icon: Braces, opts: { tools: true, codeMode: false, mcp: "saas-cm" } },
+      ],
+    },
+    {
       id: "browser",
       icon: Globe,
       opts: { tools: true },
@@ -232,7 +262,7 @@ export function SuggestionCategories({
               <button
                 key={s.title}
                 type="button"
-                onClick={() => (s.href ? router.push(s.href) : onSend(s.desc, open.opts))}
+                onClick={() => (s.href ? router.push(s.href) : onSend(s.desc, s.opts ?? open.opts))}
                 className={`text-left rounded-2xl border px-4 py-3.5 transition-colors ${style.item}`}
               >
                 <div className={`flex items-center gap-1.5 text-sm font-medium ${style.itemTitle}`}>

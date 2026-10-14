@@ -70,6 +70,8 @@
     - Portal 工具名稱會加 server ID 前綴 `{server_id}_{tool}`，所以 tool key 形如 `tool_saas_sap-mcp_sap_list_customers`（需 ≤ 64 字元）；Gateway HTTP 政策要比對 **upstream** host（`sap-mcp.neokung.work` / `salesforce-mcp.neokung.work`），不是 Portal 網址
     - `neokung.work` 有 Zone Hold（含子網域）：在 hold 生效期間建立 Portal，custom hostname 建不起來，會回 **1014**。要重建 Portal 前先暫時解除 hold
 
+  - `saas-cm` — 同一個 Portal 加上 `?codemode=search_and_execute`（Portal 政策 `opt_in`）：Portal 只提供 `portal_codemode_search` / `portal_codemode_execute` 兩個工具，模型寫 JS 在 Portal 端的 Dynamic Worker 一次呼叫多個工具。用它時 App 自己的 Code Mode 要關（避免巢狀執行）；首頁「Code Mode 示範」的 Portal 範例會自動關掉並只送 `saas-cm`。Gateway 在 Code Mode 下擋掉的工具呼叫包在 execute 結果裡，不會出現 🛡 攔截卡片
+
 #### MCP 相關檔案
 
 | 檔案 | 說明 |

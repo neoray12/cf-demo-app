@@ -136,6 +136,7 @@ const MCP_SERVER_LABELS: Record<string, string> = {
   "cf-observability": "Workers Observability",
   "cf-radar": "Radar",
   saas: "SAP & Salesforce",
+  "saas-cm": "SAP & Salesforce (Code Mode)",
 };
 
 // MCP tool display name keys
@@ -1160,6 +1161,14 @@ export function ChatPage() {
   const toolsEnabledRef = useRef(false);
   useEffect(() => { toolsEnabledRef.current = toolsEnabled; }, [toolsEnabled]);
   const [codeModeEnabled, setCodeModeEnabled] = useState(false);
+  // Same synchronous-mirror trick as toolsEnabledRef: a Code Mode suggestion
+  // flips the toggle and sends in the same tick.
+  const codeModeEnabledRef = useRef(false);
+  useEffect(() => { codeModeEnabledRef.current = codeModeEnabled; }, [codeModeEnabled]);
+  // MCP servers for the current turn when a suggestion pins them (e.g. only the
+  // Portal Code Mode connection), so the model doesn't also see the other
+  // connected servers' tools. null = every connected server.
+  const turnMcpServersRef = useRef<string[] | null>(null);
   const [webSearchProvider, setWebSearchProvider] = useState<WebSearchProviderId>("ceramic");
   // Auto Router session-affinity key; a new chat starts a new conversation
   const conversationIdRef = useRef<string>(crypto.randomUUID());
@@ -1301,10 +1310,10 @@ export function ChatPage() {
           provider,
           toolsEnabled: toolsEnabledRef.current,
           images,
-          codeMode: codeModeEnabled,
+          codeMode: codeModeEnabledRef.current,
           webSearchProvider,
           conversationId: conversationIdRef.current,
-          mcpServers: connectedMcpServers,
+          mcpServers: turnMcpServersRef.current ?? connectedMcpServers,
           userName,
           userEmail,
           attachments,
@@ -1577,10 +1586,11 @@ export function ChatPage() {
     }
   }, [selectedModel, toolsEnabled, codeModeEnabled, connectedMcpServers, webSearchProvider]);
 
-  const handleSend = useCallback(async (text: string) => {
+  const handleSend = useCallback(async (text: string, mcpServers?: string[]) => {
     const images = pendingImages;
     // An image on its own is a valid message — no text required.
     if ((!text.trim() && images.length === 0) || isLoading) return;
+    turnMcpServersRef.current = mcpServers ?? null;
     isNearBottomRef.current = true;
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setInput("");
@@ -1738,13 +1748,17 @@ export function ChatPage() {
       toolsEnabledRef.current = true;
       setToolsEnabled(true);
     }
+    if (opts.codeMode !== undefined) {
+      codeModeEnabledRef.current = opts.codeMode;
+      setCodeModeEnabled(opts.codeMode);
+    }
     if (opts.mcp && !connectedMcpServers.includes(opts.mcp)) {
       setInput(prompt);
       setShowMcpPanel(true);
       setMcpConnectHint(true);
       return;
     }
-    handleSend(prompt);
+    handleSend(prompt, opts.mcp ? [opts.mcp] : undefined);
   };
 
   const lastAssistantIdx = messages.length - 1;
