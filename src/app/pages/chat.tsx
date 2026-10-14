@@ -5,6 +5,7 @@ import { MarkdownRenderer } from "../components/chat/markdown-renderer";
 import { ModelSelector } from "../components/chat/model-selector";
 import { ErrorDialog, type ChatErrorState } from "../components/chat/error-dialog";
 import { McpConnectionsPanel } from "../components/chat/mcp-panel";
+import { ResizableSidePanel } from "../components/chat/resizable-side-panel";
 import { McpIcon } from "../components/icons/mcp-icon";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -2072,13 +2073,13 @@ export function ChatPage() {
 
       {/* ── MCP Panel: Desktop sidebar ── */}
       {showMcpPanel && !isMobile && (
-        <div className="w-72 shrink-0 flex flex-col">
+        <ResizableSidePanel label={t("chat.mcpPanelResize")}>
           <McpConnectionsPanel
             onClose={() => setShowMcpPanel(false)}
             connectedServers={connectedMcpServers}
             onServersChange={setConnectedMcpServers}
           />
-        </div>
+        </ResizableSidePanel>
       )}
 
       {/* ── MCP Panel: Mobile sheet ── */}

@@ -70,8 +70,8 @@ function ToolDetailCard({ tool }: { tool: McpTool }) {
       >
         <Code2 className="size-3 mt-0.5 shrink-0 text-primary/70" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-medium text-foreground truncate">{tool.name}</span>
+          <div className="flex items-start gap-1.5">
+            <span className="text-[11px] font-medium text-foreground [overflow-wrap:anywhere]">{tool.name}</span>
             {paramKeys.length > 0 && (
               <span className="text-[9px] text-muted-foreground/50 shrink-0">
                 {paramKeys.length} 參數
@@ -79,7 +79,7 @@ function ToolDetailCard({ tool }: { tool: McpTool }) {
             )}
           </div>
           {tool.description && (
-            <p className="text-[10px] text-muted-foreground/70 line-clamp-1 mt-0.5">{tool.description}</p>
+            <p className="text-[10px] text-muted-foreground/70 line-clamp-2 mt-0.5">{tool.description}</p>
           )}
         </div>
         <ChevronRight className={`size-3 mt-0.5 shrink-0 text-muted-foreground/40 transition-transform ${expanded ? "rotate-90" : ""}`} />
@@ -355,12 +355,12 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
 
               return (
                 <div key={server.id} className="rounded-xl border bg-card p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
                       {SERVER_ICONS[server.id] && (
                         <span className="shrink-0 flex items-center">{SERVER_ICONS[server.id]}</span>
                       )}
-                      <span className="text-sm font-medium truncate">{server.name}</span>
+                      <span className="text-sm font-medium [overflow-wrap:anywhere]">{server.name}</span>
                       {server.authType === "oauth" && (
                         <Badge variant="outline" className="h-4 px-1 text-[9px] shrink-0">OAuth</Badge>
                       )}
@@ -378,7 +378,7 @@ export function McpConnectionsPanel({ onClose, connectedServers, onServersChange
                   </div>
 
                   {server.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">{server.description}</p>
+                    <p className="text-xs text-muted-foreground">{server.description}</p>
                   )}
 
                   {/* Expandable tool list */}

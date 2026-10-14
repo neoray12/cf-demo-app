@@ -317,7 +317,8 @@
       "agg": "列出 Salesforce 前 5 個 Account，再分別查出每個 Account 的商機數量與總金額，整理成一張表",
       "cases": "列出 Salesforce 所有客服案件，依狀態與優先順序統計數量，並列出最新的 3 筆",
       "compare": "同時列出 SAP 前 5 個客戶與 Salesforce 前 5 個 Account，找出名稱相近的公司並列出兩邊的 ID"
-    }
+    },
+    "mcpPanelResize": "拖曳調整 MCP 面板寬度（雙擊恢復預設）"
   },
   "crawler": {
     "title": "網站爬蟲",
