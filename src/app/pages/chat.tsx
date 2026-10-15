@@ -52,6 +52,8 @@ interface ChatMessage {
   parts?: MessagePart[];
   /** Auto Router: the model AI Gateway actually routed this turn to. */
   routedModel?: { model: string; reason: string | null };
+  /** Server notices for this turn, e.g. the app's Code Mode was skipped. */
+  notices?: string[];
   /** Per-turn processing timeline — front-end only, never sent to the server. */
   timeline?: ChatTimeline;
 }
@@ -904,6 +906,11 @@ function AssistantMessage({
 
   return (
     <div className="max-w-full">
+      {message.notices?.includes("portal-codemode") && (
+        <div className="mb-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+          {t("chat.notices.portalCodeMode")}
+        </div>
+      )}
       {message.routedModel && (
         <div className="mb-1.5">
           <span
@@ -1362,6 +1369,7 @@ export function ChatPage() {
       let toolCalls: ToolCallInfo[] = [];
       let parts: MessagePart[] = [];
       let routedModel: ChatMessage["routedModel"];
+      let notices: string[] = [];
       const events: TimelineEvent[] = [];
       const record = (ev: TimelineEvent) => events.push(ev);
       const now = () => performance.now() - t0;
@@ -1396,7 +1404,7 @@ export function ChatPage() {
         const pt = parts;
         const timeline = { events: [...events], endAt, startedAt: t0 };
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc, parts: pt, routedModel, timeline } : m)
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc, parts: pt, routedModel, notices, timeline } : m)
         );
       };
       const scheduleFlush = () => {
@@ -1481,6 +1489,10 @@ export function ChatPage() {
                   break;
                 case "routed-model":
                   routedModel = { model: event.model, reason: event.reason ?? null };
+                  scheduleFlush();
+                  break;
+                case "notice":
+                  if (typeof event.kind === "string" && !notices.includes(event.kind)) notices = [...notices, event.kind];
                   scheduleFlush();
                   break;
                 case "finish":

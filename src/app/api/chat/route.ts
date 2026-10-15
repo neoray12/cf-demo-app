@@ -7,6 +7,8 @@ import { cookies } from 'next/headers';
 import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { chatSandboxConfigured, uploadFile as sandboxUploadFile, warmSandbox } from '@/lib/chat-sandbox';
 import { signCodeModeSession, codeModeSecret, describeTools, buildCodeModeModule, RETURN_SHAPE_HINT } from '@/lib/codemode';
+import { parseMcpServerUrls } from '@/lib/mcp-client';
+import { isPortalCodeModeUrl } from '@/lib/portal-catalog';
 import { buildToolSet, safeTool, isWebSearchProvider, buildPortalCatalogPrompt, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
@@ -311,6 +313,13 @@ export async function POST(request: NextRequest) {
   let codeModeActive = false;
   let webSearchActive = false;
   let portalCatalogPrompt = '';
+  // An MCP Portal connected with ?codemode=search_and_execute already runs the
+  // model's JS on the Portal. Wrapping it in the app's Code Mode as well nests
+  // two code runtimes, hides the Portal's tool catalog from the model, and
+  // ends in guessed tool names — so the app's Code Mode sits that turn out.
+  const portalCodeModeConnected = parseMcpServerUrls((env as any).MCP_SERVER_URLS || '')
+    .some((s) => mcpServerIds.includes(s.id) && isPortalCodeModeUrl(s.url));
+  const appCodeModeSkipped = useTools && codeMode && portalCodeModeConnected;
   if (useTools) {
     const cookieStore = await cookies();
     const sessionId = cookieStore.get('session_id')?.value || 'anonymous';
@@ -363,7 +372,7 @@ export async function POST(request: NextRequest) {
     // a JS script that calls the other tools as functions inside a Dynamic
     // Worker, instead of stepping through multiple tool-call rounds. This is
     // the token-saving pattern Cloudflare's codemode SDK implements.
-    if (codeMode && (env as any).LOADER && (env as any).SELF) {
+    if (codeMode && !appCodeModeSkipped && (env as any).LOADER && (env as any).SELF) {
       // executeJs is redundant inside Code Mode (the script itself IS the JS);
       // searchKnowledgeByImage depends on this request's images, which the
       // codemode-exec isolate can't rebuild from the signed session.
@@ -721,6 +730,7 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        if (appCodeModeSkipped) send(controller, { type: 'notice', kind: 'portal-codemode' });
         // Step 1: Normal stream with tools
         insideThink = false;
         thinkBuffer = '';

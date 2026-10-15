@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
-import { verifyCodeModeSession, codeModeSecret, resolveCodeModeToolName } from '@/lib/codemode';
+import { verifyCodeModeSession, codeModeSecret, resolveCodeModeToolName, codeModeIdentifier } from '@/lib/codemode';
 import { buildToolSet } from '@/lib/chat-tools';
 
 /**
@@ -31,7 +31,9 @@ export async function POST(request: NextRequest) {
   // Scripts call the identifier form (`tool_saas_cm_…`) of hyphenated MCP keys.
   const name = resolveCodeModeToolName(body.name, session.toolNames);
   if (!name) {
-    return Response.json({ error: `Unknown tool: ${body.name}` }, { status: 200 });
+    // List what this script can actually call so the model can correct itself.
+    const available = session.toolNames.map(codeModeIdentifier).join(', ');
+    return Response.json({ error: `Unknown tool: ${body.name}. Available: ${available}` }, { status: 200 });
   }
 
   const { tools } = await buildToolSet(env as any, session);

@@ -328,6 +328,9 @@
       "args": "參數",
       "result": "結果",
       "toolCount": "{{count}} 個工具"
+    },
+    "notices": {
+      "portalCodeMode": "已連線 Portal Code Mode：這一輪改由 Portal 執行程式碼，App 的 Code Mode 暫停（避免兩層 Code Mode）"
     }
   },
   "crawler": {

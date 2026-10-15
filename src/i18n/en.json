@@ -328,6 +328,9 @@
       "args": "Arguments",
       "result": "Result",
       "toolCount": "{{count}} tools"
+    },
+    "notices": {
+      "portalCodeMode": "Portal Code Mode is connected: the Portal runs the code this turn, so the app's Code Mode is paused (no nested Code Mode)"
     }
   },
   "crawler": {
