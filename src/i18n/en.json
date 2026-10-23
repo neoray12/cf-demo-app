@@ -576,13 +576,5 @@
     "resetPrompt": "Reset prompt",
     "s3Note": "A FROM Contacts subquery used to bypass this; the regex was adjusted",
     "s4Note": "Requires the upstream to return JSON; SSE streams are not scanned by DLP"
-  },
-  "agents": {
-    "models": {
-      "glm-5.3-flash": "GLM 5.3 Flash",
-      "kimi-k2.6": "Kimi K2.6",
-      "kimi-k2.6-thinking": "Kimi K2.6 (show thinking)",
-      "glm-5.3": "GLM 5.3"
-    }
   }
 }

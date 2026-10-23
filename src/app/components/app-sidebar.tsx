@@ -33,6 +33,7 @@ import {
   Layers,
   ShieldCheck,
   Scale,
+  Workflow,
 } from "lucide-react";
 import {
   Sidebar,
@@ -64,6 +65,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslation } from "react-i18next";
 import { useLogExplorer, formatSize, type TreeNode } from "../contexts/log-explorer-context";
+import { AGENT_CATALOG } from "@/lib/agents/catalog";
 
 const crawlerSubItems = [
   { key: "screenshot", url: "/crawler/screenshot", icon: Camera },
@@ -88,6 +90,7 @@ export function AppSidebar() {
   const isCrawlerActive = pathname.startsWith("/crawler");
   const isLogsActive = pathname === "/logs";
   const isOpenClawActive = pathname.startsWith("/openclaw");
+  const isAgentsActive = pathname.startsWith("/agents");
 
   const {
     buckets,
@@ -399,6 +402,34 @@ export function AppSidebar() {
                   <span>{t("sidebar.guardrails")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              <Collapsible defaultOpen={isAgentsActive} className="group/agents">
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton isActive={false} tooltip={t("agents.nav.title")}>
+                      <Workflow />
+                      <span>{t("agents.nav.title")}</span>
+                      <ChevronRight className="ml-auto size-4 transition-transform group-data-[state=open]/agents:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenu className="ml-4 border-l pl-2">
+                      {AGENT_CATALOG.map((agent) => (
+                        <SidebarMenuItem key={agent.id}>
+                          <SidebarMenuButton
+                            isActive={pathname === agent.path}
+                            onClick={() => handleNavClick(agent.path)}
+                            tooltip={t(agent.navKey)}
+                            size="sm"
+                          >
+                            <agent.icon className="size-3.5" />
+                            <span>{t(agent.navKey)}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

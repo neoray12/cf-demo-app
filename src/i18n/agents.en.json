@@ -1,0 +1,176 @@
+{
+  "agents": {
+    "nav": {
+      "title": "Agents",
+      "knowledgeBase": "Knowledge base",
+      "cloudflareDocs": "Cloudflare docs expert",
+      "threatIntel": "Threat intel"
+    },
+    "chat": {
+      "newChat": "New chat",
+      "placeholder": "Ask a question… (Enter to send, Shift+Enter for a new line)",
+      "send": "Send",
+      "stop": "Stop",
+      "model": "Model",
+      "ttftHint": "First token {{hint}}",
+      "slow": "Slow first token",
+      "viewTrace": "View trace in Cloudflare",
+      "traceButton": "Trace",
+      "suggestionsTitle": "Try one of these",
+      "footer": "Answers are AI-generated for demo purposes; every request is recorded as a trace.",
+      "requestFailed": "Request failed: {{error}}",
+      "sources": "Sources",
+      "sourcesCount": "Sources ({{n}})",
+      "toolCalls": "Tool and subagent calls ({{n}})",
+      "reasoning": "Reasoning"
+    },
+    "activity": {
+      "waiting": "Sent, waiting for the server",
+      "running": "Working {{s}}s",
+      "done": "Done · {{s}}s",
+      "failed": "Failed · {{s}}s",
+      "aborted": "Stopped · {{s}}s",
+      "planning": "Planning",
+      "thinking": "Model thinking",
+      "writing": "Writing the answer",
+      "planned": "Planned",
+      "thought": "Model step done",
+      "wrote": "Answer written",
+      "thinkingFor": "Thinking {{s}}s",
+      "thoughtFor": "Thought for {{s}}s",
+      "subagentRunning": "Running",
+      "subagentDone": "Done",
+      "subagentFailed": "Failed",
+      "showFull": "Show full text",
+      "hideFull": "Collapse",
+      "waitingInput": "Preparing arguments…"
+    },
+    "trace": {
+      "title": "Trace",
+      "firstEvent": "First event",
+      "firstReasoning": "First reasoning token",
+      "clientTtft": "First token",
+      "serverTtft": "Server first token",
+      "chatTtft": "First token (since request sent)",
+      "total": "Total",
+      "tokens": "tokens",
+      "tools": "Tools",
+      "subagents": "Subagents",
+      "model": "Model",
+      "viewInCloudflare": "View in Cloudflare",
+      "emptyAnswer": "The model did not produce an answer.",
+      "aborted": "Stopped",
+      "error": "Run failed: {{error}}",
+      "turn": "Turn {{n}}",
+      "empty": "Send a question to watch every span appear on the timeline live.",
+      "waterfall": "Waterfall",
+      "clickHint": "Click a row for details",
+      "running": "Running",
+      "summaryTab": "Summary",
+      "detailTab": "detail JSON",
+      "tokensTab": "tokens",
+      "kind": "Kind",
+      "status": "Status",
+      "start": "Start",
+      "duration": "Duration",
+      "input": "Input",
+      "output": "Output",
+      "noDetail": "No detail.",
+      "noUsage": "This span has no token usage.",
+      "inputTokens": "Input tokens",
+      "outputTokens": "Output tokens",
+      "back": "Back",
+      "legendAgent": "agent",
+      "legendChat": "chat",
+      "legendTool": "tool",
+      "legendError": "error"
+    },
+    "knowledgeBase": {
+      "title": "Company knowledge base",
+      "desc": "Answers from your company documents with sources; says so when the documents don't cover it.",
+      "suggestions": {
+        "s1": "How many days of annual leave do I get this year? What happens to unused days?",
+        "s2": "What is the hotel cap for business trips?",
+        "s3": "WARP can't reach the company intranet. What should I do?"
+      }
+    },
+    "cloudflareDocs": {
+      "title": "Cloudflare docs expert",
+      "desc": "Ask about Cloudflare products and architecture; it reads the official docs and answers with links to the source pages.",
+      "suggestions": {
+        "s1": "How do Workers and Pages differ? Which should a new project use?",
+        "s2": "How do I replace our corporate VPN with Zero Trust?",
+        "s3": "When should I use Durable Objects, KV or D1?",
+        "s4": "Which costs can AI Gateway save me?"
+      }
+    },
+    "threatIntel": {
+      "title": "Threat intel analyst",
+      "desc": "Dispatches several analysts in parallel against live Cloudflare Radar data and writes a sourced threat briefing for Taiwan.",
+      "suggestions": {
+        "s1": "Who is attacking Taiwan? What changed since last week?",
+        "s2": "Any recent outages or BGP hijacks affecting Taiwan?",
+        "s3": "How much of Taiwan's traffic is bots? Which AI crawlers are most active?",
+        "s4": "Which industries in Taiwan are attacked most? What should retailers watch out for?",
+        "s5": "Show me the global rank of example.com.tw"
+      }
+    },
+    "models": {
+      "glm-5.3-flash": "GLM 5.3 Flash",
+      "kimi-k2.6": "Kimi K2.6",
+      "kimi-k2.6-thinking": "Kimi K2.6 (show thinking)",
+      "glm-5.3": "GLM 5.3"
+    },
+    "tools": {
+      "search_docs": "Search Cloudflare docs",
+      "read_doc_page": "Read a docs page",
+      "research": "Dispatch docs researchers",
+      "search_kb": "Search the knowledge base",
+      "brief": "Dispatch Radar analysts",
+      "attackers_of": "Attack source countries",
+      "attack_targets_from": "Attack target countries",
+      "l7_attacks_from": "L7 attack breakdown",
+      "l3_attacks_mitigated_in": "L3 attacks mitigated",
+      "top_attacked_industries": "Most attacked industries",
+      "l7_attack_trend_from": "L7 attack trend",
+      "outages": "Internet outages",
+      "traffic_anomalies": "Traffic anomalies",
+      "bgp_hijacks": "BGP hijacks",
+      "internet_quality": "Internet quality",
+      "bot_vs_human": "Bot vs human share",
+      "ai_crawlers": "AI crawlers",
+      "email_threats": "Malicious email",
+      "domain_rank": "Domain rank"
+    },
+    "subagents": {
+      "kb-agent": "Knowledge base assistant",
+      "docs-agent": "Docs expert",
+      "threat-intel-agent": "Threat intel analyst",
+      "docs-researcher": "Docs researcher",
+      "attack-analyst": "Attack analyst",
+      "network-analyst": "Network analyst",
+      "bot-analyst": "Bot analyst",
+      "grounding-checker": "Fact checker"
+    },
+    "kb": {
+      "storeContent": "Record content in traces",
+      "storeContentOff": "Don't record content",
+      "retentionNotice": "Questions and uploaded document content are recorded in Cloudflare traces and kept for 7 days. Turn on \"Don't record content\" to opt out.",
+      "errors": {
+        "badJson": "Malformed request (not valid JSON).",
+        "missingJobId": "Missing import job ID.",
+        "badWorkspace": "Invalid workspace ID.",
+        "readOnlyWorkspace": "The sample workspace is read-only. Create your own workspace first.",
+        "noFile": "No file was received.",
+        "badName": "The file name contains unsupported characters.",
+        "badUrl": "Invalid URL. Enter a public http(s):// address.",
+        "badType": "Only PDF, DOCX, MD and TXT files are supported.",
+        "tooLarge": "The file exceeds the 10 MB limit.",
+        "tooMany": "A workspace holds at most 20 files.",
+        "unknownJob": "Import job not found (it may have expired).",
+        "wrongWorkspace": "This import job belongs to a different workspace.",
+        "server": "Server error. Please try again later."
+      }
+    }
+  }
+}
