@@ -57,6 +57,8 @@ service = "cf-demo-app"
 [vars]
 CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
 AI_GATEWAY_ID = "nkcf-gateway-01"
+# Model-request hedge delay in ms; "0" turns hedging off
+AGENTS_HEDGE_AFTER_MS = "2500"
 AUTORAG_NAME = "cf-demo-ai-search-mm"
 # Auto Router candidate pool — only providers this gateway has credentials/credits for
 AUTO_ROUTER_ALLOWED_PROVIDERS = "anthropic,workers-ai"

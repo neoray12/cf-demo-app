@@ -65,7 +65,7 @@ function cfDocsServer(ctx: RunContext): McpServerConfig {
 // R15 (one shared MCP session per run) is reversed: the docs server handles concurrent independent requests in
 // parallel (8 at once each took 4.5–11 s), but calls multiplexed on one session queued behind each other and the
 // later ones hit the timeout. Each search is therefore a single stateless JSON-RPC `tools/call` POST (no
-// initialize handshake, no session); if the server ever refuses that (4xx), the call falls back to its own
+// initialize handshake, no session); if the server ever refuses that (400/404/405/406), the call falls back to its own
 // short-lived MCP client (connect → call → close). Nothing is shared between calls, so there is nothing to dispose.
 
 function abortError(): Error {
@@ -74,6 +74,8 @@ function abortError(): Error {
   return e;
 }
 
+/** Statuses that mean "this server does not take a stateless POST"; 401/403/429/5xx are not that. */
+const STATELESS_REJECT_STATUSES = new Set([400, 404, 405, 406]);
 class StatelessRejected extends Error {}
 /** A JSON-RPC error from the server: an answer, not a connection problem, so it is not retried. */
 class RpcError extends Error {}
@@ -146,7 +148,7 @@ async function statelessCall(url: string, query: string, signal: AbortSignal): P
     }),
     signal,
   });
-  if (res.status >= 400 && res.status < 500) {
+  if (STATELESS_REJECT_STATUSES.has(res.status)) {
     void res.body?.cancel().catch(() => {});
     throw new StatelessRejected(`stateless call rejected (${res.status})`);
   }
@@ -245,10 +247,11 @@ export async function searchDocsHits(
   const seen = new Set<string>();
   const hits = parseDocsSearchResult(text).filter((h) => (seen.has(h.url) ? false : (seen.add(h.url), true)));
   if (key && hits.length > 0) {
+    // fire-and-forget: the result must not wait for (or fail on) the cache write; RunContext has no waitUntil
     try {
-      await ctx.env.KV?.put(key, JSON.stringify(hits), { expirationTtl: DOCS_CACHE_TTL_S });
+      void Promise.resolve(ctx.env.KV?.put(key, JSON.stringify(hits), { expirationTtl: DOCS_CACHE_TTL_S })).catch(() => {});
     } catch {
-      // best effort
+      // best effort (synchronous throw)
     }
   }
   return { hits, cacheHit: false };

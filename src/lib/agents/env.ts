@@ -8,5 +8,7 @@ export interface AgentEnv {
   MCP_SERVER_URLS: string;
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
+  /** Hedge delay for model requests in ms (default 2500; `0` turns hedging off). */
+  AGENTS_HEDGE_AFTER_MS?: string;
   KV: KVNamespace;
 }

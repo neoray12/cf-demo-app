@@ -180,6 +180,18 @@ describe("searchDocs: one independent request per search", () => {
     expect(sdk.state).toEqual({ connects: 1, calls: 1, closes: 1 });
   });
 
+  it.each([401, 403, 429, 500, 503])("a %i is not a stateless rejection: no client fallback", async (status) => {
+    fetchMock.mockResolvedValue(new Response("nope", { status }));
+    await expect(searchDocs(makeCtx().ctx, "x")).rejects.toThrow(/docs search failed/);
+    expect(sdk.state.connects).toBe(0);
+  });
+
+  it.each([404, 405, 406])("a %i falls back to the MCP client", async (status) => {
+    fetchMock.mockResolvedValue(new Response("no", { status }));
+    expect((await searchDocs(makeCtx().ctx, "x")).text).toContain("/sdk/");
+    expect(sdk.state.connects).toBe(1);
+  });
+
   it("retries a network error once, then gives up", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("fetch failed")).mockResolvedValueOnce(sseResponse(rpc(RESULT_TEXT)));
     expect((await searchDocs(makeCtx().ctx, "x")).isError).toBe(false);
@@ -256,6 +268,15 @@ describe("docs search KV cache", () => {
     expect(second).toEqual({ hits: first.hits, cacheHit: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(attrs).toContainEqual({ "cache.hit": true });
+  });
+
+  it("the KV write is fire-and-forget: a hanging or rejecting put neither delays nor fails the search", async () => {
+    fetchMock.mockImplementation(async () => sseResponse(rpc(RESULT_TEXT)));
+    const kv = fakeKV();
+    kv.put = () => new Promise<void>(() => {}); // never resolves
+    expect((await searchDocsHits(makeCtx(kv).ctx, "hang")).hits).toHaveLength(2);
+    kv.put = () => Promise.reject(new Error("kv write failed"));
+    expect((await searchDocsHits(makeCtx(kv).ctx, "reject")).hits).toHaveLength(2);
   });
 
   it("a KV failure falls through to a live call; tool errors are returned and not cached", async () => {

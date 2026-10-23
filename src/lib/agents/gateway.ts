@@ -33,6 +33,20 @@ export function injectBodyParams(
 // is aborted. Done at the fetch level, so it is transparent to the AI SDK and to wrapAISDK's tracing.
 
 export const HEDGE_AFTER_MS = 2500;
+/** Per-isolate cap on hedge (B) requests in flight, so hedging cannot exhaust the isolate's connection budget. */
+export const MAX_INFLIGHT_HEDGES = 2;
+let inflightHedges = 0;
+/** Number of hedge (B) requests currently in flight in this isolate (for tests / diagnostics). */
+export function getInflightHedges(): number {
+  return inflightHedges;
+}
+
+/** `AGENTS_HEDGE_AFTER_MS`: unset / empty / invalid -> default; `0` -> hedging off. */
+export function parseHedgeAfterMs(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") return HEDGE_AFTER_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : HEDGE_AFTER_MS;
+}
 export const HEDGE_HEADER = "x-agents-hedge";
 export const HEDGE_FIRED_HEADER = "x-agents-hedge-fired";
 
@@ -65,14 +79,21 @@ function abortReason(signal: AbortSignal): unknown {
   return e;
 }
 
+function dropBody(res: Response | undefined) {
+  void res?.body?.cancel().catch(() => {});
+}
+
 /**
  * fetch with one hedge (see above). Rules:
  * - A first; B after `hedgeAfterMs` without A's first body chunk, or at once if A fails before that;
+ *   B is only started while fewer than MAX_INFLIGHT_HEDGES hedges are in flight in this isolate;
  * - the first attempt to deliver a body chunk wins, the other is aborted; the returned Response replays the
  *   winner's first chunk followed by the rest of its stream, with `x-agents-hedge: a|b` and
  *   `x-agents-hedge-fired: 0|1` added;
- * - a 4xx is returned immediately (no hedge: it would fail the same way); a 5xx or network error is a failure;
- *   when both attempts fail, the last failure is surfaced (a 5xx as its Response, so the SDK reports it);
+ * - a 5xx, a network error and (while the other attempt is still in flight) a 4xx are failures that are stored
+ *   while the other attempt keeps going; a 429/408/409 or 5xx also starts B at once. A 4xx with nothing else
+ *   pending is returned immediately; when all attempts fail, the last failure is surfaced (a Response as such);
+ * - failed responses that are superseded or lose are cancelled, never leaked;
  * - the caller's AbortSignal aborts both attempts (and, after a win, the winner's stream).
  */
 export function hedgedFetch(
@@ -88,26 +109,38 @@ export function hedgedFetch(
   const t0 = now();
 
   return new Promise<Response>((resolve, reject) => {
-    type Attempt = { name: "a" | "b"; ac: AbortController };
+    type Attempt = { name: "a" | "b"; ac: AbortController; done: boolean; released: boolean };
     const attempts: Attempt[] = [];
     let settled = false;
-    let failures = 0;
+    let bStarted = false;
     let lastFailure: { response?: Response; error?: unknown } | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
+    /** Give back B's slot in the isolate-wide limiter (idempotent, so no path can leak or double-release it). */
+    const release = (a: Attempt) => {
+      if (a.name === "b" && !a.released) {
+        a.released = true;
+        inflightHedges = Math.max(0, inflightHedges - 1);
+      }
+    };
     const cleanup = () => {
       if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
       callerSignal?.removeEventListener("abort", onCallerAbort);
     };
     const abortOthers = (keep?: Attempt) => {
-      for (const a of attempts) if (a !== keep) a.ac.abort();
+      for (const a of attempts) {
+        if (a === keep) continue;
+        a.ac.abort();
+        release(a);
+      }
     };
     const onCallerAbort = () => {
       if (settled) return;
       settled = true;
       cleanup();
       abortOthers();
+      dropBody(lastFailure?.response);
       reject(abortReason(callerSignal!));
     };
 
@@ -115,7 +148,8 @@ export function hedgedFetch(
       settled = true;
       cleanup();
       abortOthers(attempt);
-      const fired = attempts.length > 1;
+      dropBody(lastFailure?.response);
+      const fired = bStarted;
       try {
         opts.onOutcome?.({ winner: attempt.name, fired, firstChunkMs: now() - t0 });
       } catch {
@@ -151,82 +185,94 @@ export function hedgedFetch(
       resolve(new Response(body, { status: res.status, statusText: res.statusText, headers }));
     };
 
-    const fail = (failure: { response?: Response; error?: unknown }) => {
+    /** Start B if it has not started and the isolate-wide hedge limit allows it. */
+    const tryStartB = (): boolean => {
+      if (settled || bStarted || inflightHedges >= MAX_INFLIGHT_HEDGES) return false;
+      inflightHedges++;
+      bStarted = true;
+      start("b");
+      return true;
+    };
+
+    /** `retryable`: the failure is worth an immediate B (5xx, network error, 429/408/409). */
+    const fail = (attempt: Attempt, failure: { response?: Response; error?: unknown }, retryable: boolean) => {
+      attempt.done = true;
       if (settled) {
-        void failure.response?.body?.cancel().catch(() => {});
+        dropBody(failure.response);
         return;
       }
-      failures++;
-      if (lastFailure?.response) void lastFailure.response.body?.cancel().catch(() => {});
+      dropBody(lastFailure?.response);
       lastFailure = failure;
-      if (attempts.length < 2) {
-        start("b"); // A failed before the hedge timer: send B now
-        return;
-      }
-      if (failures >= attempts.length) {
-        settled = true;
-        cleanup();
-        if (failure.response) resolve(failure.response);
-        else reject(failure.error);
-      }
+      if (retryable && !bStarted && tryStartB()) return; // B now pending
+      if (attempts.some((a) => !a.done)) return; // the other attempt is still in flight: keep waiting for it
+      settled = true;
+      cleanup();
+      if (failure.response) resolve(failure.response);
+      else reject(failure.error);
     };
 
     const start = (name: "a" | "b") => {
       if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
       const ac = new AbortController();
-      const attempt: Attempt = { name, ac };
+      const attempt: Attempt = { name, ac, done: false, released: false };
       attempts.push(attempt);
       const signal = callerSignal ? AbortSignal.any([callerSignal, ac.signal]) : ac.signal;
       void (async () => {
-        let res: Response;
         try {
-          res = await doFetch(url, { ...init, signal });
-        } catch (error) {
-          if (!settled && !ac.signal.aborted) fail({ error });
-          return;
+          let res: Response;
+          try {
+            res = await doFetch(url, { ...init, signal });
+          } catch (error) {
+            if (!settled && !ac.signal.aborted) fail(attempt, { error }, true);
+            return;
+          }
+          if (settled) {
+            dropBody(res);
+            return;
+          }
+          if (res.status >= 400 && res.status < 500) {
+            // The request itself is bad (auth, validation): a hedge would fail the same way, so only a
+            // rate-limit / timeout / conflict starts B. While the other attempt is in flight this is just a
+            // stored failure; with nothing else pending it is returned.
+            fail(attempt, { response: res }, res.status === 429 || res.status === 408 || res.status === 409);
+            return;
+          }
+          if (!res.ok) {
+            fail(attempt, { response: res }, true);
+            return;
+          }
+          if (!res.body) {
+            win(attempt, res, undefined);
+            return;
+          }
+          const reader = res.body.getReader();
+          let chunk: ReadableStreamReadResult<Uint8Array>;
+          try {
+            chunk = await reader.read();
+            // skip empty chunks: only real bytes count as the first chunk
+            while (!chunk.done && chunk.value.byteLength === 0) chunk = await reader.read();
+          } catch (error) {
+            if (!settled && !ac.signal.aborted) fail(attempt, { error }, true);
+            return;
+          }
+          if (settled) {
+            void reader.cancel().catch(() => {});
+            return;
+          }
+          win(attempt, res, chunk.done ? undefined : chunk.value, reader);
+        } finally {
+          release(attempt);
         }
-        if (settled) {
-          void res.body?.cancel().catch(() => {});
-          return;
-        }
-        if (res.status >= 400 && res.status < 500) {
-          // the request itself is bad (auth, validation): a hedge would fail the same way
-          win(attempt, res, undefined, res.body?.getReader());
-          return;
-        }
-        if (!res.ok) {
-          fail({ response: res });
-          return;
-        }
-        if (!res.body) {
-          win(attempt, res, undefined);
-          return;
-        }
-        const reader = res.body.getReader();
-        let chunk: ReadableStreamReadResult<Uint8Array>;
-        try {
-          chunk = await reader.read();
-          // skip empty chunks: only real bytes count as the first chunk
-          while (!chunk.done && chunk.value.byteLength === 0) chunk = await reader.read();
-        } catch (error) {
-          if (!settled && !ac.signal.aborted) fail({ error });
-          return;
-        }
-        if (settled) {
-          void reader.cancel().catch(() => {});
-          return;
-        }
-        win(attempt, res, chunk.done ? undefined : chunk.value, reader);
       })();
     };
 
     callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
     start("a");
-    if (!settled && attempts.length === 1) {
+    if (!settled && !bStarted && hedgeAfterMs > 0) {
       timer = setTimeout(() => {
         timer = undefined;
-        if (!settled && attempts.length < 2) start("b");
+        tryStartB();
       }, hedgeAfterMs);
     }
   });
@@ -252,7 +298,7 @@ export function createAgentModel(
       "cf-aig-skip-cache": "true",
       "cf-aig-metadata": metadata,
     },
-    fetch: agentFetch(model, meta.functionId),
+    fetch: agentFetch(model, meta.functionId, parseHedgeAfterMs(env.AGENTS_HEDGE_AFTER_MS)),
   });
 
   return openai.chat(`workers-ai/${model.workersAiId}`);
@@ -262,11 +308,13 @@ export function createAgentModel(
  * The provider's fetch: adds `reasoning_effort` to the body, then hedges streaming chat completions. The SDK puts
  * the provider headers (cf-aig-*) into `init.headers`, and both hedged attempts are sent with this same init.
  */
-export function agentFetch(model: AgentModel, functionId: string): Fetch {
+export function agentFetch(model: AgentModel, functionId: string, hedgeAfterMs: number = HEDGE_AFTER_MS): Fetch {
   return (url, init) => {
     const withBody = injectBodyParams(init, { reasoning_effort: model.reasoningEffort });
-    if (!isStreamingChatRequest(url, withBody)) return fetch(url, withBody);
+    // hedgeAfterMs 0 = hedging off (AGENTS_HEDGE_AFTER_MS=0)
+    if (hedgeAfterMs <= 0 || !isStreamingChatRequest(url, withBody)) return fetch(url, withBody);
     return hedgedFetch((u, i) => fetch(u, i), url, withBody, {
+      hedgeAfterMs,
       onOutcome: ({ winner, fired, firstChunkMs }) => {
         setActiveSpanAttributes({ "hedge.fired": fired, "hedge.winner": winner });
         if (fired) {

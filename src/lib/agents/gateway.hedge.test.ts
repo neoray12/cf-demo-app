@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AGENT_MODELS } from "./models";
-import { HEDGE_AFTER_MS, agentFetch, hedgedFetch, isStreamingChatRequest, type HedgeOutcome } from "./gateway";
+import {
+  HEDGE_AFTER_MS,
+  MAX_INFLIGHT_HEDGES,
+  agentFetch,
+  getInflightHedges,
+  hedgedFetch,
+  isStreamingChatRequest,
+  parseHedgeAfterMs,
+  type HedgeOutcome,
+} from "./gateway";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 
@@ -246,5 +255,232 @@ describe("isStreamingChatRequest / agentFetch", () => {
       stream: false,
       reasoning_effort: "low",
     });
+  });
+});
+
+/** A failure Response whose body cancellation is observable. */
+function spied(status: number) {
+  const cancel = vi.fn();
+  const res = new Response(
+    new ReadableStream<Uint8Array>({
+      pull() {},
+      cancel,
+    }),
+    { status },
+  );
+  return { res, cancel };
+}
+
+describe("hedgedFetch: 4xx handling, body cleanup, hedge limiter, off-switch", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("B gets a 429 while A is slow but healthy → A wins (200), the 429 body is cancelled", async () => {
+    const f = fakeFetch();
+    const p = hedgedFetch(f.fn, URL_, { body: BODY });
+    const a = controlled();
+    f.attempts[0]!.resolve(a.res);
+    await vi.advanceTimersByTimeAsync(HEDGE_AFTER_MS);
+    expect(f.fn).toHaveBeenCalledTimes(2);
+    const b = spied(429);
+    f.attempts[1]!.resolve(b.res);
+    await vi.advanceTimersByTimeAsync(10);
+    a.push("data: A\n\n");
+    a.close();
+    const res = await p;
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-agents-hedge")).toBe("a");
+    expect(b.cancel).toHaveBeenCalled();
+    expect(await text(res)).toBe("data: A\n\n");
+  });
+
+  it("A gets a 429 → B starts at once; B wins and the 429 body is cancelled", async () => {
+    const f = fakeFetch();
+    const p = hedgedFetch(f.fn, URL_, { body: BODY });
+    const a = spied(429);
+    f.attempts[0]!.resolve(a.res);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fn).toHaveBeenCalledTimes(2);
+    const b = controlled();
+    f.attempts[1]!.resolve(b.res);
+    b.push("ok");
+    b.close();
+    const res = await p;
+    expect(res.headers.get("x-agents-hedge")).toBe("b");
+    expect(a.cancel).toHaveBeenCalled();
+  });
+
+  it("a plain 4xx (401) with B in flight is stored; the request waits for B", async () => {
+    const f = fakeFetch();
+    const p = hedgedFetch(f.fn, URL_, { body: BODY });
+    await vi.advanceTimersByTimeAsync(HEDGE_AFTER_MS);
+    expect(f.fn).toHaveBeenCalledTimes(2);
+    f.attempts[0]!.resolve(new Response("bad auth", { status: 401 }));
+    await vi.advanceTimersByTimeAsync(10);
+    let done = false;
+    void p.then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(done).toBe(false); // B still pending
+    f.attempts[1]!.resolve(new Response("boom", { status: 500 }));
+    const res = await p;
+    expect(res.status).toBe(500); // last failure wins when everything failed
+    expect(await res.text()).toBe("boom");
+  });
+
+  it("a plain 4xx (401) with nothing else pending is returned at once", async () => {
+    const f = fakeFetch();
+    const p = hedgedFetch(f.fn, URL_, { body: BODY });
+    f.attempts[0]!.resolve(new Response("bad auth", { status: 401 }));
+    expect((await p).status).toBe(401);
+    expect(f.fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("a replaced stored failure is cancelled", async () => {
+    const f = fakeFetch();
+    const p = hedgedFetch(f.fn, URL_, { body: BODY });
+    const a = spied(502);
+    f.attempts[0]!.resolve(a.res);
+    await vi.advanceTimersByTimeAsync(0);
+    const b = spied(503);
+    f.attempts[1]!.resolve(b.res);
+    const res = await p;
+    expect(res.status).toBe(503);
+    expect(a.cancel).toHaveBeenCalled();
+    expect(b.cancel).not.toHaveBeenCalled(); // the surfaced response is the caller's to read
+  });
+
+  it("a stored failure is cancelled when the caller aborts", async () => {
+    const f = fakeFetch();
+    const caller = new AbortController();
+    const p = hedgedFetch(f.fn, URL_, { body: BODY, signal: caller.signal });
+    p.catch(() => {});
+    const a = spied(502);
+    f.attempts[0]!.resolve(a.res);
+    await vi.advanceTimersByTimeAsync(0); // B started, A's 502 stored
+    caller.abort();
+    await expect(p).rejects.toMatchObject({ name: "AbortError" });
+    expect(a.cancel).toHaveBeenCalled();
+  });
+
+  it("A 5xx then B wins: A's 5xx body is cancelled", async () => {
+    const f = fakeFetch();
+    const p = hedgedFetch(f.fn, URL_, { body: BODY });
+    const a = spied(502);
+    f.attempts[0]!.resolve(a.res);
+    await vi.advanceTimersByTimeAsync(0);
+    const b = controlled();
+    f.attempts[1]!.resolve(b.res);
+    b.push("x");
+    await p;
+    expect(a.cancel).toHaveBeenCalled();
+  });
+
+  it(`at most ${MAX_INFLIGHT_HEDGES} hedges in flight per isolate: a third slow call does not hedge; slots are released`, async () => {
+    const fs = [fakeFetch(), fakeFetch(), fakeFetch()];
+    const callers = fs.map(() => new AbortController());
+    const ps = fs.map((f, i) => {
+      const p = hedgedFetch(f.fn, URL_, { body: BODY, signal: callers[i]!.signal });
+      p.catch(() => {});
+      return p;
+    });
+    await vi.advanceTimersByTimeAsync(HEDGE_AFTER_MS);
+    expect(fs.map((f) => f.fn.mock.calls.length)).toEqual([2, 2, 1]);
+    expect(getInflightHedges()).toBe(MAX_INFLIGHT_HEDGES);
+    await vi.advanceTimersByTimeAsync(HEDGE_AFTER_MS * 4);
+    expect(fs[2]!.fn).toHaveBeenCalledTimes(1);
+
+    // call 1's B fails with a network error → its slot is free again
+    fs[0]!.attempts[1]!.reject(new TypeError("net"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getInflightHedges()).toBe(1);
+
+    // every other path (caller abort) releases too
+    callers.forEach((c) => c.abort());
+    await Promise.allSettled(ps);
+    expect(getInflightHedges()).toBe(0);
+  });
+
+  it("a hedge slot is released when A wins, and when B wins", async () => {
+    const f1 = fakeFetch();
+    const p1 = hedgedFetch(f1.fn, URL_, { body: BODY });
+    await vi.advanceTimersByTimeAsync(HEDGE_AFTER_MS);
+    expect(getInflightHedges()).toBe(1);
+    const a = controlled();
+    f1.attempts[0]!.resolve(a.res);
+    a.push("a");
+    await p1;
+    expect(getInflightHedges()).toBe(0);
+
+    const f2 = fakeFetch();
+    const p2 = hedgedFetch(f2.fn, URL_, { body: BODY });
+    await vi.advanceTimersByTimeAsync(HEDGE_AFTER_MS);
+    const b = controlled();
+    f2.attempts[1]!.resolve(b.res);
+    b.push("b");
+    await p2;
+    expect(getInflightHedges()).toBe(0);
+  });
+
+  it("A failing while the hedge limit is reached surfaces A's failure instead of hanging", async () => {
+    const hold = [fakeFetch(), fakeFetch()];
+    const callers = hold.map(() => new AbortController());
+    const held = hold.map((f, i) => {
+      const p = hedgedFetch(f.fn, URL_, { body: BODY, signal: callers[i]!.signal });
+      p.catch(() => {});
+      return p;
+    });
+    await vi.advanceTimersByTimeAsync(HEDGE_AFTER_MS);
+    expect(getInflightHedges()).toBe(MAX_INFLIGHT_HEDGES);
+
+    const f = fakeFetch();
+    const p = hedgedFetch(f.fn, URL_, { body: BODY });
+    f.attempts[0]!.resolve(new Response("down", { status: 503 }));
+    const res = await p;
+    expect(res.status).toBe(503);
+    expect(f.fn).toHaveBeenCalledTimes(1);
+
+    callers.forEach((c) => c.abort());
+    await Promise.allSettled(held);
+    expect(getInflightHedges()).toBe(0);
+  });
+});
+
+describe("AGENTS_HEDGE_AFTER_MS", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("parseHedgeAfterMs: default when unset/invalid, 0 allowed", () => {
+    expect(parseHedgeAfterMs(undefined)).toBe(HEDGE_AFTER_MS);
+    expect(parseHedgeAfterMs("")).toBe(HEDGE_AFTER_MS);
+    expect(parseHedgeAfterMs("abc")).toBe(HEDGE_AFTER_MS);
+    expect(parseHedgeAfterMs("-5")).toBe(HEDGE_AFTER_MS);
+    expect(parseHedgeAfterMs("0")).toBe(0);
+    expect(parseHedgeAfterMs("1200")).toBe(1200);
+  });
+
+  it("0 disables hedging: one plain fetch with the injected params, even when slow", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+    void agentFetch(AGENT_MODELS["kimi-k2.6"], "x", parseHedgeAfterMs("0"))(URL_, { method: "POST", body: BODY });
+    await vi.advanceTimersByTimeAsync(HEDGE_AFTER_MS * 4);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(JSON.parse(init.body as string)).toEqual({ model: "m", stream: true, reasoning_effort: "none" });
+  });
+
+  it("a custom delay is honoured", async () => {
+    vi.useFakeTimers();
+    const f = fakeFetch();
+    vi.stubGlobal("fetch", f.fn);
+    const p = agentFetch(AGENT_MODELS["kimi-k2.6"], "x", 300)(URL_, { method: "POST", body: BODY });
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(299);
+    expect(f.fn).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.fn).toHaveBeenCalledTimes(2);
+    f.attempts.forEach((a) => a.reject(new Error("done")));
   });
 });
