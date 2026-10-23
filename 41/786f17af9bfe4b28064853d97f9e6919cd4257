@@ -1,0 +1,25 @@
+scripts/seed-kb/upload.sh
+  s_3a8326f10dc640::t_8dd6ea4eaa8e6e 13-37,45-48
+src/lib/agents/defs/knowledge-base.ts
+  s_3a8326f10dc640::t_e2aec17395293f 18
+src/lib/agents/kb.test.ts
+  s_3a8326f10dc640::t_7339e00d8a0e4b 64,76,150-154
+src/lib/agents/kb.ts
+  s_3a8326f10dc640::t_08ec570dc85d26 9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "41786f17af9bfe4b28064853d97f9e6919cd4257",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
