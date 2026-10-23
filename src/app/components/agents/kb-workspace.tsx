@@ -27,6 +27,8 @@ import {
   formatBytes,
   indexState,
   kbErrorKey,
+  shouldKeepPolling,
+  statusPollDelay,
   summarizeIndex,
   type IndexState,
   type KbStatusFile,
@@ -35,8 +37,7 @@ import { cn } from "@/lib/utils";
 
 export const KB_WORKSPACE_STORAGE_KEY = "cf-demo-kb-workspace";
 const DEFAULT_WORKSPACE = "default";
-/** /status (+ /docs) poll interval, only while this panel is mounted and the tab is visible. */
-const STATUS_POLL_MS = 10_000;
+/** /status (+ /docs) polling runs only while this panel is mounted (rounds skipped while the tab is hidden); interval: statusPollDelay(). */
 /** Give up polling after this long even if a document never reports a final status (AI Search status is unreliable). */
 const STATUS_POLL_MAX_MS = 15 * 60_000;
 const IMPORT_POLL_MS = 3_000;
@@ -180,18 +181,29 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
     stopImport();
   }, [value, stopImport]);
 
-  // Document list (+ indexing status for a writable workspace). `epoch` restarts it after an upload / import.
+  // Document list (+ indexing status for a writable workspace). `epoch` restarts it — with a fresh backoff — after
+  // an upload / import. Polling stops for the sample workspace, for an empty workspace, and once every file has a
+  // final status; while files are unsettled the interval backs off 10 s → 20 s → 40 s → 60 s.
   useEffect(() => {
     let cancelled = false;
     let settled = false;
     const startedAt = Date.now();
-    let timer: ReturnType<typeof setInterval> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let round = 0;
     const qs = `workspace=${encodeURIComponent(value)}`;
 
     const stop = () => {
       settled = true;
-      if (timer) clearInterval(timer);
+      if (timer) clearTimeout(timer);
       timer = undefined;
+    };
+    const schedule = () => {
+      if (settled || cancelled) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        void tick().then(schedule);
+      }, statusPollDelay(round++));
     };
 
     // One request round at a time: interval, visibility and epoch triggers must not race each other.
@@ -212,26 +224,24 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
         const list = d?.ok ? ((d.body as { docs?: DocItem[] } | null)?.docs ?? []) : null;
         if (list) setDocs(list);
         setLoadError(!list);
-        let fileList: KbStatusFile[] = [];
-        const statusOk = !!s?.ok;
+        let fileList: KbStatusFile[] | null = null;
         if (s?.ok) {
           const body = s.body as { status?: string; files?: KbStatusFile[] } | null;
           fileList = Array.isArray(body?.files) ? body.files : [];
           setFiles(fileList);
           setInstanceStatus(typeof body?.status === "string" ? body.status : null);
         }
-        // The read-only sample workspace has no status to follow (one fetch, no retry). A writable one is polled
-        // until every document is completed / error (or the cap); a failed round never settles it.
-        if (!writable) stop();
-        else if (list && statusOk && summarizeIndex(list.map((x) => x.key), fileList).settled) stop();
+        // The read-only sample workspace has no status to follow (one fetch, no retry); an empty one has nothing to
+        // index. A writable one with documents is polled until every document is completed / error (or the cap);
+        // a failed round never settles it.
+        if (!shouldKeepPolling({ writable, docKeys: list ? list.map((x) => x.key) : null, files: fileList })) stop();
         else if (Date.now() - startedAt > STATUS_POLL_MAX_MS) stop();
       } finally {
         inFlight = false;
       }
     };
 
-    void tick();
-    if (writable) timer = setInterval(() => void tick(), STATUS_POLL_MS);
+    void tick().then(schedule);
     const onVisible = () => {
       if (document.visibilityState === "visible") void tick();
     };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Activity, ArrowUp, ExternalLink, Square, SquarePen } from "lucide-react";
@@ -39,7 +39,7 @@ function useSidePanel(): boolean {
 export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
   const { t } = useTranslation();
   const sidePanel = useSidePanel();
-  const { turns, send, stop, running, reset } = useAgentRun(agent.id);
+  const { turns, send, retry, stop, running, reset } = useAgentRun(agent.id);
   const [model, setModel] = useState<ModelKey>(agent.defaultModel);
   const [input, setInput] = useState("");
   // Knowledge-base workspace controls: defaults = sample workspace, content recorded in the trace.
@@ -84,6 +84,16 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
     });
     setInput("");
   };
+
+  // 重試: same question, same model / workspace / storeContent as the failed turn (a new turn at the bottom).
+  const retryTurn = useCallback(
+    (turnId: string) => {
+      if (running) return;
+      stickRef.current = true;
+      retry(turnId);
+    },
+    [retry, running],
+  );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter sends; Shift+Enter is a newline; never send while an IME is composing (Chinese input).
@@ -212,7 +222,7 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
                         <p className="whitespace-pre-wrap break-words text-sm">{turn.user}</p>
                       </div>
                     </div>
-                    <AgentMessage turn={turn} />
+                    <AgentMessage turn={turn} onRetry={retryTurn} retryDisabled={running} />
                   </div>
                 ))}
               </div>

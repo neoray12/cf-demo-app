@@ -45,10 +45,23 @@ export function spanLabel(node: SpanNode, t: TFunction): string {
   return key ? t(key) : node.name;
 }
 
-/** Subagent ordinal from its span id (`{parent}:{functionId}:{index}`), 1-based. */
+/** Subagent ordinal from its span id (`{parent}:{functionId}:{index}`, retry `…:{index}r`), 1-based. */
 export function subagentOrdinal(node: SpanNode): number | undefined {
-  const m = /:(\d+)$/.exec(node.id);
+  const m = /:(\d+)r?$/.exec(node.id);
   return m ? Number(m[1]) + 1 : undefined;
+}
+
+/** A subagent's one-shot retry (R32): span id `{parent}:{functionId}:{index}r`. */
+export function isRetrySpan(node: Pick<SpanNode, "id" | "kind">): boolean {
+  return node.kind === "invoke_agent" && /:\d+r$/.test(node.id);
+}
+
+/**
+ * Assistant text for conversation history: KB citation markers `[n]` removed, since the next turn numbers its
+ * sources from 1 again and old markers would point at the wrong documents.
+ */
+export function stripCitationMarkers(text: string): string {
+  return text.replace(/\[\d+\]/g, "");
 }
 
 /** Short preview of tool arguments: query / question / url / … or the JSON's first 80 chars. */

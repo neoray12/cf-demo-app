@@ -12,6 +12,8 @@ import {
   indexState,
   isHttpUrl,
   kbErrorKey,
+  shouldKeepPolling,
+  statusPollDelay,
   summarizeIndex,
   truncateLabel,
 } from "./ui-helpers";
@@ -27,6 +29,24 @@ describe("indexState", () => {
     expect(indexState(undefined)).toBe("unknown");
     expect(indexState({ status: "skipped" })).toBe("unknown");
     expect(indexState({ status: "unknown" })).toBe("unknown");
+  });
+});
+
+describe("KB status polling", () => {
+  it("statusPollDelay backs off 10 s → 20 s → 40 s and caps at 60 s", () => {
+    expect([0, 1, 2, 3, 4, 50].map(statusPollDelay)).toEqual([10_000, 20_000, 40_000, 60_000, 60_000, 60_000]);
+    expect(statusPollDelay(-1)).toBe(10_000);
+  });
+
+  it("shouldKeepPolling: never for the sample or an empty workspace; until settled otherwise; failed rounds keep going", () => {
+    const files = [{ key: "ws/a.md", status: "completed" }];
+    expect(shouldKeepPolling({ writable: false, docKeys: ["default/a.md"], files: null })).toBe(false);
+    expect(shouldKeepPolling({ writable: true, docKeys: [], files: [] })).toBe(false);
+    expect(shouldKeepPolling({ writable: true, docKeys: ["ws/a.md"], files })).toBe(false);
+    expect(shouldKeepPolling({ writable: true, docKeys: ["ws/a.md", "ws/b.md"], files })).toBe(true);
+    expect(shouldKeepPolling({ writable: true, docKeys: ["ws/a.md"], files: [{ key: "ws/a.md", status: "running" }] })).toBe(true);
+    expect(shouldKeepPolling({ writable: true, docKeys: null, files })).toBe(true);
+    expect(shouldKeepPolling({ writable: true, docKeys: ["ws/a.md"], files: null })).toBe(true);
   });
 });
 

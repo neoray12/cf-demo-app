@@ -2,8 +2,20 @@
 
 import { memo, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Bot, ChevronRight, CircleCheck, CircleHelp, ExternalLink, FileText, Loader2, TriangleAlert, Wrench } from "lucide-react";
+import {
+  Bot,
+  ChevronRight,
+  CircleCheck,
+  CircleHelp,
+  ExternalLink,
+  FileText,
+  Loader2,
+  RotateCcw,
+  TriangleAlert,
+  Wrench,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { MarkdownRenderer } from "@/app/components/chat/markdown-renderer";
 import { waterfallRows, type SpanNode } from "@/lib/agents/trace-tree";
@@ -13,7 +25,7 @@ import { ActivityTimeline } from "./activity-timeline";
 import { RadarChart } from "./radar-chart";
 import { TurnMetrics } from "./trace-panel";
 import { displayAnswer, secs, spanLabel, truncate, useNow } from "./trace-utils";
-import { turnStatus, type AgentTurn } from "./use-agent-run";
+import { canRetry, turnStatus, type AgentTurn } from "./use-agent-run";
 
 function detailText(detail: unknown): string | undefined {
   if (detail === undefined) return undefined;
@@ -133,7 +145,17 @@ function GroundingBadge({ grounding }: { grounding: Grounding }) {
  * One agent turn: live activity timeline, streamed answer, sources, tool/subagent calls, mobile metrics.
  * Memoized: patchTurn keeps the object identity of turns it doesn't touch, so finished turns skip re-rendering.
  */
-export const AgentMessage = memo(function AgentMessage({ turn }: { turn: AgentTurn }) {
+export const AgentMessage = memo(function AgentMessage({
+  turn,
+  onRetry,
+  retryDisabled,
+}: {
+  turn: AgentTurn;
+  /** Re-send this failed / stopped turn (same question, same options); the button shows only for such turns. */
+  onRetry?: (turnId: string) => void;
+  /** Another turn is running. */
+  retryDisabled?: boolean;
+}) {
   const { t } = useTranslation();
   const status = turnStatus(turn);
   const live = status === "running";
@@ -188,6 +210,20 @@ export const AgentMessage = memo(function AgentMessage({ turn }: { turn: AgentTu
       )}
       {!trace && turn.error && (
         <p className="text-xs text-destructive break-words">{t("agents.chat.requestFailed", { error: turn.error })}</p>
+      )}
+      {onRetry && canRetry(turn) && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 w-fit gap-1.5 px-2 text-xs"
+          disabled={retryDisabled}
+          onClick={() => onRetry(turn.id)}
+          title={t("agents.chat.retryHint")}
+        >
+          <RotateCcw className="size-3" />
+          {t("agents.chat.retry")}
+        </Button>
       )}
 
       {sources.length > 0 && (

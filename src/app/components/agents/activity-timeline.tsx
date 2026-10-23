@@ -16,6 +16,7 @@ import {
   serverNow,
   spanEnd,
   spanLabel,
+  isRetrySpan,
   subagentOrdinal,
   traceCounts,
   turnElapsed,
@@ -126,6 +127,9 @@ function SubagentCard({ node, now }: { node: SpanNode; now: number }) {
           <span className="font-medium truncate">
             {spanLabel(node, t)}
             {ordinal !== undefined && <span className="text-muted-foreground font-normal"> #{ordinal}</span>}
+            {isRetrySpan(node) && (
+              <span className="text-muted-foreground font-normal"> · {t("agents.trace.subagentRetry")}</span>
+            )}
           </span>
           <Badge
             variant="outline"

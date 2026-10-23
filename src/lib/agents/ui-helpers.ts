@@ -51,6 +51,31 @@ export function summarizeIndex(docKeys: string[], files: KbStatusFile[]): IndexS
   return out;
 }
 
+export const STATUS_POLL_BASE_MS = 10_000;
+export const STATUS_POLL_CAP_MS = 60_000;
+
+/** Delay before status poll round `round` (0-based) while files are unsettled: 10 s → 20 s → 40 s → 60 s (cap). */
+export function statusPollDelay(round: number): number {
+  const r = Math.max(0, Math.trunc(round) || 0);
+  return Math.min(STATUS_POLL_CAP_MS, STATUS_POLL_BASE_MS * 2 ** Math.min(r, 10));
+}
+
+/**
+ * Whether the workspace status poll should keep going after a round: never for the read-only sample or an empty
+ * workspace (an upload / import restarts it), never once every document has a final status; a failed round
+ * (no doc list or no status) keeps polling.
+ */
+export function shouldKeepPolling(o: {
+  writable: boolean;
+  docKeys: string[] | null;
+  files: KbStatusFile[] | null;
+}): boolean {
+  if (!o.writable) return false;
+  if (o.docKeys !== null && o.docKeys.length === 0) return false;
+  if (o.docKeys === null || o.files === null) return true;
+  return !summarizeIndex(o.docKeys, o.files).settled;
+}
+
 /** `ws-abcd1234/site/example-com/index.md` -> `site/example-com/index.md` */
 export function docDisplayName(workspace: string, key: string): string {
   const prefix = `${workspace}/`;

