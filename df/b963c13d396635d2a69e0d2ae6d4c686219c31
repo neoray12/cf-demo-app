@@ -1,0 +1,31 @@
+wrangler.dev.toml
+  s_3a8326f10dc640::t_72d95efc6b863e 5
+wrangler.toml
+  s_3a8326f10dc640::t_9ca5d5bcf8d1ea 4
+agents.md
+  s_879fd140c4db7c::t_7e886f9d51e7d4 144-207,213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "dfb963c13d396635d2a69e0d2ae6d4c686219c31",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_879fd140c4db7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad674571da1f307fe",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
