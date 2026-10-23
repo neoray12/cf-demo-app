@@ -40,4 +40,12 @@ describe("createNdjsonParser", () => {
     const p = createNdjsonParser();
     expect(p.push("not json\r\n" + JSON.stringify(delta) + "\r\n")).toEqual([delta]);
   });
+
+  it("drops lines that are not objects with a string type", () => {
+    const p = createNdjsonParser();
+    const out = p.push(
+      ["null", "42", "[]", '"str"', '{"no":"type"}', '{"type":5}', JSON.stringify(delta)].join("\n") + "\n",
+    );
+    expect(out).toEqual([delta]);
+  });
 });

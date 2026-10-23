@@ -61,7 +61,10 @@ export function createNdjsonParser(): {
     const trimmed = line.trim();
     if (!trimmed) return;
     try {
-      out.push(JSON.parse(trimmed) as TraceEvent);
+      const v: unknown = JSON.parse(trimmed);
+      if (v !== null && typeof v === "object" && !Array.isArray(v) && typeof (v as { type?: unknown }).type === "string") {
+        out.push(v as TraceEvent);
+      }
     } catch {
       // ignore malformed line
     }

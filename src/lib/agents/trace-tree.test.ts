@@ -95,8 +95,12 @@ describe("reduceTrace", () => {
       ["s2", 2],
       ["s3", 2],
     ]);
-    expect(s.spans.s1!.end).toBe(2000);
-    expect(s.spans.s2!.end).toBe(700);
+    const rowEnd = (id: string) => rows.find((r) => r.node.id === id)!.node.end;
+    expect(rowEnd("s1")).toBe(2000);
+    expect(rowEnd("s2")).toBe(700);
+    expect(rowEnd("s3")).toBe(1200);
+    expect(s.spans.a!.children[0]!.children[0]!.end).toBe(2000);
+    expect(s.spans.a!.children[0]!.children[2]!.end).toBe(1200);
   });
 
   it("sorts siblings by start time", () => {
@@ -151,8 +155,15 @@ describe("reduceTrace", () => {
       { type: "span-start", id: "c", parentId: "a", kind: "chat", name: "c", t: 10 },
       { type: "span-start", id: "done", parentId: "a", kind: "execute_tool", name: "t", t: 20 },
       { type: "span-end", id: "done", t: 30, status: "ok" },
+      { type: "span-start", id: "deep", parentId: "c", kind: "execute_tool", name: "d", t: 40 },
       runEnd({ status: "aborted", totalMs: 1500 }),
     ]);
+    const rows = waterfallRows(s);
+    const deep = rows.find((r) => r.node.id === "deep")!;
+    expect(deep.depth).toBe(2);
+    expect(deep.node).toMatchObject({ end: 1500, status: "error" });
+    expect(rows.find((r) => r.node.id === "a")!.node).toMatchObject({ end: 1500, status: "error" });
+    expect(rows.find((r) => r.node.id === "done")!.node).toMatchObject({ end: 30, status: "ok" });
     expect(s.status).toBe("aborted");
     expect(s.spans.a!).toMatchObject({ end: 1500, status: "error" });
     expect(s.spans.c!).toMatchObject({ end: 1500, status: "error" });
@@ -174,5 +185,27 @@ describe("reduceTrace", () => {
   it("ignores span-end for unknown spans", () => {
     const s1 = run([runStart]);
     expect(reduceTrace(s1, { type: "span-end", id: "nope", t: 1, status: "ok" })).toBe(s1);
+  });
+
+  it("error run-end also closes open spans, emptyAnswer stays false", () => {
+    const s = run([
+      runStart,
+      { type: "span-start", id: "a", kind: "invoke_agent", name: "a", t: 0 },
+      { type: "span-start", id: "c", parentId: "a", kind: "chat", name: "c", t: 10 },
+      { type: "span-start", id: "deep", parentId: "c", kind: "execute_tool", name: "d", t: 40 },
+      runEnd({ status: "error", error: "boom", totalMs: 900 }),
+    ]);
+    const rows = waterfallRows(s);
+    for (const id of ["a", "c", "deep"]) {
+      expect(rows.find((r) => r.node.id === id)!.node).toMatchObject({ end: 900, status: "error" });
+    }
+    expect(s.status).toBe("error");
+    expect(s.emptyAnswer).toBe(false);
+  });
+
+  it("ignores unknown event types without touching state", () => {
+    const s1 = run([runStart, { type: "text-delta", spanId: "a", text: "x" }]);
+    const future = { type: "future-event", foo: 1 } as unknown as TraceEvent;
+    expect(reduceTrace(s1, future)).toBe(s1);
   });
 });

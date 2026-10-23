@@ -118,6 +118,7 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
       return { ...s, spans };
     }
     case "text-delta":
+      // Only the top-level agent forwards text (subagents never emit text-delta), so spanId is intentionally ignored.
       return { ...s, text: s.text + e.text };
     case "reasoning-delta":
       return { ...s, reasoning: s.reasoning + e.text };
@@ -127,7 +128,7 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
       return { ...s, charts: [...s.charts, e.chart] };
     case "run-end": {
       let spans = s.spans;
-      if (e.status === "aborted") {
+      if (e.status === "aborted" || e.status === "error") {
         for (const id of Object.keys(s.spans)) {
           if (spans[id]?.end === null) {
             spans = updateSpan(spans, id, (n) => ({ ...n, end: e.totalMs, status: "error" }));
@@ -145,6 +146,8 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
         emptyAnswer: e.status === "ok" && s.text === "",
       };
     }
+    default:
+      return s;
   }
 }
 
