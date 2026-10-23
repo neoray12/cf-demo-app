@@ -1,0 +1,23 @@
+src/app/api/agents/[agentId]/route.ts
+  s_879fd140c4db7c::t_676334baa71d10 7,9,14,16,41-43,89,93
+src/lib/agents/agent-route.test.ts
+  s_879fd140c4db7c::t_b129e26b2e08e6 1-123
+src/lib/agents/request.ts
+  s_879fd140c4db7c::t_f6664e45073771 1-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e54ca4233db5c119fe465bc3220ebd72a5fffc5a",
+  "prompts": {},
+  "sessions": {
+    "s_879fd140c4db7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad674571da1f307fe",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
