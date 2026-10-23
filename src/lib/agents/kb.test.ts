@@ -10,7 +10,7 @@ vi.mock("./runtime", async (orig) => ({
   }),
 }));
 
-import { isValidWorkspace, kbSearch, kbSearchBody, newWorkspaceId, validateUpload } from "./kb";
+import { isValidWorkspace, kbFileStatuses, kbSearch, kbSearchBody, newWorkspaceId, safeUploadName, slugFromUrl, validateUpload } from "./kb";
 import { buildKbTools } from "./tools/kb";
 import { groundingChecker, kbAgent } from "./defs/knowledge-base";
 import { AGENTS } from "./registry";
@@ -61,7 +61,7 @@ describe("kbSearch", () => {
         success: true,
         result: {
           chunks: [
-            { score: 0.8, text: "x".repeat(2000), item: { key: "default/a.md" } },
+            { score: 0.8, text: "x".repeat(4000), item: { key: "default/a.md" } },
             { score: 0.2, text: "low", item: { key: "default/b.md" } },
           ],
         },
@@ -73,13 +73,76 @@ describe("kbSearch", () => {
     );
     expect(out.results).toHaveLength(1);
     expect(out.results[0]).toMatchObject({ filename: "default/a.md", score: 0.8, sourceUrl: null });
-    expect(out.results[0]!.snippet).toHaveLength(1500);
+    expect(out.results[0]!.snippet).toHaveLength(3000);
     expect(out.topScore).toBe(0.8);
   });
 
   it("rejects an invalid workspace without calling the API", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     await expect(kbSearch(env, "../x", "q")).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("safeUploadName / slugFromUrl", () => {
+  it("keeps ASCII and CJK, replaces the rest, drops directories", () => {
+    expect(safeUploadName("C:\\x\\出差 規定(v2).PDF")).toBe("出差_規定_v2_.PDF");
+    expect(safeUploadName("../../etc/pass wd.md")).toBe("pass_wd.md");
+    expect(safeUploadName(".hidden.md")).toBe("hidden.md");
+  });
+  it("rejects names with an empty stem", () => {
+    for (const n of ["???.md", "", "_.txt", "///"]) expect(safeUploadName(n)).toBeNull();
+  });
+  it("caps the length and keeps the extension", () => {
+    const out = safeUploadName(`${"a".repeat(300)}.md`)!;
+    expect(out.length).toBe(100);
+    expect(out.endsWith(".md")).toBe(true);
+  });
+  it("slugs URL paths", () => {
+    expect(slugFromUrl("https://example.com/")).toBe("index");
+    expect(slugFromUrl("https://example.com/Docs/Get_Started/?x=1")).toBe("docs-get-started");
+    expect(slugFromUrl(`https://example.com/${"a".repeat(200)}`)).toHaveLength(80);
+    expect(slugFromUrl("not a url")).toBe("index");
+  });
+});
+
+describe("kbFileStatuses", () => {
+  const env = { CF_ACCOUNT_ID: "acc", CF_API_TOKEN: "tok", KB_AI_SEARCH: "inst" } as never;
+  beforeEach(() => vi.restoreAllMocks());
+
+  it("filters to the workspace prefix, passes status through and surfaces errors", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        success: true,
+        result: [
+          { key: "ws-a1b2c3d4/a.md", status: "running", error: null },
+          { key: "ws-a1b2c3d4/b.md", status: "error", error: "boom" },
+          { key: "default/c.md", status: "completed", error: null },
+          { key: "ws-a1b2c3d45/d.md", status: "completed", error: null },
+        ],
+      }),
+    );
+    const out = await kbFileStatuses(env, "ws-a1b2c3d4");
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      "https://api.cloudflare.com/client/v4/accounts/acc/ai-search/instances/inst/items?per_page=50&page=1",
+    );
+    expect(out).toEqual([
+      { key: "ws-a1b2c3d4/a.md", status: "running" },
+      { key: "ws-a1b2c3d4/b.md", status: "error", error: "boom" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches at most two pages", async () => {
+    const full = Array.from({ length: 50 }, (_, i) => ({ key: `default/${i}.md`, status: "completed" }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ success: true, result: full }));
+    await kbFileStatuses(env, "default");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects an invalid workspace without calling the API", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    await expect(kbFileStatuses(env, "../x")).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

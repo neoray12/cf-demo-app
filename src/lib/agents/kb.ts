@@ -6,8 +6,8 @@ import type { AgentEnv } from "./env";
 const API_BASE = "https://api.cloudflare.com/client/v4/accounts";
 const WORKSPACE_RE = /^(default|ws-[a-z0-9]{8})$/;
 const MIN_SCORE = 0.3;
-// Each seed doc is one chunk of up to ~1.5k chars; a shorter snippet cut off facts that sit late in the document.
-const SNIPPET_MAX = 1500;
+// Seed docs are 1.5-2k chars (one chunk each); a shorter snippet cut off facts that sit late in the document.
+const SNIPPET_MAX = 3000;
 const MAX_RESULTS_CAP = 10;
 const SEARCH_TIMEOUT_MS = 20_000;
 const API_TIMEOUT_MS = 15_000;
@@ -33,6 +33,36 @@ export function validateUpload(file: { name: string; size: number }, existingCou
   if (file.size > MAX_UPLOAD_BYTES) return "agents.kb.errors.tooLarge";
   if (existingCount >= MAX_FILES_PER_WORKSPACE) return "agents.kb.errors.tooMany";
   return null;
+}
+
+const NAME_MAX = 100;
+
+/**
+ * Sanitised object name for an uploaded file: the original basename with every character outside
+ * `[A-Za-z0-9._-]` and CJK replaced by `_`. Returns null when nothing meaningful is left (empty stem).
+ */
+export function safeUploadName(original: string): string | null {
+  const base = original.split(/[\\/]/).pop() ?? "";
+  let name = base.replace(/[^A-Za-z0-9._\-\p{Script=Han}]/gu, "_").replace(/^\.+/, "");
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot) : "";
+  let stem = dot > 0 ? name.slice(0, dot) : name;
+  if (!/[A-Za-z0-9\p{Script=Han}]/u.test(stem)) return null;
+  stem = Array.from(stem).slice(0, Math.max(1, NAME_MAX - ext.length)).join("");
+  name = `${stem}${ext}`;
+  return name;
+}
+
+/** `[a-z0-9-]` slug (max 80) of a URL's path; `index` when it is empty. */
+export function slugFromUrl(url: string): string {
+  let path = "";
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    // fall through to "index"
+  }
+  const slug = path.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80).replace(/-+$/, "");
+  return slug || "index";
 }
 
 /**
@@ -150,4 +180,42 @@ export async function kbSyncStatus(env: AgentEnv): Promise<{ status: string; las
   const data = (await res.json().catch(() => null)) as ApiEnvelope<{ status?: string; last_activity?: string | null }> | null;
   if (!res.ok || !data?.success) throw apiError(res, data);
   return { status: data.result?.status ?? "unknown", lastActivity: data.result?.last_activity ?? null };
+}
+
+export interface KbFileStatus {
+  key: string;
+  status: string;
+  error?: string;
+}
+
+const ITEMS_PER_PAGE = 50;
+const ITEMS_MAX_PAGES = 2;
+
+/**
+ * Per-file indexing status of one workspace, from the AI Search items API (paginated, 50/page, at most 2 pages).
+ *
+ * The status is returned exactly as AI Search reports it, with no inference: AI Search per-file status is known to
+ * be unreliable, an item can stay `running` long after it is searchable. Callers should treat it as a hint.
+ */
+export async function kbFileStatuses(env: AgentEnv, workspace: string): Promise<KbFileStatus[]> {
+  assertWorkspace(workspace);
+  const prefix = `${workspace}/`;
+  const files: KbFileStatus[] = [];
+  for (let page = 1; page <= ITEMS_MAX_PAGES; page++) {
+    const res = await fetch(
+      `${API_BASE}/${env.CF_ACCOUNT_ID}/ai-search/instances/${env.KB_AI_SEARCH}/items?per_page=${ITEMS_PER_PAGE}&page=${page}`,
+      { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` }, signal: AbortSignal.timeout(API_TIMEOUT_MS) },
+    );
+    const data = (await res.json().catch(() => null)) as ApiEnvelope<
+      Array<{ key?: string; status?: string; error?: string | null }>
+    > | null;
+    if (!res.ok || !data?.success) throw apiError(res, data);
+    const items = data.result ?? [];
+    for (const it of items) {
+      if (!it.key?.startsWith(prefix)) continue;
+      files.push({ key: it.key, status: it.status ?? "unknown", ...(it.error ? { error: it.error } : {}) });
+    }
+    if (items.length < ITEMS_PER_PAGE) break;
+  }
+  return files;
 }
