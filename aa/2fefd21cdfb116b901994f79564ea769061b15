@@ -1,0 +1,31 @@
+src/app/api/agents/[agentId]/route.ts
+  s_3a8326f10dc640::t_b2f3792d19019c 6,29,31,35-38,50,52-53,55-66,73-78
+src/lib/agents/defs/docs.ts
+  s_3a8326f10dc640::t_d203d84a3af0d6 6-7,10-11,14-16,20-23,28,31,67,70,73
+src/lib/agents/runtime.order.test.ts
+  s_3a8326f10dc640::t_682879d630333e 96,99-105,111,152-154,157-351
+src/lib/agents/runtime.test.ts
+  s_3a8326f10dc640::t_d15e0740589e9d 125-126,162-163,180,247,258-259,320,717-718,743
+src/lib/agents/runtime.ts
+  s_3a8326f10dc640::t_c46d3a62ae9b27 38-83,199-202,206,242-243,281,287,289,291,296,300-302,423,568-569,620-622,625
+src/lib/agents/tools/cf-docs.test.ts
+  s_3a8326f10dc640::t_87b28365cfc1ff 3-5,40-152
+src/lib/agents/tools/cf-docs.ts
+  s_3a8326f10dc640::t_a25ffab9a8fef4 6-10,59-107,109,111,115-158,166-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "aa2fefd21cdfb116b901994f79564ea769061b15",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
