@@ -261,7 +261,7 @@ describe("radarQuery", () => {
     expect(url).toBe("https://api.cloudflare.com/client/v4/radar/http/summary/bot_class?location=TW&dateRange=7d");
     expect((init as RequestInit).headers).toEqual({ Authorization: "Bearer tok" });
     expect(KV.put).toHaveBeenCalledWith(
-      "radar:bot_vs_human:location=TW&dateRange=7d",
+      "radar:bot_vs_human:http/summary/bot_class?location=TW&dateRange=7d",
       expect.any(String),
       { expirationTtl: 600 },
     );
@@ -279,6 +279,23 @@ describe("radarQuery", () => {
     const keys = KV.put.mock.calls.map((c) => c[0]);
     expect(new Set(keys).size).toBe(2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("l7_attacks_from cache keys differ per dimension; a cached mitigation_product is not served for http_method", async () => {
+    const { env, KV } = makeEnv();
+    fetchMock.mockImplementation(async () => okResponse(fixture("l7_attacks_from")));
+    const a = await radarQuery(env, "l7_attacks_from", { ...TW, dimension: "mitigation_product" });
+    expect(a.cacheHit).toBe(false);
+    const b = await radarQuery(env, "l7_attacks_from", { ...TW, dimension: "http_method" });
+    expect(b.cacheHit).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]![0])).toContain("attacks/layer7/summary/http_method");
+    const keys = KV.put.mock.calls.map((c) => c[0]);
+    expect(new Set(keys).size).toBe(2);
+    expect(b.scope).toContain("HTTP 方法");
+    const again = await radarQuery(env, "l7_attacks_from", { ...TW, dimension: "http_method" });
+    expect(again.cacheHit).toBe(true);
+    expect(again.scope).toContain("HTTP 方法");
   });
 
   it("a failing KV (get and put) never fails the query", async () => {

@@ -57,6 +57,14 @@ describe("threat-intel agent definition", () => {
     expect(sys).toContain("金融業");
     expect(attackAnalyst.system).toContain("不可改寫");
     expect(attackAnalyst.system).toContain("此期間無紀錄");
+    for (const sys of [attackAnalyst.system, networkAnalyst.system, botAnalyst.system, threatIntelAgent.system(ctx)]) {
+      expect(sys).not.toContain("所有數字都是占比");
+      expect(sys).toContain("mbps / ms");
+      expect(sys).toContain("rank");
+    }
+    expect(networkAnalyst.system).toContain("compareLastWeek: true");
+    const desc = (threatIntelAgent.tools(ctx).brief as unknown as { description: string }).description;
+    expect(desc).toContain("先用一句話告訴使用者你要派哪些分析師");
   });
 
   it("analyst prompt includes question, location and domain", () => {

@@ -548,8 +548,8 @@ export async function radarQuery(
   signal?: AbortSignal,
 ): Promise<RadarResult & { cacheHit: boolean }> {
   const { path, params } = buildRadarRequest(name, input);
-  // domain_rank carries its argument in the path, so the query string alone would collide across domains.
-  const key = `radar:${name}:${params.toString() || path}`;
+  // The path carries arguments too (domain, dimension), so the key must include it.
+  const key = `radar:${name}:${path}?${params.toString()}`;
 
   try {
     const hit = (await env.KV.get(key, "json")) as RadarResult | null;
@@ -593,7 +593,7 @@ const compareSchema = z
   .describe("true = also return last week's value as `previous` (week-over-week comparison)");
 
 const SCOPE_NOTE =
-  "Returns {title, scope, unit, period, data, events?, sourceUrl, note?}. Describe numbers exactly as `scope` says, use `period` and `unit`; values are shares or normalised values, never absolute counts.";
+  "Returns {title, scope, unit, period, data, events?, sourceUrl, note?}. Describe numbers exactly as `scope` says, use `period` and read numbers by `unit` (percent = share, normalized = 0-1 relative value, mbps/ms = measurement, rank = popularity rank, events = list of events); percent/normalized values are never absolute counts.";
 
 const TOOL_DEFS: Record<RadarToolName, { description: string; inputSchema: z.ZodType<Record<string, unknown>> }> = {
   attackers_of: {
