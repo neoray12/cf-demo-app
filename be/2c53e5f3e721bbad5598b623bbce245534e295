@@ -1,0 +1,53 @@
+src/app/components/agents/trace-utils.ts
+  s_3a8326f10dc640::t_21321b971ba658 1-106
+src/app/components/app-sidebar.tsx
+  s_3a8326f10dc640::t_dd4262e5251bef 36,68,93,405-432
+src/app/pages/agent-chat.tsx
+  s_3a8326f10dc640::t_fcc0aaae4f23c8 1-252
+src/i18n/agents.en.json
+  s_3a8326f10dc640::t_9e4718e8932724 1-176
+src/i18n/agents.zh-TW.json
+  s_3a8326f10dc640::t_f919d019d7e62b 1-176
+src/i18n/index.ts
+  s_3a8326f10dc640::t_ff1712ca31823f 6-9,16-17
+src/lib/agents/catalog.test.ts
+  s_3a8326f10dc640::t_6446eba1ee0246 1-97
+src/lib/agents/catalog.ts
+  s_3a8326f10dc640::t_9e2c239e7e16ce 1-100
+src/app/(dashboard)/agents/[agentId]/page.tsx
+  s_278a729e1d899c::t_8230890d491d05 1-14
+src/app/components/agents/activity-timeline.tsx
+  s_278a729e1d899c::t_96e49556e25811 1-319
+src/app/components/agents/agent-message.tsx
+  s_278a729e1d899c::t_f4fedd7087ebb9 1-184
+src/app/components/agents/span-detail.tsx
+  s_278a729e1d899c::t_87be6bd21c9263 1-136
+src/app/components/agents/trace-panel.tsx
+  s_278a729e1d899c::t_530c49e4f3b403 1-246
+src/app/components/agents/use-agent-run.ts
+  s_278a729e1d899c::t_c8dcfe3a7a2332 1-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "be2c53e5f3e721bbad5598b623bbce245534e295",
+  "prompts": {},
+  "sessions": {
+    "s_278a729e1d899c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac6a6c67f4499a417",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
