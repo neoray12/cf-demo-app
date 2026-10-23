@@ -5,9 +5,10 @@ import { stepCountIs, type ModelMessage, type TextStreamPart, type ToolSet } fro
 import type { AgentEnv } from "./env";
 import { createAgentModel } from "./gateway";
 import type { AgentId } from "./ids";
-import { AGENT_MODELS, type ModelKey } from "./models";
+import { createMarkupFilter, type MarkupFilter } from "./markup-filter";
+import { AGENT_MODELS, noThink, type ModelKey } from "./models";
 import type { TraceEvent } from "./trace-events";
-import { recordActiveSpanException } from "./tracing";
+import { recordActiveSpanException, withToolSpan } from "./tracing";
 
 export type { AgentEnv };
 
@@ -40,10 +41,15 @@ export interface RunContext {
   storeContent: boolean;
   workspace?: string;
   signal: AbortSignal;
-  /** The model chosen for this run; subagents use it instead of their own default (set by runAgent). */
+  /**
+   * The model chosen for this run (set by runAgent). Subagents use its no-think variant (`noThink`) instead of
+   * their own default: the menu's thinking choice applies to the root agent only.
+   */
   modelKey?: ModelKey;
-  /** Run-scoped shared resources (e.g. one MCP connection for all parallel subagents); disposed when the run ends. */
+  /** Run-scoped shared state (e.g. the knowledge base's citation counter); disposed when the run ends. */
   scope?: RunScope;
+  /** The run's prefetch (AgentDef.prefetch), set by runAgent before the root's tools are built; never rejects. */
+  prefetched?: Promise<PrefetchResult>;
   /** Whether Cloudflare Agents tracing wraps `ai` (reported on run-start; set by the route from isTracingActive()). */
   traced?: boolean;
 }
@@ -108,6 +114,12 @@ export interface SubagentDef<I> {
   maxSteps: number;
   tools(ctx: RunContext): ToolSet;
   prompt(input: I): string;
+  /**
+   * Deterministic work before the model call, inside the subagent's invoke_agent span (e.g. a search via
+   * runTracedTool with `subagentSpanId` as parent). The returned text is appended to the prompt. Runs once per
+   * attempt (a retry runs it again); a throw fails the attempt like a model error.
+   */
+  prepare?(input: I, ctx: RunContext, subagentSpanId: string): Promise<string>;
   /** Span detail for the subagent's span-end; defaults to `{ output: text.slice(0, 2000) }`. */
   toDetail?(text: string): unknown;
 }
@@ -117,6 +129,16 @@ export interface ToolResultRecord {
   output: unknown;
 }
 
+/** What an agent's prefetch hands to the run. */
+export interface PrefetchResult {
+  /** Text added to the root's system prompt ("await" mode only). */
+  context?: string;
+  /** Recorded like tool results of the root: prepended to the toolResults that `after` receives. */
+  toolResults?: ToolResultRecord[];
+  /** Anything the agent's own tools want to read back from ctx.prefetched. */
+  data?: unknown;
+}
+
 export interface AgentDef {
   id: AgentId;
   functionId: string;
@@ -124,6 +146,17 @@ export interface AgentDef {
   maxSteps: number;
   system(ctx: RunContext): string;
   tools(ctx: RunContext): ToolSet;
+  /**
+   * Started by runAgent right after run-start / the root span-start (t≈0), so its tool spans (runTracedTool with
+   * parent `rootSpanId`) show up immediately. `userText` = the last user message. Exposed to tools as
+   * ctx.prefetched. A rejection is swallowed (its span already shows the error) and becomes `{}`.
+   */
+  prefetch?(ctx: RunContext, rootSpanId: string, userText: string): Promise<PrefetchResult>;
+  /**
+   * "await": the root's first model call waits for the prefetch and gets its `context` in the system prompt.
+   * "background" (default): the model call starts at once; runAgent awaits the prefetch before `after`/run-end.
+   */
+  prefetchMode?: "await" | "background";
   /**
    * Runs after the root stream. `text` = every root step's text glued together; `finalText` = the text of the last
    * root chat step that wrote any (trimmed) — the answer without a plan sentence written before the tool calls
@@ -421,25 +454,53 @@ export async function pipeStepStream(
     chat = null;
   };
 
+  // Leaked Kimi tool-call markup is stripped from every delta (one stateful filter per span and delta type, so
+  // markup split across chunks is caught); a step's filters are flushed before its chat span ends.
+  type DeltaType = "text-delta" | "reasoning-delta";
+  const filters = new Map<string, { type: DeltaType; spanId: string; span: ChatSpan | null; filter: MarkupFilter }>();
+  const deliver = (type: DeltaType, spanId: string, span: ChatSpan | null, chunk: string) => {
+    if (!chunk) return;
+    const t = ctx.now();
+    if (firstTokenAt === undefined) firstTokenAt = t;
+    if (span && span.firstAt === undefined) span.firstAt = t;
+    if (type === "text-delta") {
+      text += chunk;
+      stepTexts.set(spanId, (stepTexts.get(spanId) ?? "") + chunk);
+    }
+    if (forwardText) ctx.emit({ type, spanId, text: chunk });
+  };
+  const pushDelta = (type: DeltaType, raw: string) => {
+    const spanId = chat?.id ?? parentSpanId;
+    const key = `${type}\u0000${spanId}`;
+    let entry = filters.get(key);
+    if (!entry) {
+      entry = { type, spanId, span: chat, filter: createMarkupFilter() };
+      filters.set(key, entry);
+    }
+    deliver(type, spanId, chat, entry.filter.push(raw));
+  };
+  const flushDeltas = (spanId?: string) => {
+    for (const [key, e] of filters) {
+      if (spanId !== undefined && e.spanId !== spanId) continue;
+      filters.delete(key);
+      deliver(e.type, e.spanId, e.span, e.filter.flush());
+    }
+  };
+
   const handle = (part: StreamPart) => {
     switch (part.type) {
       case "start-step": {
-        if (chat) chats.end(chat, "ok");
+        if (chat) {
+          flushDeltas(chat.id);
+          chats.end(chat, "ok");
+        }
         chat = chats.open(stepIndex++);
         return;
       }
       case "reasoning-delta":
       case "text-delta": {
         if (!part.text) return;
-        const t = ctx.now();
-        if (firstTokenAt === undefined) firstTokenAt = t;
-        if (chat && chat.firstAt === undefined) chat.firstAt = t;
-        if (part.type === "text-delta") {
-          text += part.text;
-          const key = chat?.id ?? parentSpanId;
-          stepTexts.set(key, (stepTexts.get(key) ?? "") + part.text);
-        }
-        if (forwardText) ctx.emit({ type: part.type, spanId: chat?.id ?? parentSpanId, text: part.text });
+        pushDelta(part.type, part.text);
         return;
       }
       case "tool-input-start": {
@@ -477,9 +538,15 @@ export async function pipeStepStream(
         // the provider only emits tool-call once the arguments parse; anything still streaming is dead
         for (const id of inputPhaseToolIds()) endTool(id, "error", { error: "incomplete tool arguments" });
         if (!chat) return;
+        flushDeltas(chat.id);
+        // gateway.ts marks hedged requests on the response (x-agents-hedge*); finish-step carries its headers
+        const headers = (part as { response?: { headers?: Record<string, string> } }).response?.headers;
+        const hedge =
+          headers?.["x-agents-hedge-fired"] === "1" ? { hedge: { fired: true, winner: headers["x-agents-hedge"] ?? "?" } } : {};
+        const detail = { ...(part.finishReason ? { finishReason: part.finishReason } : {}), ...hedge };
         chats.end(chat, "ok", {
           usage: { input: part.usage?.inputTokens ?? 0, output: part.usage?.outputTokens ?? 0 },
-          ...(part.finishReason ? { detail: { finishReason: part.finishReason } } : {}),
+          ...(Object.keys(detail).length > 0 ? { detail } : {}),
         });
         chat = null;
         return;
@@ -545,6 +612,7 @@ export async function pipeStepStream(
   }
 
   // Stream ended normally: close anything the model never finished.
+  flushDeltas();
   for (const id of openToolIds()) endTool(id, "error", { error: "no tool result" });
   for (const span of chats.openSpans()) chats.end(span, "ok");
 
@@ -556,12 +624,23 @@ export async function pipeStepStream(
  * prepareStep for an agent stream: opens step n's chat span when its request goes out (R22) and, on the last
  * allowed step, disables tools so the model has to write its answer / finding (R23).
  */
-function stepPreparer(chatSpans: ChatSpans, maxSteps: number) {
-  return ({ stepNumber }: { stepNumber: number }) => {
+function stepPreparer(chatSpans: ChatSpans, maxSteps: number, finalStepNote?: string) {
+  return ({ stepNumber, messages }: { stepNumber: number; messages?: ModelMessage[] }) => {
     chatSpans.request(stepNumber);
-    return stepNumber >= maxSteps - 1 ? { toolChoice: "none" as const, activeTools: [] as never[] } : {};
+    if (stepNumber < maxSteps - 1) return {};
+    const last = { toolChoice: "none" as const, activeTools: [] as never[] };
+    // Subagents: after a tool round, say so explicitly — with tools merely disabled, Kimi tends to "call" one
+    // anyway by writing raw tool-call markup as its finding.
+    if (finalStepNote && stepNumber > 0 && messages) {
+      return { ...last, messages: [...messages, { role: "user" as const, content: finalStepNote }] };
+    }
+    return last;
   };
 }
+
+/** R23 for subagents: the prompt of a forced final step (after at least one tool round). */
+export const SUBAGENT_FINAL_STEP_NOTE =
+  "This is your final step and tools are now disabled. Do not call or write out any tool call. Write your finding now, using only what the tool results above contain (keep their source URLs); if something was not found, say so.";
 
 // ---------------------------------------------------------------------------
 // subagents & fan-out
@@ -618,15 +697,19 @@ async function runSubagentAttempt<I>(
   const inputToolSpans = new Set<string>();
   ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "invoke_agent", name: def.functionId, t: ctx.now() });
   try {
-    const modelKey = ctx.modelKey ?? def.model;
+    // Subagents never think: the menu's thinking choice applies to the root only.
+    const modelKey = noThink(ctx.modelKey ?? def.model);
     const model = AGENT_MODELS[modelKey];
+    const prepared = def.prepare ? await def.prepare(input, subCtx, id) : "";
+    if (subCtx.signal.aborted) throw abortError();
+    const prompt = prepared ? `${def.prompt(input)}\n\n${prepared}` : def.prompt(input);
     const chatSpans = createChatSpans(subCtx, id, model.key);
     const result = ctx.ai.streamText({
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
       system: def.system,
-      prompt: def.prompt(input),
+      prompt,
       tools: traceToolExecutions(def.tools(subCtx), subCtx, id, startedToolSpans, inputToolSpans),
-      prepareStep: stepPreparer(chatSpans, def.maxSteps),
+      prepareStep: stepPreparer(chatSpans, def.maxSteps, SUBAGENT_FINAL_STEP_NOTE),
       stopWhen: stepCountIs(def.maxSteps),
       maxOutputTokens: model.maxTokens,
       abortSignal: subCtx.signal,
@@ -656,6 +739,44 @@ async function runSubagentAttempt<I>(
   }
 }
 
+/**
+ * Run a deterministic tool call (not chosen by the model) as an `execute_tool` span under `parentSpanId`:
+ * span-start + span-input are emitted synchronously (the chip shows up at once), then `fn(spanId)` runs inside a
+ * Cloudflare custom span (withToolSpan) so it also appears in the dashboard's Agents trace, then span-end with
+ * `{ input, output }` (same shape as model tool calls) or `{ error }`. The span id is namespaced like toolSpanId:
+ * `${parentSpanId}/${callId}` (callId defaults to `${name}-{random}`). `failed(result)` may turn a result that
+ * carries an error into an error span (the result is still returned); a throw is rethrown after the span-end.
+ */
+export async function runTracedTool<T>(
+  ctx: RunContext,
+  parentSpanId: string,
+  name: string,
+  input: unknown,
+  fn: (spanId: string) => Promise<T>,
+  opts: { callId?: string; failed?: (result: T) => string | undefined } = {},
+): Promise<T> {
+  const id = toolSpanId(parentSpanId, opts.callId ?? `${name}-${crypto.randomUUID().slice(0, 8)}`);
+  ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "execute_tool", name, t: ctx.now() });
+  ctx.emit({ type: "span-input", id, input: spanInputValue(input) });
+  try {
+    if (ctx.signal.aborted) throw abortError();
+    const result = await withToolSpan({ name, callId: id, input, storeContent: ctx.storeContent }, () => fn(id));
+    const error = opts.failed?.(result);
+    ctx.emit({
+      type: "span-end",
+      id,
+      t: ctx.now(),
+      status: error ? "error" : "ok",
+      detail: { input: smallDetail(input, 500), ...(error ? { error } : {}), output: smallDetail(result) },
+    });
+    return result;
+  } catch (err) {
+    const aborted = ctx.signal.aborted || isAbortError(err);
+    ctx.emit({ type: "span-end", id, t: ctx.now(), status: "error", detail: { error: aborted ? "aborted" : errorMessage(err) } });
+    throw err;
+  }
+}
+
 /** Run tasks concurrently; failures are collected (never thrown) so one bad subagent can't sink the rest. */
 export async function runParallel<T>(
   tasks: Array<{ name: string; run(): Promise<T> }>,
@@ -673,6 +794,20 @@ export async function runParallel<T>(
 
 // ---------------------------------------------------------------------------
 // main agent
+
+/** Text of the last user message (string content, or its text parts joined). */
+export function lastUserText(messages: ModelMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role !== "user") continue;
+    if (typeof m.content === "string") return m.content;
+    return m.content
+      .map((p) => (p.type === "text" ? p.text : ""))
+      .join("")
+      .trim();
+  }
+  return "";
+}
 
 /**
  * Run one agent turn: `run-start` → root `invoke_agent` span (id = runId) →
@@ -815,7 +950,20 @@ export async function runAgent(
   });
   emit({ type: "span-start", id: runId, kind: "invoke_agent", name: def.functionId, t: t0 });
 
-  const finish = (status: "ok" | "error" | "aborted", error?: string) => {
+  // Prefetch at t≈0: called synchronously so its tool span-start precedes the first chat span.
+  let prefetch: Promise<PrefetchResult> | undefined;
+  if (def.prefetch) {
+    let p: Promise<PrefetchResult>;
+    try {
+      p = def.prefetch(runCtx, runId, lastUserText(messages));
+    } catch (err) {
+      p = Promise.reject(err);
+    }
+    prefetch = p.then((r) => r ?? {}).catch(() => ({}));
+    runCtx.prefetched = prefetch;
+  }
+
+  const finish =(status: "ok" | "error" | "aborted", error?: string) => {
     const t = ctx.now();
     emit({
       type: "run-end",
@@ -829,10 +977,16 @@ export async function runAgent(
   };
 
   try {
+    let system = def.system(runCtx);
+    if (prefetch && def.prefetchMode === "await") {
+      const pre = await prefetch;
+      if (runCtx.signal.aborted) throw abortError();
+      if (pre.context) system = `${system}\n\n${pre.context}`;
+    }
     const chatSpans = createChatSpans(runCtx, runId, model.key);
     const result = ctx.ai.streamText({
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
-      system: def.system(runCtx),
+      system,
       messages,
       tools: traceToolExecutions(def.tools(runCtx), runCtx, runId, startedToolSpans, inputToolSpans),
       prepareStep: stepPreparer(chatSpans, def.maxSteps),
@@ -849,7 +1003,10 @@ export async function runAgent(
       inputToolSpans,
       chatSpans,
     });
-    await def.after?.(runCtx, { text, finalText, rootSpanId: runId, toolResults });
+    // A background prefetch the model never asked for still finishes inside the run (its span and citations).
+    const pre = prefetch ? await prefetch : {};
+    if (runCtx.signal.aborted) throw abortError();
+    await def.after?.(runCtx, { text, finalText, rootSpanId: runId, toolResults: [...(pre.toolResults ?? []), ...toolResults] });
     emit({ type: "span-end", id: runId, t: ctx.now(), status: "ok", detail: { output: text.slice(0, DETAIL_MAX_CHARS) } });
     finish("ok");
   } catch (err) {
@@ -864,7 +1021,7 @@ export async function runAgent(
     else finish("error", message);
   } finally {
     link.dispose();
-    // Close run-scoped resources (shared MCP connections...) on success, error and abort alike.
+    // Close run-scoped resources on success, error and abort alike.
     // run-end is already out; cap the wait so a stuck close can't hold the response open.
     await Promise.race([runScope.disposeAll(), new Promise<void>((r) => setTimeout(r, 2000).unref?.())]);
   }

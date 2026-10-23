@@ -72,6 +72,7 @@ export const AGENT_TOOL_LABEL_KEYS: Record<string, string> = {
   search_docs: "agents.tools.search_docs",
   read_doc_page: "agents.tools.read_doc_page",
   research: "agents.tools.research",
+  overview: "agents.tools.overview",
   search_kb: "agents.tools.search_kb",
   brief: "agents.tools.brief",
   attackers_of: "agents.tools.attackers_of",

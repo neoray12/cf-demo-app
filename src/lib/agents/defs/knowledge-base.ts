@@ -1,6 +1,6 @@
 import { parseJsonLoose } from "../json";
-import { runSubagent, type AgentDef, type SubagentDef, type ToolResultRecord } from "../runtime";
-import { buildKbTools } from "../tools/kb";
+import { runSubagent, runTracedTool, type AgentDef, type SubagentDef, type ToolResultRecord } from "../runtime";
+import { buildKbTools, kbCounter, searchKbNumbered, type KbSearchOutput } from "../tools/kb";
 
 interface NumberedResult {
   n?: number;
@@ -41,23 +41,58 @@ function numberedSources(toolResults: ToolResultRecord[]): string {
   return lines.join("\n\n");
 }
 
+const PREFETCH_QUERY_MAX_CHARS = 500;
+const PREFETCH_RESULTS = 5;
+
+/** The prefetched search as text for the root's system prompt: numbered passages, or what to do without any. */
+export function kbPrefetchContext(output: KbSearchOutput): string {
+  const head = "【預先檢索結果】系統已在一開始用使用者的問題執行過一次 search_kb：";
+  if ("error" in output) return `${head}搜尋失敗（${output.error}）。請呼叫 search_kb 搜尋；仍然失敗就如實告知。`;
+  if ("instruction" in output || output.results.length === 0) {
+    return `${head}沒有找到相關資料。可以把問題改寫成中文或英文關鍵字，再呼叫 search_kb 一次；仍然沒有就回覆「在知識庫中找不到相關資料」。`;
+  }
+  const passages = output.results
+    .map((r) => `[${r.n}] ${r.filename}（score ${r.score.toFixed(2)}）\n${r.snippet}`)
+    .join("\n\n");
+  return `${head}\n\n${passages}`;
+}
+
 export const kbAgent: AgentDef = {
   id: "knowledge-base",
   functionId: "kb-agent",
   defaultModel: "kimi-k2.6",
-  maxSteps: 4,
+  // step 0: answer from the prefetch (or one follow-up search); step 1: answer; step 2: forced answer (R23)
+  maxSteps: 3,
   system: () =>
     [
       "你是「企業知識庫助理」，只根據使用者工作區中的文件回答問題。",
-      "【第一步】在呼叫任何工具之前，先用使用者提問的語言寫一句簡短的計畫（不超過 40 字），然後才呼叫 search_kb。之後不要再重複計畫。",
-      "一律先用 search_kb 檢索。若第一次沒有找到足夠資料，可以把問題改寫成中文或英文關鍵字再查一次；最多查兩次，查完就作答。",
-      "只能依據 search_kb 回傳的片段回答，不可使用一般知識或憑空補充；片段沒有提到的細節就說資料中未提及。",
-      "回答的每一句話句尾都要標註來源編號 [n]（對應 search_kb 結果的 n 欄位）；一句話用到多個來源就寫 [1][2]。",
-      "如果 search_kb 回傳 instruction（表示沒有相關資料），照 instruction 明確回覆「在知識庫中找不到相關資料」，不要用一般知識作答，也不要標註來源。",
-      "如果 search_kb 回傳 error，如實告知搜尋失敗，不要編造答案。",
+      "系統已在一開始用使用者的問題搜尋過知識庫，結果附在最後的【預先檢索結果】（[n] 是來源編號）。",
+      "【預先檢索結果】足以回答時：直接作答，不要寫計畫句，也不要呼叫工具。",
+      "不夠時：先用一句話（不超過 40 字）說明要改查什麼，再把問題改寫成中文或英文關鍵字呼叫 search_kb（最多再查一次），查完就作答。新結果的編號會接續在預先檢索結果之後。",
+      "只能依據檢索到的片段回答，不可使用一般知識或憑空補充；片段沒有提到的細節就說資料中未提及。",
+      "回答的每一句話句尾都要標註來源編號 [n]（對應片段的編號 / search_kb 結果的 n 欄位）；一句話用到多個來源就寫 [1][2]。",
+      "如果沒有相關資料（search_kb 回傳 instruction），明確回覆「在知識庫中找不到相關資料」，不要用一般知識作答，也不要標註來源。",
+      "如果搜尋回傳 error，如實告知搜尋失敗，不要編造答案。",
       "請用繁體中文簡潔作答，數字與條件要照抄來源內容。",
     ].join("\n"),
   tools: buildKbTools,
+  // t=0: search_kb(user question) as a traced tool span under the root; awaited (AI Search ≈ 1–2 s) so the first
+  // model call already has the passages. It takes source numbers [1..n]; a follow-up search_kb continues the counter.
+  prefetch: async (ctx, rootSpanId, userText) => {
+    const query = userText.trim().slice(0, PREFETCH_QUERY_MAX_CHARS);
+    const counter = kbCounter(ctx);
+    const output = await runTracedTool(
+      ctx,
+      rootSpanId,
+      "search_kb",
+      { query },
+      (spanId) => searchKbNumbered(ctx, query, PREFETCH_RESULTS, spanId, counter),
+      { callId: "prefetch", failed: (o) => ("error" in o ? o.error : undefined) },
+    );
+    // toolResults: the grounding checker sees the prefetched passages among its sources
+    return { context: kbPrefetchContext(output), toolResults: [{ toolName: "search_kb", output }] };
+  },
+  prefetchMode: "await",
   // Only the final answer step is checked (R30): the plan sentence written before search_kb is not a claim.
   after: async (ctx, { finalText, rootSpanId, toolResults }) => {
     const sources = numberedSources(toolResults);

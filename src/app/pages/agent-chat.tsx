@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { AGENTS_DASHBOARD_URL, type AgentCatalogEntry } from "@/lib/agents/catalog";
-import { AGENT_MODELS, type ModelKey } from "@/lib/agents/models";
+import { AGENT_MODELS, noThink, type ModelKey } from "@/lib/agents/models";
 import { MAX_MESSAGE_CHARS } from "@/lib/agents/request";
 import { AgentMessage } from "@/app/components/agents/agent-message";
 import { KbWorkspace } from "@/app/components/agents/kb-workspace";
@@ -135,6 +135,9 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
                     <SelectItem key={k} value={k} className="text-xs">
                       <span>{t(m.labelKey)}</span>
                       <span className="text-[10px] text-muted-foreground">{t("agents.chat.ttftHint", { hint: m.ttftHint })}</span>
+                      {noThink(k) !== k && (
+                        <span className="text-[10px] text-muted-foreground">· {t("agents.chat.thinkRootOnly")}</span>
+                      )}
                       {m.slow && (
                         <Badge variant="outline" className="px-1 py-0 text-[10px] font-normal text-amber-600 dark:text-amber-400">
                           {t("agents.chat.slow")}

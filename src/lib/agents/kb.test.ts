@@ -12,7 +12,7 @@ vi.mock("./runtime", async (orig) => ({
 
 import { isValidWorkspace, kbFileStatuses, kbListDocs, kbSearch, kbSearchBody, newWorkspaceId, safeUploadName, slugFromUrl, hostSlugFromUrl, countUploadedDocs, validateUpload } from "./kb";
 import { buildKbTools } from "./tools/kb";
-import { groundingChecker, kbAgent } from "./defs/knowledge-base";
+import { groundingChecker, kbAgent, kbPrefetchContext } from "./defs/knowledge-base";
 import { AGENTS } from "./registry";
 
 const MB = 1024 * 1024;
@@ -283,7 +283,8 @@ describe("knowledge-base agent", () => {
     expect(kbAgent.id).toBe("knowledge-base");
     expect(kbAgent.functionId).toBe("kb-agent");
     expect(kbAgent.defaultModel).toBe("kimi-k2.6");
-    expect(kbAgent.maxSteps).toBe(4);
+    expect(kbAgent.maxSteps).toBe(3);
+    expect(kbAgent.prefetchMode).toBe("await");
     expect(groundingChecker.functionId).toBe("grounding-checker");
     expect(groundingChecker.model).toBe("kimi-k2.6");
     expect(groundingChecker.maxSteps).toBe(1);
@@ -332,6 +333,71 @@ describe("knowledge-base agent", () => {
     });
     await kbAgent.after!(ctx, { text: "hi", finalText: "hi", rootSpanId: "root", toolResults: [] });
     expect(sub.calls).toHaveLength(0);
+  });
+
+  it("prefetch: a search_kb span under the root at once, sources [1..n], and a follow-up search_kb continues the numbering", async () => {
+    const chunk = (key: string, text: string) => ({ score: 0.8, text, item: { key } });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        Response.json({ success: true, result: { chunks: [chunk("default/travel.md", "住宿 3,200"), chunk("default/vpn.md", "WARP")] } }),
+      )
+      .mockResolvedValueOnce(Response.json({ success: true, result: { chunks: [chunk("default/it.md", "重新登入")] } }));
+    const events: Array<Record<string, unknown>> = [];
+    const store = new Map<unknown, unknown>();
+    const ctx = {
+      ...ctxBase,
+      env: { CF_ACCOUNT_ID: "a", CF_API_TOKEN: "t", KB_AI_SEARCH: "kb" },
+      emit: (e: Record<string, unknown>) => events.push(e),
+      now: () => 0,
+      storeContent: false,
+      scope: {
+        once<T>(key: unknown, create: () => T): T {
+          if (!store.has(key)) store.set(key, create());
+          return store.get(key) as T;
+        },
+      },
+    } as unknown as RunContext;
+
+    const pending = kbAgent.prefetch!(ctx, "root", "WARP 連不上公司內網怎麼辦？");
+    // the tool chip is emitted synchronously, before any await
+    expect(events.slice(0, 2)).toEqual([
+      { type: "span-start", id: "root/prefetch", parentId: "root", kind: "execute_tool", name: "search_kb", t: 0 },
+      { type: "span-input", id: "root/prefetch", input: { query: "WARP 連不上公司內網怎麼辦？" } },
+    ]);
+    const pre = await pending;
+    expect(pre.context).toContain("【預先檢索結果】");
+    expect(pre.context).toContain("[1] default/travel.md");
+    expect(pre.context).toContain("[2] default/vpn.md");
+    expect(pre.toolResults).toEqual([{ toolName: "search_kb", output: expect.objectContaining({ results: expect.any(Array) }) }]);
+    expect(events.filter((e) => e.type === "citation").map((e) => e.spanId)).toEqual(["root/prefetch", "root/prefetch"]);
+    expect(events.at(-1)).toMatchObject({ type: "span-end", id: "root/prefetch", status: "ok" });
+
+    const tools = buildKbTools(ctx);
+    const out = (await exec(tools, { query: "WARP" })) as { results: Array<{ n: number }> };
+    expect(out.results.map((r) => r.n)).toEqual([3]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fetchMock.mockRestore();
+  });
+
+  it("after(): the grounding checker sees the prefetched passages (prepended by runAgent) among its sources", async () => {
+    sub.text = '{"unsupported":[]}';
+    const ctx = { ...ctxBase, emit: vi.fn() } as RunContext;
+    await kbAgent.after!(ctx, {
+      text: "WARP 要重新登入 [1]",
+      finalText: "WARP 要重新登入 [1]",
+      rootSpanId: "root",
+      toolResults: [
+        { toolName: "search_kb", output: { results: [{ n: 1, filename: "default/vpn.md", snippet: "重新登入 WARP" }] } },
+      ],
+    });
+    const input = sub.calls[0]![1] as { sources: string };
+    expect(input.sources).toContain("[1] default/vpn.md");
+  });
+
+  it("kbPrefetchContext covers no results and errors", () => {
+    expect(kbPrefetchContext({ results: [], instruction: "x" })).toContain("沒有找到相關資料");
+    expect(kbPrefetchContext({ results: [], error: "boom" })).toContain("搜尋失敗（boom）");
   });
 
   it("after() skips the checker when the final step wrote nothing, even if a plan sentence exists (R30)", async () => {

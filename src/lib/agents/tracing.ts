@@ -19,6 +19,10 @@ interface ActiveSpan {
 
 interface TracingHandle {
   getActiveSpan?(): ActiveSpan | undefined | null;
+  /** workerd: runs `callback` in a new active span and ends it when the callback (or its promise) settles. */
+  enterSpan?(name: string, callback: (span: unknown) => unknown): unknown;
+  /** workerd: like enterSpan, but the callback ends the span. */
+  startActiveSpan?(name: string, callback: (span: unknown) => unknown): unknown;
 }
 
 declare global {
@@ -115,5 +119,95 @@ export function recordActiveSpanException(err: unknown): void {
     }
   } catch {
     // tracing must never break the request
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Custom spans for deterministic tools (prefetch, researcher searches): the AI SDK wrapper only traces tools the
+// model calls, so these get an `execute_tool` span of their own with the same gen_ai attributes.
+
+const TOOL_ATTR_MAX_CHARS = 8000;
+
+function jsonAttr(value: unknown): string {
+  let s: string;
+  try {
+    s = typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
+  } catch {
+    s = "[unserializable]";
+  }
+  return s.length > TOOL_ATTR_MAX_CHARS ? `${s.slice(0, TOOL_ATTR_MAX_CHARS)}…` : s;
+}
+
+function setSpanAttrs(span: ActiveSpan | undefined, attrs: Record<string, string | number | boolean>): void {
+  if (!span) return;
+  try {
+    if (typeof span.setAttribute === "function") for (const [k, v] of Object.entries(attrs)) span.setAttribute(k, v);
+    else span.setAttributes?.(attrs);
+  } catch {
+    // tracing must never break the request
+  }
+}
+
+const isSpanLike = (v: unknown): v is ActiveSpan =>
+  typeof v === "object" && v !== null && typeof (v as ActiveSpan).setAttribute === "function";
+
+type SpanCallback<T> = (span: unknown) => Promise<T>;
+
+/**
+ * Run `fn` inside a Cloudflare custom span `execute_tool {name}` (tracing.enterSpan; startActiveSpan as a fallback)
+ * with `gen_ai.operation.name=execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.id` and — when `storeContent`
+ * — `gen_ai.tool.call.arguments` / `gen_ai.tool.call.result` (JSON, ≤ 8 KB). The span is active while `fn` runs,
+ * so setActiveSpanAttributes() inside it (e.g. `cache.hit`) lands on it. Without a tracing runtime: just `fn()`.
+ */
+export async function withToolSpan<T>(
+  info: { name: string; callId: string; input: unknown; storeContent: boolean },
+  fn: () => Promise<T>,
+): Promise<T> {
+  let tracing: TracingHandle | undefined;
+  try {
+    tracing = globalThis.__CF_WORKERS__?.tracing;
+  } catch {
+    tracing = undefined;
+  }
+  const enter = typeof tracing?.enterSpan === "function" ? tracing.enterSpan : undefined;
+  const start = typeof tracing?.startActiveSpan === "function" ? tracing.startActiveSpan : undefined;
+  if (!tracing || (!enter && !start)) return fn();
+
+  let started = false;
+  const body = async (arg: unknown, endWhenDone: boolean): Promise<T> => {
+    started = true;
+    const span = isSpanLike(arg) ? arg : activeSpan();
+    setSpanAttrs(span, {
+      "gen_ai.operation.name": "execute_tool",
+      "gen_ai.tool.name": info.name,
+      "gen_ai.tool.call.id": info.callId,
+      ...(info.storeContent ? { "gen_ai.tool.call.arguments": jsonAttr(info.input) } : {}),
+    });
+    try {
+      const result = await fn();
+      if (info.storeContent) setSpanAttrs(span, { "gen_ai.tool.call.result": jsonAttr(result) });
+      return result;
+    } catch (err) {
+      setSpanAttrs(span, { "error.type": err instanceof Error ? err.name || "Error" : typeof err });
+      throw err;
+    } finally {
+      if (endWhenDone) {
+        try {
+          (span as { end?: () => void } | undefined)?.end?.();
+        } catch {
+          // ignore
+        }
+      }
+    }
+  };
+  const name = `execute_tool ${info.name}`;
+  try {
+    // enterSpan ends the span itself when the callback's promise settles; startActiveSpan leaves that to us.
+    if (enter) return await (enter as (n: string, cb: SpanCallback<T>) => Promise<T>).call(tracing, name, (s) => body(s, false));
+    return await (start as (n: string, cb: SpanCallback<T>) => Promise<T>).call(tracing, name, (s) => body(s, true));
+  } catch (err) {
+    // A tracing API that throws before running the callback must not lose the tool call.
+    if (!started) return fn();
+    throw err;
   }
 }

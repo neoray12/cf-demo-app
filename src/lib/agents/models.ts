@@ -13,6 +13,16 @@ export interface AgentModel {
   ttftHint: string;
 }
 
+/**
+ * The no-think variant of a model: subagents never think (only the root agent follows the menu's thinking
+ * choice) — `kimi-k2.6-thinking` → `kimi-k2.6`, `glm-5.3` → `glm-5.3-flash`; other models are unchanged.
+ */
+export function noThink(key: ModelKey): ModelKey {
+  if (key === "kimi-k2.6-thinking") return "kimi-k2.6";
+  if (key === "glm-5.3") return "glm-5.3-flash";
+  return key;
+}
+
 export const AGENT_MODELS: Record<ModelKey, AgentModel> = {
   "glm-5.3-flash": {
     key: "glm-5.3-flash",

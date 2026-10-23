@@ -155,8 +155,8 @@
 
   | agentId | 模式 | 資料源 | Trace 形狀 |
   |---------|------|--------|-----------|
-  | `knowledge-base`（企業知識庫） | RAG + 引用驗證 | AI Search instance `cf-demo-kb`（R2 bucket `cf-demo-kb`，資料夾 = 工作區） | `kb-agent` → `search_kb` → 答案 → subagent `grounding-checker` |
-  | `cloudflare-docs`（Cloudflare 文件專家） | Orchestrator + 並行研究 | Cloudflare Docs MCP（`search_docs`，整個 run 共用一條連線，R15）＋ Browser Rendering `/markdown`（`read_doc_page`，僅 `developers.cloudflare.com`） | `docs-agent` → `research` → 並行 `docs-researcher` ×N |
+  | `knowledge-base`（企業知識庫） | RAG + 引用驗證 | AI Search instance `cf-demo-kb`（R2 bucket `cf-demo-kb`，資料夾 = 工作區） | `kb-agent` → 預先 `search_kb`（t=0）→ 答案（必要時再查一次）→ subagent `grounding-checker` |
+  | `cloudflare-docs`（Cloudflare 文件專家） | Orchestrator + 並行研究 | Cloudflare Docs MCP（`search_docs`，每次搜尋各自一個無狀態請求 + KV 快取 1 h）＋ Browser Rendering `/markdown`（`read_doc_page`，僅 `developers.cloudflare.com`） | `docs-agent` → 預先 `search_docs`（t=0）→ `research` → 並行 `docs-researcher` ×2–3（各自 `search_docs` → 一次摘要）／或 `overview` |
   | `threat-intel`（資安情資） | 多位分析師並行 | Cloudflare Radar API（白名單工具、KV 快取 10 分鐘、span 屬性 `cache.hit`） | `threat-intel-agent` → `brief` → `attack-analyst` / `network-analyst` / `bot-analyst` |
 
 - **API**：`POST /api/agents/{agentId}`（NDJSON；body `messages`、`model`、`conversationId`、`workspace`、`storeContent`）。輸入上限：≤ 20 則訊息、每則 ≤ 8000 字、合計 ≤ 32000 字、role 只能 user/assistant 且最後一則是 user、`conversationId` ≤ 100 字且符合 `[\w-]+`，違反回 400。知識庫：`/api/agents/kb/{docs,upload,import-site,status}`。
@@ -164,7 +164,7 @@
   - AI Search 設定：`query_rewrite` **關閉**（R24：中文查詢被改寫成英文後分數低於 0.4，0 筆）；instance 結果快取 **關閉**（R25：避免上傳未索引完時的空結果被快取兩天）。
   - 索引實測 86–573 秒、偶發 `workers_ai_timeout_error`，每檔狀態「僅供參考」（R26，item 可能卡 `running` 但已可搜尋）→ UI 文案以「會前準備工作區」為主。狀態輪詢：空工作區不輪詢；有未完成檔案時 10 → 20 → 40 → 60 秒退避；上傳 / 匯入完成後重新開始。
   - 引用驗證（R30）：`grounding-checker` 只檢查**最後一個有文字的 root 步驟**（`AgentDef.after` 的 `finalText`），不含開頭的計畫句。
-- **模型**（`src/lib/agents/models.ts`，選單選擇同時套用到 subagent）：預設一律 **Kimi K2.6 no-think**（`reasoning_effort: "none"`，R14/R20）——實測首字 0.7–8.8 s（多數 < 3 s），比 GLM-5.3-flash 快約 3–5 倍；主 agent 先寫一句計畫再呼叫工具（R16），約 3 秒就有第一個字。選單另有「Kimi K2.6（顯示思考過程）」（思考 token 0.6–1 s 開始串流，但正文要多等約 40 秒）、GLM-5.3-flash、GLM-5.3（推理無法關閉且不串流，首字 1–36 s）。Kimi 只能用 `reasoning_effort: "none"` 關思考（`enable_thinking=false` 無效）。
+- **模型**（`src/lib/agents/models.ts`；選單選擇套用到 root，subagent 一律用 `noThink()` 版本：`kimi-k2.6-thinking` → `kimi-k2.6`、`glm-5.3` → `glm-5.3-flash`，其他不變）：預設一律 **Kimi K2.6 no-think**（`reasoning_effort: "none"`，R14/R20）——實測首字 0.7–8.8 s（多數 < 3 s），比 GLM-5.3-flash 快約 3–5 倍；主 agent 先寫一句計畫再呼叫工具（R16），約 3 秒就有第一個字。選單另有「Kimi K2.6（顯示思考過程）」（思考 token 0.6–1 s 開始串流，但正文要多等約 40 秒）、GLM-5.3-flash、GLM-5.3（推理無法關閉且不串流，首字 1–36 s）。Kimi 只能用 `reasoning_effort: "none"` 關思考（`enable_thinking=false` 無效）。
 - **Radar `location` 語意**（工具回傳都帶 `scope`，system prompt 要求照 `scope` 描述）：
 
   | 端點 | `location=TW` 的意思 |
@@ -186,7 +186,16 @@
   - chat span 的 `ttftMs`：從該步驟**送出模型請求**（`prepareStep`，R22）到第一個 delta，包含上游排隊時間。
   - run 的 `ttftMs`（伺服器首字）：從 run 開始到 **root agent** 第一個可見 token（含推理 token；subagent 的輸出不算）。
   - 前端指標：「首個事件」（送出 → 第一個 NDJSON 事件）、「首個思考 token」（任何 span 的第一個 reasoning-delta）、「首字」（第一個 root 答案文字）。
-- **即時進度設計**：伺服器把 text/reasoning delta 依（span, 類型）合併、每 75 ms 送一次（其他事件前會先 flush，順序不變）；`execute_tool` span 在 `tool-input-start`（模型還在寫參數）就開始，工具晶片立即出現；chat span 在請求送出時就開（顯示「模型思考中 Ns」）；聊天中每輪有 activity timeline（思考中秒數、工具晶片與參數預覽、subagent 卡片串流其思考 / 文字尾巴）。
+- **即時進度設計**：伺服器把 text/reasoning delta 依（span, 類型）合併、每 75 ms 送一次（其他事件前會先 flush，順序不變）；`execute_tool` span 在 `tool-input-start`（模型還在寫參數）就開始，工具晶片立即出現；chat span 在請求送出時就開（沒有 delta 前顯示「等待 Workers AI 模型回應 Ns」）；聊天中每輪有 activity timeline（思考中秒數、工具晶片與參數預覽、subagent 卡片串流其思考 / 文字尾巴）。
+- **精簡流程（2026-10 速度修正）**：
+  - **Prefetch**（`AgentDef.prefetch`，runAgent 在 root span-start 後立刻同步呼叫）：用使用者問題跑一次確定性搜尋，以 `runTracedTool` 產生 `{root}/prefetch` 工具 span（~0.3 s 內出現晶片、發出 citations），工具從 `ctx.prefetched` 取用。文件專家是 `background`（不擋 root 第一次模型呼叫，`overview()` 會等它）；知識庫是 `await`（AI Search 約 1–3 s，結果與 [1..n] 編號放進 root 第一次呼叫的 system prompt，通常一步就答；後續 `search_kb` 的編號接續，計數器放在 `ctx.scope`；`after` 收到的 toolResults 會先放 prefetch，所以 grounding-checker 看得到）。資安情資沒有 prefetch。
+  - **文件專家**：root step 0 寫一句計畫（R16）＋呼叫 `research({questions: 2–3})`（比較 / 多面向）或 `overview()`（簡單問題，回傳 prefetch 結果）；`read_doc_page` 保留但不鼓勵；root 不再有 `search_docs`，`maxSteps` 3。`docs-researcher` = `SubagentDef.prepare` 在自己的 invoke_agent span 裡跑一次 `search_docs`（`…/search` 工具 span）→ 一次無工具的模型摘要（maxSteps 1）。`research` 結果也附上 overview。依序等待約 3 次模型呼叫（以前 10+ 次）。
+  - **R15 已推翻**：以前整個 run 共用一條 MCP session，並行研究員的呼叫在同一 session 上排隊，後面的撞 20 s 逾時。現在每次搜尋是一個獨立的無狀態 JSON-RPC `tools/call` POST（server 接受、不需 initialize；4xx 時退回自己的短命 MCP client），逾時 25 s 並綁 `ctx.signal`，網路錯誤 / 5xx 重試一次；結果存 KV `docs-search:v1:{正規化查詢}`（TTL 3600 s，太長的 key 用 SHA-256），KV 失敗就直接查，span 屬性 `cache.hit`。
+  - **`runTracedTool`**：確定性工具的 NDJSON span（start + input 同步送出、end 帶 input/output 或 error），同時用 `tracing.enterSpan`（沒有就 `startActiveSpan`）開 Cloudflare 自訂 span `execute_tool {name}`，屬性 `gen_ai.operation.name/tool.name/tool.call.id`，記錄內容時加 `gen_ai.tool.call.arguments/result`（≤ 8 KB）。注意：研究員的 search span 在 Cloudflare 端位於 research 工具 span 底下、研究員 agent span 之前（wrapAISDK 在 streamText 時才開 agent span）。
+  - **Kimi 工具呼叫標記外洩**：`toolChoice: "none"` 時 Kimi 有時把 `<|tool_calls_section_begin|>…` 當文字寫出來。`markup-filter.ts` 的串流過濾器（只暫存不完整的 `<|` 前綴）套用在每個 text / reasoning delta，所以 UI、subagent 輸出與 `finalText` 都不含標記；subagent 的最後強迫步驟（R23，有過工具回合時）另外附一則 user 訊息「tools are disabled… write your finding now」。
+  - **Hedged requests**（`gateway.ts` `hedgedFetch`，只用在串流 chat completions）：送 A；2.5 s（`HEDGE_AFTER_MS`）內沒有第一個 body chunk 就送一模一樣的 B（同一個 init：`cf-aig-*` header 與 `reasoning_effort` body），先送出 chunk 的勝、另一個 abort；4xx 立即回傳不 hedge；A 在計時前失敗就立刻送 B；都失敗回最後一個錯誤；呼叫端 abort 兩個都取消。回應 header `x-agents-hedge: a|b`、`x-agents-hedge-fired: 0|1` → chat span-end `detail.hedge`；span 屬性 `hedge.fired` / `hedge.winner`；觸發時 `console.log("[agents] hedge fired …")`。
+  - **UI**：chat span 開著但還沒有任何 delta 時顯示「等待 Workers AI 模型回應 Ns」（取代「規劃中」）；研究員卡片先顯示搜尋晶片，再「等待…」→「模型摘要中」。
+  - **實測瓶頸（2026-10-23）**：`nkcf-gateway-01` 開了 Guardrails（prompt S1–S13、P1 FLAG）與 DLP（PII，REQUEST）。同一個 Kimi 請求直連 Workers AI REST 首字 0.5–1.5 s，經 Gateway（compat 或 workers-ai 端點）2–44 s，且串流有時只有每秒數個 token；hedge 幾乎每次都觸發，因為兩個請求都要過 Guardrails。文件專家整體仍約 100–130 s，大部分是 Gateway 等待。
 - **逾時與重試**：模型串流 idle：root 60 s、subagent 45 s（步驟第一個 part 前 150 s，工具執行中暫停，R13）；最後一個允許的步驟關閉工具，強迫作答（R23）。subagent 在 idle / 串流錯誤時**自動重試一次**（新 span `…:{index}r`，失敗的 span 保留 error；R32），root agent 不自動重試；失敗或中止的回合在 UI 有「重試」按鈕（同問題、同設定），歷史只帶成功回合的最終步驟並去掉 `[n]` 引用標記。
 - **安全**：Agent 回答用 `MarkdownRenderer allowHtml={false}`（不渲染 raw HTML；markdown 圖片不載入，http(s) 圖片改成 🖼 連結，其他只顯示文字，防止透過圖片 URL 外洩資料）。
 - **`enable_request_signal` 相容性旗標**（`wrangler.toml` / `wrangler.dev.toml`）：讓 workerd 在用戶端斷線時觸發 `request.signal`，route 把它接到 run 的 AbortController → 按「停止」或關掉頁面會在伺服器端取消模型呼叫與工具（另外 response stream 的 `cancel()` 也會中止）。旗標名稱已在 workerd 與官方文件確認；OpenNext 是否把它傳到 `NextRequest.signal` 需在 production 確認（本地 `next dev` 跑在 Node，本來就會觸發）。

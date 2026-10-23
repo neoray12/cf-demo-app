@@ -38,7 +38,8 @@ function Duration({ node, now }: { node: SpanNode; now: number }) {
 }
 
 /**
- * A root-agent model step: 「規劃中 / 模型思考中 / 撰寫回答中」 while open. The chat span itself stays
+ * A root-agent model step while open: 「等待 Workers AI 模型回應」 until its first delta (the request is out, the
+ * model hasn't streamed anything yet), then 「模型思考中」 (reasoning only) / 「撰寫回答中」. The chat span itself stays
  * open until its tools return (finish-step), so once a tool call of this step has started (`handoffAt`)
  * the model's part is shown as done, timed up to the hand-off.
  */
@@ -64,9 +65,9 @@ function ChatStep({
   const label = open
     ? node.text
       ? t("agents.activity.writing")
-      : index === 0
-        ? t("agents.activity.planning")
-        : t("agents.activity.thinking")
+      : node.reasoning
+        ? t("agents.activity.thinking")
+        : t("agents.activity.waitingModel")
     : runDone && isLast && node.text
       ? t("agents.activity.wrote")
       : index === 0
@@ -164,10 +165,12 @@ function SubagentCard({ node, now }: { node: SpanNode; now: number }) {
             ))}
           </div>
         )}
-        {activeChat && !activeChat.text && !activeChat.reasoning && (
+        {activeChat && (
           <div className="mt-1 ml-5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <Sparkles className="size-3 animate-pulse text-primary" />
-            <span>{t("agents.activity.thinking")}</span>
+            <span>
+              {activeChat.text || activeChat.reasoning ? t("agents.activity.summarizing") : t("agents.activity.waitingModel")}
+            </span>
             <Duration node={activeChat} now={now} />
           </div>
         )}
@@ -307,7 +310,8 @@ export const ActivityTimeline = memo(function ActivityTimeline({ turn }: { turn:
                     index={chatSteps.indexOf(s)}
                     isLast={chatSteps.at(-1) === s}
                     runDone={!live}
-                    handoffAt={steps.slice(i + 1).find((x) => x.kind !== "chat" && x.start >= s.start)?.start}
+                    // a tool started *after* this step's request (a prefetch span starts before chat:0 and isn't one)
+                    handoffAt={steps.slice(i + 1).find((x) => x.kind !== "chat" && x.start > s.start)?.start}
                     now={sNow}
                   />
                 ) : s.kind === "execute_tool" ? (

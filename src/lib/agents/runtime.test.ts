@@ -1375,6 +1375,8 @@ describe("R30: the grounding checker only sees the final root answer step", () =
   it("a plan sentence in step 0 and the answer in the last step → checker input excludes the plan sentence", async () => {
     const { kbAgent } = await import("./defs/knowledge-base");
     const { ctx, events, clock } = makeCtx({ workspace: "default" });
+    // the prefetch's AI Search request finds nothing
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ success: true, result: { chunks: [] } }));
     const kbResult = { results: [{ n: 1, filename: "default/travel-expense.md", snippet: "台北住宿上限 3,200 元" }] };
     const { ai, calls } = fakeAI(
       [
@@ -1406,6 +1408,9 @@ describe("R30: the grounding checker only sees the final root answer step", () =
     expect(checkerPrompt).not.toContain("我先查詢差旅規定");
     expect(checkerPrompt).toContain("[1] default/travel-expense.md");
     expect(events.at(-1)).toMatchObject({ type: "run-end", status: "ok" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(calls[0]!.system).toContain("【預先檢索結果】");
+    fetchMock.mockRestore();
   });
 
   it("finalText skips whitespace-only trailing steps and falls back to the whole text without step boundaries", async () => {
