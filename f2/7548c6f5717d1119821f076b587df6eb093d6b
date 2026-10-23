@@ -1,0 +1,37 @@
+src/app/api/agents/kb/upload/route.ts
+  s_3a8326f10dc640::t_ad1712f1bc46b8 2-3,22,31,33,36,39,44-45,49-50,54-55,80
+src/lib/agents/kb-routes.test.ts
+  s_3a8326f10dc640::t_c06f1f8d108c91 1-162
+src/app/api/agents/kb/import-site/route.ts
+  s_e01b02401f23f7::t_6a09ebe6a1c4e7 2-3,14-16,36-51,68,70,73,85,87-88,96-104,107,110,114-125,127,146-148,150-152,154-162,165-205,207-213,215-223
+src/lib/agents/kb-route.ts
+  s_e01b02401f23f7::t_dba8837782aa35 2,11-15,27,31-39,41-42
+src/lib/agents/kb.test.ts
+  s_e01b02401f23f7::t_2e953c61fe33f7 13,107-126
+src/lib/agents/kb.ts
+  s_e01b02401f23f7::t_f8b96d3e3b1319 68-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f27548c6f5717d1119821f076b587df6eb093d6b",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_e01b02401f23f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3200d8a0045a2c17",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
