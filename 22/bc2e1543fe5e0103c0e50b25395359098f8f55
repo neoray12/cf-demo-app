@@ -1,0 +1,35 @@
+src/lib/agents/runtime.order.test.ts
+  s_3a8326f10dc640::t_059930ca726fd8 1-155
+src/lib/agents/runtime.test.ts
+  s_3a8326f10dc640::t_220be16be3084c 244-288
+src/lib/agents/runtime.ts
+  s_3a8326f10dc640::t_1da47e64076c58 132-164,167-169,177,187-196,199-203,206-207,232-233,238-239,241,245-246,250-251,288,325,369,377,387,518,542,552
+src/lib/agents/trace-tree.test.ts
+  s_dad2a6132d103e::t_c64da262cf9b74 75-101
+src/lib/agents/trace-tree.ts
+  s_dad2a6132d103e::t_ae5901f4b06989 89-95,98,103,106,113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "22bc2e1543fe5e0103c0e50b25395359098f8f55",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_dad2a6132d103e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aac87defda9bbbcb7",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
