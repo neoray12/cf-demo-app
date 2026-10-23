@@ -1,0 +1,25 @@
+src/lib/agents/trace-events.test.ts
+  s_3a8326f10dc640::t_798b6932ea6589 43-50
+src/lib/agents/trace-events.ts
+  s_3a8326f10dc640::t_d7d9af36130a44 64-67
+src/lib/agents/trace-tree.test.ts
+  s_3a8326f10dc640::t_9bafd2779b0e58 98-103,158,161-166,189-210
+src/lib/agents/trace-tree.ts
+  s_3a8326f10dc640::t_849b401b66db7b 121,131,149-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ca47178e1cc2c6ef9807e51194f175c6f39bd12f",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
