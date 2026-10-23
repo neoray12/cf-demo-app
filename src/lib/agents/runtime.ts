@@ -35,6 +35,52 @@ export interface RunContext {
   storeContent: boolean;
   workspace?: string;
   signal: AbortSignal;
+  /** The model chosen for this run; subagents use it instead of their own default (set by runAgent). */
+  modelKey?: ModelKey;
+  /** Run-scoped shared resources (e.g. one MCP connection for all parallel subagents); disposed when the run ends. */
+  scope?: RunScope;
+}
+
+/**
+ * Per-run resource registry. `once(key, create, dispose)` creates the resource on first use and returns the same
+ * instance to every later caller (subagents get a spread copy of the RunContext, so the scope object is shared).
+ * runAgent disposes everything in its `finally`, i.e. on success, error and abort.
+ */
+export interface RunScope {
+  once<T>(key: unknown, create: () => T, dispose: (value: T) => void | Promise<void>): T;
+}
+
+function createRunScope(): { scope: RunScope; disposeAll(): Promise<void> } {
+  const entries = new Map<unknown, { value: unknown; dispose: (v: never) => void | Promise<void> }>();
+  return {
+    scope: {
+      once<T>(key: unknown, create: () => T, dispose: (value: T) => void | Promise<void>): T {
+        const hit = entries.get(key);
+        if (hit) return hit.value as T;
+        const value = create();
+        entries.set(key, { value, dispose: dispose as (v: never) => void | Promise<void> });
+        return value;
+      },
+    },
+    async disposeAll() {
+      const all = [...entries.values()];
+      entries.clear();
+      await Promise.allSettled(
+        all.map(async (e) => {
+          await e.dispose(e.value as never);
+        }),
+      );
+    },
+  };
+}
+
+/**
+ * Span id of a tool call. Providers (Kimi: `functions.search_docs:0`) reuse the same toolCallId in different
+ * agents, so tool spans are namespaced by the calling agent's span. The wrapper in traceToolExecutions passes
+ * this id to tools as `options.toolCallId`, so citations and subagent parent ids use it too.
+ */
+export function toolSpanId(parentSpanId: string, toolCallId: string): string {
+  return `${parentSpanId}/${toolCallId}`;
 }
 
 export interface SubagentDef<I> {
@@ -150,12 +196,14 @@ function traceToolExecutions(tools: ToolSet, ctx: RunContext, parentSpanId: stri
     wrapped[name] = {
       ...t,
       execute: (input: unknown, options: { toolCallId: string }) => {
-        const id = options?.toolCallId;
-        if (id && !started.has(id)) {
+        const rawId = options?.toolCallId;
+        if (!rawId) return execute.call(t, input, options);
+        const id = toolSpanId(parentSpanId, rawId);
+        if (!started.has(id)) {
           started.add(id);
           ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "execute_tool", name, t: ctx.now() });
         }
-        return execute.call(t, input, options);
+        return execute.call(t, input, { ...options, toolCallId: id });
       },
     } as typeof t;
   }
@@ -191,7 +239,8 @@ export async function pipeStepStream(
   const toolInputs = new Map<string, unknown>();
   const openToolIds = () => [...startedTools].filter((id) => !endedTools.has(id));
 
-  const ensureToolStarted = (toolCallId: string, toolName: string) => {
+  const ensureToolStarted = (rawToolCallId: string, toolName: string) => {
+    const toolCallId = toolSpanId(parentSpanId, rawToolCallId);
     if (startedTools.has(toolCallId)) return;
     startedTools.add(toolCallId);
     ctx.emit({ type: "span-start", id: toolCallId, parentId: parentSpanId, kind: "execute_tool", name: toolName, t: ctx.now() });
@@ -229,26 +278,28 @@ export async function pipeStepStream(
         return;
       }
       case "tool-call": {
-        toolInputs.set(part.toolCallId, part.input);
+        toolInputs.set(toolSpanId(parentSpanId, part.toolCallId), part.input);
         ensureToolStarted(part.toolCallId, part.toolName);
         return;
       }
       case "tool-result": {
         if (part.preliminary) return;
+        const id = toolSpanId(parentSpanId, part.toolCallId);
         ensureToolStarted(part.toolCallId, part.toolName);
-        const input = toolInputs.has(part.toolCallId) ? toolInputs.get(part.toolCallId) : part.input;
+        const input = toolInputs.has(id) ? toolInputs.get(id) : part.input;
         toolResults.push({ toolName: part.toolName, output: part.output });
-        endTool(part.toolCallId, "ok", { input: smallDetail(input, 500), output: smallDetail(part.output) });
+        endTool(id, "ok", { input: smallDetail(input, 500), output: smallDetail(part.output) });
         return;
       }
       case "tool-error": {
         ensureToolStarted(part.toolCallId, part.toolName);
-        endTool(part.toolCallId, "error", { error: errorMessage(part.error) });
+        endTool(toolSpanId(parentSpanId, part.toolCallId), "error", { error: errorMessage(part.error) });
         return;
       }
       case "tool-output-denied": {
-        if (!startedTools.has(part.toolCallId)) return;
-        endTool(part.toolCallId, "error", { error: "denied" });
+        const id = toolSpanId(parentSpanId, part.toolCallId);
+        if (!startedTools.has(id)) return;
+        endTool(id, "error", { error: "denied" });
         return;
       }
       case "finish-step": {
@@ -369,7 +420,7 @@ export async function runSubagent<I>(
   const startedToolSpans = new Set<string>();
   ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "invoke_agent", name: def.functionId, t: ctx.now() });
   try {
-    const model = AGENT_MODELS[def.model];
+    const model = AGENT_MODELS[ctx.modelKey ?? def.model];
     const result = ctx.ai.streamText({
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
       system: def.system,
@@ -514,7 +565,8 @@ export async function runAgent(
     }
     forward(e);
   };
-  const runCtx: RunContext = { ...ctx, emit, signal: link.controller.signal };
+  const runScope = createRunScope();
+  const runCtx: RunContext = { ...ctx, emit, signal: link.controller.signal, modelKey, scope: runScope.scope };
   const startedToolSpans = new Set<string>();
 
   const t0 = ctx.now();
@@ -565,5 +617,9 @@ export async function runAgent(
     else finish("error", message);
   } finally {
     link.dispose();
+    // Close run-scoped resources (shared MCP connections...) on success, error and abort alike.
+    // run-end is already out; cap the wait so a stuck close can't hold the response open.
+    await Promise.race([runScope.disposeAll(), new Promise<void>((r) => setTimeout(r, 2000).unref?.())]);
   }
 }
+

@@ -122,8 +122,8 @@ describe("pipeStepStream", () => {
     expect(events[0]).toEqual({ type: "span-start", id: "P:chat:0", parentId: "P", kind: "chat", name: "glm-5.3-flash", t: 0 });
     expect(events[1]).toEqual({ type: "reasoning-delta", spanId: "P:chat:0", text: "think" });
     expect(events[2]).toEqual({ type: "text-delta", spanId: "P:chat:0", text: "Hello" });
-    expect(events[3]).toEqual({ type: "span-start", id: "c1", parentId: "P", kind: "execute_tool", name: "search_docs", t: 900 });
-    expect(events[4]).toMatchObject({ type: "span-end", id: "c1", t: 1000, status: "ok", detail: { input: { q: "x" }, output: { hits: 1 } } });
+    expect(events[3]).toEqual({ type: "span-start", id: "P/c1", parentId: "P", kind: "execute_tool", name: "search_docs", t: 900 });
+    expect(events[4]).toMatchObject({ type: "span-end", id: "P/c1", t: 1000, status: "ok", detail: { input: { q: "x" }, output: { hits: 1 } } });
     expect(events[5]).toMatchObject({ type: "span-end", id: "P:chat:0", t: 1100, status: "ok", ttftMs: 500, usage: { input: 120, output: 30 } });
     expect(events[6]).toMatchObject({ type: "span-start", id: "P:chat:1", parentId: "P", kind: "chat", t: 1200 });
     expect(events[7]).toEqual({ type: "text-delta", spanId: "P:chat:1", text: " world" });
@@ -159,8 +159,8 @@ describe("pipeStepStream", () => {
       ctx,
       { parentSpanId: "P", modelLabel: "m", forwardText: true },
     );
-    const end = events.find((e) => e.type === "span-end" && e.id === "c9");
-    expect(end).toEqual({ type: "span-end", id: "c9", t: 20, status: "error", detail: { error: "upstream 500" } });
+    const end = events.find((e) => e.type === "span-end" && e.id === "P/c9");
+    expect(end).toEqual({ type: "span-end", id: "P/c9", t: 20, status: "error", detail: { error: "upstream 500" } });
     expect(() => JSON.stringify(events)).not.toThrow();
   });
 
@@ -177,7 +177,7 @@ describe("pipeStepStream", () => {
       ctx,
       { parentSpanId: "P", modelLabel: "m", forwardText: true },
     );
-    const end = events.find((e) => e.type === "span-end" && e.id === "c1") as Extract<TraceEvent, { type: "span-end" }>;
+    const end = events.find((e) => e.type === "span-end" && e.id === "P/c1") as Extract<TraceEvent, { type: "span-end" }>;
     expect(JSON.stringify(end.detail).length).toBeLessThan(2200);
   });
 
@@ -244,7 +244,7 @@ describe("pipeStepStream", () => {
 describe("pipeStepStream with execute-started tool spans", () => {
   it("does not re-emit span-start for a tool span already started by the execute wrapper", async () => {
     const { ctx, events, clock } = makeCtx();
-    const started = new Set<string>(["c1"]);
+    const started = new Set<string>(["P/c1"]);
     await pipeStepStream(
       fakeStream(clock, [
         { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
@@ -255,8 +255,8 @@ describe("pipeStepStream with execute-started tool spans", () => {
       ctx,
       { parentSpanId: "P", modelLabel: "m", forwardText: true, startedToolSpans: started },
     );
-    expect(events.filter((e) => e.type === "span-start" && e.id === "c1")).toHaveLength(0);
-    expect(events.filter((e) => e.type === "span-end" && e.id === "c1")).toEqual([
+    expect(events.filter((e) => e.type === "span-start" && e.id === "P/c1")).toHaveLength(0);
+    expect(events.filter((e) => e.type === "span-end" && e.id === "P/c1")).toEqual([
       expect.objectContaining({ status: "ok", detail: { input: { a: 1 }, output: 2 } }),
     ]);
   });
@@ -317,7 +317,7 @@ describe("pipeStepStream idle windows", () => {
     await vi.advanceTimersByTimeAsync(70_000);
     const r = await settled;
     expect(r.ok).toBe(true);
-    expect(events.find((e) => e.type === "span-end" && e.id === "c1")).toMatchObject({ status: "ok" });
+    expect(events.find((e) => e.type === "span-end" && e.id === "P/c1")).toMatchObject({ status: "ok" });
   });
 
   it("re-arms the 60 s window after the tool finishes", async () => {
@@ -714,7 +714,8 @@ describe("run cancellation and span ordering", () => {
           async *[Symbol.asyncIterator]() {
             yield p({ type: "start-step", request: {}, warnings: [] });
             yield p({ type: "tool-call", toolCallId: "c1", toolName: "fan", input: {} });
-            runSubagent(sub, 0, toolCtx, "c1", 0).catch(() => {});
+            const rid = (events[0] as Extract<TraceEvent, { type: "run-start" }>).runId;
+            runSubagent(sub, 0, toolCtx, `${rid}/c1`, 0).catch(() => {});
             await new Promise(() => {});
           },
         }),
@@ -739,7 +740,7 @@ describe("run cancellation and span ordering", () => {
     );
     await new Promise((r) => setTimeout(r, 30)); // let the subagent's own cleanup run
     expectWellFormed(events);
-    expect(events.filter((e) => e.type === "span-start").map((e) => (e as { id: string }).id)).toContain("c1:sub:0:chat:0");
+    expect(events.filter((e) => e.type === "span-start").map((e) => (e as { id: string }).id)).toContain(`${(events[0] as Extract<TraceEvent, { type: "run-start" }>).runId}/c1:sub:0:chat:0`);
     for (const e of events) if (e.type === "span-end") expect(e.detail).toEqual({ error: "aborted" });
     expect(events.at(-1)).toMatchObject({ type: "run-end", status: "aborted" });
   });

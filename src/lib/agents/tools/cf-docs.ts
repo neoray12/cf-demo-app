@@ -3,7 +3,11 @@
 // execute wrapper — tools only emit citations.
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import { callMcpTool, parseMcpServerUrls, type McpServerConfig } from "../../mcp-client";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { parseMcpServerUrls, type McpServerConfig } from "../../mcp-client";
 import type { RunContext } from "../runtime";
 
 const DOCS_HOST = "developers.cloudflare.com";
@@ -52,22 +56,104 @@ function cfDocsServer(ctx: RunContext): McpServerConfig {
   return server;
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, signal: AbortSignal): Promise<T> {
+// ---------------------------------------------------------------------------
+// One cf-docs MCP connection per run.
+//
+// Opening a connection (initialize handshake) costs 1-3 s, and parallel researchers each issue several
+// searches, so the connection is created lazily on first use and shared through `ctx.scope` (a run-scoped
+// registry that runAgent disposes in its `finally` => closed on success, error and abort alike; subagents
+// get a spread copy of the RunContext, so the scope is the one object they all share — a WeakMap keyed by
+// RunContext would not be). On a connection error the call retries once on a fresh connection.
+// mcp-client.ts is deliberately left untouched; this mirrors its connect logic (Streamable HTTP, SSE fallback).
+
+const DOCS_CLIENT_KEY = Symbol("cf-docs-mcp-client");
+
+interface ClientHolder {
+  current?: Promise<Client>;
+}
+
+async function connectDocsClient(server: McpServerConfig): Promise<Client> {
+  const make = () => new Client({ name: "cf-demo-agent", version: "1.0.0" }, { capabilities: {} });
+  const options = { timeout: SEARCH_TIMEOUT_MS };
+  const http = make();
+  try {
+    await http.connect(new StreamableHTTPClientTransport(new URL(server.url)), options);
+    return http;
+  } catch {
+    await http.close().catch(() => {});
+  }
+  const sse = make();
+  try {
+    await sse.connect(new SSEClientTransport(new URL(server.url)), options);
+    return sse;
+  } catch (err) {
+    await sse.close().catch(() => {});
+    throw err;
+  }
+}
+
+function closeLater(p: Promise<Client> | undefined): void {
+  void p?.then((c) => c.close()).catch(() => {});
+}
+
+function abortError(): Error {
+  const e = new Error("aborted");
+  e.name = "AbortError";
+  return e;
+}
+
+/** Wait for `p`, but reject as soon as `signal` aborts (the connect itself keeps going and is closed later). */
+function abortable<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortError());
   return new Promise<T>((resolve, reject) => {
-    const fail = (msg: string, name: string) => {
-      const e = new Error(msg);
-      e.name = name;
-      reject(e);
-    };
-    if (signal.aborted) return fail("aborted", "AbortError");
-    const timer = setTimeout(() => fail(`timed out after ${ms}ms`, "TimeoutError"), ms);
-    const onAbort = () => fail("aborted", "AbortError");
+    const onAbort = () => reject(abortError());
     signal.addEventListener("abort", onAbort, { once: true });
-    p.then(resolve, reject).finally(() => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", onAbort);
-    });
+    p.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
   });
+}
+
+/** Connection-level failures are worth one retry; JSON-RPC errors (incl. our own timeout) are not. */
+function isRetryable(err: unknown, signal: AbortSignal): boolean {
+  if (signal.aborted) return false;
+  if (err instanceof McpError) return err.code === ErrorCode.ConnectionClosed;
+  return true;
+}
+
+export async function searchDocs(ctx: RunContext, query: string): Promise<{ text: string; isError: boolean }> {
+  const server = cfDocsServer(ctx);
+  const holder = ctx.scope?.once<ClientHolder>(DOCS_CLIENT_KEY, () => ({}), (h) => closeLater(h.current));
+
+  for (let attempt = 0; ; attempt++) {
+    const connecting = holder ? (holder.current ??= connectDocsClient(server)) : connectDocsClient(server);
+    const evict = () => {
+      if (holder && holder.current === connecting) holder.current = undefined;
+      closeLater(connecting);
+    };
+    let client: Client;
+    try {
+      client = await abortable(connecting, ctx.signal);
+    } catch (err) {
+      if (!ctx.signal.aborted) evict();
+      else if (!holder) closeLater(connecting);
+      if (attempt >= 1 || !isRetryable(err, ctx.signal)) throw err;
+      continue;
+    }
+    try {
+      const res = (await client.callTool(
+        { name: "search_cloudflare_documentation", arguments: { query } },
+        undefined,
+        { signal: ctx.signal, timeout: SEARCH_TIMEOUT_MS },
+      )) as { content?: Array<{ type: string; text?: string }>; isError?: boolean };
+      if (!holder) closeLater(connecting);
+      return { text: (res.content ?? []).map((c) => c.text ?? "").join("\n"), isError: res.isError === true };
+    } catch (err) {
+      if (attempt >= 1 || !isRetryable(err, ctx.signal)) {
+        if (!holder) closeLater(connecting);
+        throw err;
+      }
+      evict();
+    }
+  }
 }
 
 export function buildDocsTools(ctx: RunContext, opts: { withRead: boolean }): ToolSet {
@@ -77,13 +163,8 @@ export function buildDocsTools(ctx: RunContext, opts: { withRead: boolean }): To
         "Search the official Cloudflare documentation. Returns up to 5 hits with url, title and a snippet.",
       inputSchema: z.object({ query: z.string().min(1).describe("Search query (English works best)") }),
       execute: async ({ query }, options) => {
-        const res = await withTimeout(
-          callMcpTool(cfDocsServer(ctx), "search_cloudflare_documentation", { query }),
-          SEARCH_TIMEOUT_MS,
-          ctx.signal,
-        );
-        const text = res.content.map((c) => c.text ?? "").join("\n");
-        if (res.isError) return { error: text.slice(0, 500) || "docs search failed", results: [] };
+        const { text, isError } = await searchDocs(ctx, query);
+        if (isError) return { error: text.slice(0, 500) || "docs search failed", results: [] };
         const seen = new Set<string>();
         const results = parseDocsSearchResult(text)
           .filter((h) => (seen.has(h.url) ? false : (seen.add(h.url), true)))

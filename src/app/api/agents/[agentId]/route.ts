@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { AGENT_IDS, type AgentId } from "@/lib/agents/ids";
 import { AGENT_MODELS, type ModelKey } from "@/lib/agents/models";
 import { AGENTS } from "@/lib/agents/registry";
-import { runAgent, type AgentEnv, type RunContext } from "@/lib/agents/runtime";
+import { errorMessage, runAgent, type AgentEnv, type RunContext } from "@/lib/agents/runtime";
 import { encodeEvent } from "@/lib/agents/trace-events";
 import { getTracedAI } from "@/lib/agents/tracing";
 
@@ -26,12 +26,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const def = (AGENT_IDS as readonly string[]).includes(agentId) ? AGENTS[agentId as AgentId] : undefined;
   if (!def) return json({ error: `Unknown agent: ${agentId}` }, 404);
 
-  let body: AgentRequestBody;
+  let parsed: unknown;
   try {
-    body = (await request.json()) as AgentRequestBody;
+    parsed = await request.json();
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return json({ error: "Body must be a JSON object" }, 400);
+  }
+  const body = parsed as AgentRequestBody;
 
   const messages = Array.isArray(body.messages)
     ? body.messages.filter(
@@ -43,24 +47,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (typeof body.conversationId !== "string" || !body.conversationId) {
     return json({ error: "conversationId is required" }, 400);
   }
+  // Object.hasOwn: "constructor" / "toString" / "__proto__" must not pass as model keys.
   const modelKey: ModelKey =
-    body.model && body.model in AGENT_MODELS ? (body.model as ModelKey) : def.defaultModel;
-  const storeContent = body.storeContent ?? true;
+    typeof body.model === "string" && Object.hasOwn(AGENT_MODELS, body.model) ? (body.model as ModelKey) : def.defaultModel;
+  const storeContent = typeof body.storeContent === "boolean" ? body.storeContent : true;
 
-  const { env } = await getCloudflareContext();
-  const e = env as unknown as Record<string, unknown>;
-  const agentEnv = {
-    ...e,
-    CF_ACCOUNT_ID: (e.CF_ACCOUNT_ID as string) || "5efa272dc28e4e3933324c44165b6dbe",
-    AI_GATEWAY_ID: (e.AI_GATEWAY_ID as string) || "nkcf-gateway-01",
-  } as unknown as AgentEnv;
+  let agentEnv: AgentEnv;
+  try {
+    const { env } = await getCloudflareContext();
+    const e = env as unknown as Record<string, unknown>;
+    agentEnv = {
+      ...e,
+      CF_ACCOUNT_ID: (e.CF_ACCOUNT_ID as string) || "5efa272dc28e4e3933324c44165b6dbe",
+      AI_GATEWAY_ID: (e.AI_GATEWAY_ID as string) || "nkcf-gateway-01",
+    } as unknown as AgentEnv;
+  } catch (err) {
+    return json({ error: `Failed to load Cloudflare context: ${errorMessage(err)}` }, 500);
+  }
 
   // Abort when the client disconnects (request.signal) or cancels the stream.
   const abort = new AbortController();
   if (request.signal.aborted) abort.abort();
   else request.signal.addEventListener("abort", () => abort.abort(), { once: true });
 
-  const ai = await getTracedAI({ storeContent });
+  let ai: Awaited<ReturnType<typeof getTracedAI>>;
+  try {
+    ai = await getTracedAI({ storeContent });
+  } catch (err) {
+    return json({ error: `Failed to initialise tracing: ${errorMessage(err)}` }, 500);
+  }
   const start = Date.now();
   const encoder = new TextEncoder();
 
