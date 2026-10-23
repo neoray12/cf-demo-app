@@ -58,12 +58,13 @@ export const kbAgent: AgentDef = {
       "請用繁體中文簡潔作答，數字與條件要照抄來源內容。",
     ].join("\n"),
   tools: buildKbTools,
-  after: async (ctx, { text, rootSpanId, toolResults }) => {
+  // Only the final answer step is checked (R30): the plan sentence written before search_kb is not a claim.
+  after: async (ctx, { finalText, rootSpanId, toolResults }) => {
     const sources = numberedSources(toolResults);
-    if (!sources || text.trim() === "") return;
+    if (!sources || finalText.trim() === "") return;
     // A checker failure must not fail the answer that was already streamed.
     try {
-      await runSubagent(groundingChecker, { answer: text, sources }, ctx, rootSpanId, 0);
+      await runSubagent(groundingChecker, { answer: finalText, sources }, ctx, rootSpanId, 0);
     } catch (err) {
       if (ctx.signal.aborted) throw err;
     }

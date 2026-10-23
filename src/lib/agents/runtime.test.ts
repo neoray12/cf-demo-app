@@ -5,6 +5,7 @@ import type { AgentEnv } from "./env";
 import {
   FIRST_PART_IDLE_MS,
   STREAM_IDLE_MS,
+  SUBAGENT_STREAM_IDLE_MS,
   pipeStepStream,
   runAgent,
   runParallel,
@@ -650,7 +651,7 @@ describe("runSubagent", () => {
     expect(args.experimental_telemetry).toEqual({
       isEnabled: true,
       functionId: "docs-researcher",
-      metadata: { agentId: "docs-researcher-demo", conversationId: "conv-1" },
+      metadata: { agentId: "docs-researcher-demo", conversationId: "conv-1", model: "glm-5.3-flash" },
     });
     expect(args.stopWhen).toBeTypeOf("function");
   });
@@ -672,26 +673,83 @@ describe("runSubagent", () => {
     expect(events.at(-1)).toMatchObject({ type: "span-end", status: "ok", detail: { parsed: { n: 3 } } });
   });
 
-  it("closes its span with an error and rethrows", async () => {
+  it("closes its span with an error, retries once, and rethrows when the retry fails too", async () => {
     const { ctx, events, clock } = makeCtx();
-    const { ai } = fakeAI(
+    const failing = (at: number) => (c: { t: number }) =>
+      fakeStream(c, [
+        { at, part: p({ type: "start-step", request: {}, warnings: [] }) },
+        { at: at + 3, part: p({ type: "error", error: "model overloaded" }) },
+      ]);
+    const { ai, calls } = fakeAI([failing(0), failing(10)], clock);
+    await expect(runSubagent(def, { q: "x" }, { ...ctx, ai }, "P", 1)).rejects.toThrow("model overloaded");
+    expect(calls).toHaveLength(2);
+    const agentEnds = events.filter(
+      (e) => e.type === "span-end" && (e.id === "P:docs-researcher:1" || e.id === "P:docs-researcher:1r"),
+    );
+    expect(agentEnds).toEqual([
+      { type: "span-end", id: "P:docs-researcher:1", t: 3, status: "error", detail: { error: "model overloaded" } },
+      { type: "span-end", id: "P:docs-researcher:1r", t: 13, status: "error", detail: { error: "model overloaded" } },
+    ]);
+    expect(events.at(-1)).toMatchObject({ id: "P:docs-researcher:1r", status: "error" });
+  });
+
+  it("retry (R32): the first attempt idles, the second succeeds → two invoke_agent spans, the first errored", async () => {
+    vi.useFakeTimers();
+    const { ctx, events, clock } = makeCtx();
+    const { ai, calls } = fakeAI(
       [
         (c) =>
           fakeStream(c, [
             { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
-            { at: 3, part: p({ type: "error", error: "model overloaded" }) },
+            { at: 1, part: p({ type: "text-delta", id: "t", text: "half" }) },
+            { hang: true },
+          ]),
+        (c) =>
+          fakeStream(c, [
+            { at: 50, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 51, part: p({ type: "text-delta", id: "t", text: "full finding" }) },
+            { at: 52, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 2 }, finishReason: "stop" }) },
           ]),
       ],
       clock,
     );
-    await expect(runSubagent(def, { q: "x" }, { ...ctx, ai }, "P", 1)).rejects.toThrow("model overloaded");
-    expect(events.at(-1)).toEqual({
-      type: "span-end",
-      id: "P:docs-researcher:1",
-      t: 3,
-      status: "error",
-      detail: { error: "model overloaded" },
-    });
+    const res = runSubagent(def, { q: "x" }, { ...ctx, ai }, "P", 0);
+    await vi.advanceTimersByTimeAsync(SUBAGENT_STREAM_IDLE_MS + 1);
+    expect(await res).toEqual({ text: "full finding" });
+    expect(calls).toHaveLength(2);
+
+    const agentSpans = events.filter((e) => e.type === "span-start" && e.kind === "invoke_agent");
+    expect(agentSpans).toEqual([
+      { type: "span-start", id: "P:docs-researcher:0", parentId: "P", kind: "invoke_agent", name: "docs-researcher", t: 0 },
+      { type: "span-start", id: "P:docs-researcher:0r", parentId: "P", kind: "invoke_agent", name: "docs-researcher", t: 1 },
+    ]);
+    const ends = events.filter((e) => e.type === "span-end" && agentSpans.some((s) => s.type === "span-start" && s.id === e.id));
+    expect(ends).toEqual([
+      { type: "span-end", id: "P:docs-researcher:0", t: 1, status: "error", detail: { error: "idle timeout" } },
+      { type: "span-end", id: "P:docs-researcher:0r", t: 52, status: "ok", detail: { output: "full finding" } },
+    ]);
+  });
+
+  it("does not retry when the run was aborted", async () => {
+    const { ctx, ac, clock } = makeCtx();
+    const { ai, calls } = fakeAI(
+      [
+        (c) =>
+          fakeStream(c, [
+            { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 1, run: () => ac.abort() },
+            { at: 2, part: p({ type: "text-delta", id: "t", text: "x" }) },
+          ]),
+      ],
+      clock,
+    );
+    await expect(runSubagent(def, { q: "x" }, { ...ctx, ai }, "P", 0)).rejects.toMatchObject({ name: "AbortError" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("uses the 45 s subagent idle window between parts (root stays at 60 s)", () => {
+    expect(SUBAGENT_STREAM_IDLE_MS).toBe(45_000);
+    expect(STREAM_IDLE_MS).toBe(60_000);
   });
 });
 
@@ -732,7 +790,12 @@ describe("runAgent", () => {
 
     expect(after).toHaveBeenCalledTimes(1);
     const afterArgs = after.mock.calls[0] as unknown as [RunContext, { text: string; rootSpanId: string; toolResults: unknown[] }];
-    expect(afterArgs[1]).toEqual({ text: "Hello world", rootSpanId: runId, toolResults: [{ toolName: "search_docs", output: { hits: 1 } }] });
+    expect(afterArgs[1]).toEqual({
+      text: "Hello world",
+      finalText: "world",
+      rootSpanId: runId,
+      toolResults: [{ toolName: "search_docs", output: { hits: 1 } }],
+    });
 
     const args = calls[0]!;
     expect(args.messages).toEqual([{ role: "user", content: "hi" }]);
@@ -741,8 +804,48 @@ describe("runAgent", () => {
     expect(args.experimental_telemetry).toEqual({
       isEnabled: true,
       functionId: "docs-agent",
-      metadata: { agentId: "docs-agent-demo", conversationId: "conv-1" },
+      metadata: { agentId: "docs-agent-demo", conversationId: "conv-1", model: "kimi-k2.6" },
     });
+  });
+
+  it("adds the workspace to telemetry metadata when the run has one (root and subagents)", async () => {
+    const { ctx, clock } = makeCtx({ workspace: "ws-abcd1234" });
+    const sub: SubagentDef<string> = {
+      functionId: "r",
+      model: "glm-5.3-flash",
+      system: "s",
+      maxSteps: 1,
+      tools: () => ({}),
+      prompt: (s) => s,
+    };
+    const { ai, calls } = fakeAI(
+      [
+        (c) =>
+          fakeStream(c, [
+            { at: 1, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 2, part: p({ type: "text-delta", id: "t", text: "ok" }) },
+            { at: 3, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+          ]),
+        (c) =>
+          fakeStream(c, [
+            { at: 4, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 5, part: p({ type: "text-delta", id: "t", text: "ok" }) },
+            { at: 6, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+          ]),
+      ],
+      clock,
+    );
+    await runAgent(
+      baseDef({ after: async (c, r) => void (await runSubagent(sub, "x", c, r.rootSpanId, 0)) }),
+      [{ role: "user", content: "hi" }],
+      "kimi-k2.6",
+      { ...ctx, ai },
+    );
+    expect(calls.map((c) => (c.experimental_telemetry as { metadata: unknown }).metadata)).toEqual([
+      { agentId: "docs-agent-demo", conversationId: "conv-1", model: "kimi-k2.6", workspace: "ws-abcd1234" },
+      // subagents follow the run's model (ctx.modelKey)
+      { agentId: "r-demo", conversationId: "conv-1", model: "kimi-k2.6", workspace: "ws-abcd1234" },
+    ]);
   });
 
   it("includes subagent chat usage in run-end usage", async () => {
@@ -1028,23 +1131,20 @@ describe("run cancellation and span ordering", () => {
   it("subagent idle aborts only its own child signal", async () => {
     vi.useFakeTimers();
     const { ctx, clock } = makeCtx();
-    let subSignal: AbortSignal | undefined;
-    const { ai } = fakeAI(
-      [
-        (c) =>
-          fakeStream(c, [
-            { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
-            { at: 1, part: p({ type: "text-delta", id: "t", text: "x" }) },
-            { hang: true },
-          ]),
-      ],
-      clock,
-    );
+    const subSignals: AbortSignal[] = [];
+    const hanging = (c: { t: number }) =>
+      fakeStream(c, [
+        { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+        { at: 1, part: p({ type: "text-delta", id: "t", text: "x" }) },
+        { hang: true },
+      ]);
+    // first attempt + its one retry (R32) both idle
+    const { ai } = fakeAI([hanging, hanging], clock);
     const res = runSubagent(
       {
         ...sub,
         tools: (c) => {
-          subSignal = c.signal;
+          subSignals.push(c.signal);
           return {};
         },
       },
@@ -1053,9 +1153,11 @@ describe("run cancellation and span ordering", () => {
       "P",
       0,
     ).catch((e: Error) => e);
-    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS + 1);
+    await vi.advanceTimersByTimeAsync(SUBAGENT_STREAM_IDLE_MS + 1);
+    await vi.advanceTimersByTimeAsync(SUBAGENT_STREAM_IDLE_MS + 1);
     expect(((await res) as Error).message).toBe("idle timeout");
-    expect(subSignal?.aborted).toBe(true);
+    expect(subSignals).toHaveLength(2);
+    expect(subSignals.every((s) => s.aborted)).toBe(true);
     expect(ctx.signal.aborted).toBe(false);
   });
 });
@@ -1266,5 +1368,170 @@ describe("tracing", () => {
     expect(span.setAttribute).toHaveBeenCalledWith("n", 2);
     recordActiveSpanException("boom");
     expect(span.recordException).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("R30: the grounding checker only sees the final root answer step", () => {
+  it("a plan sentence in step 0 and the answer in the last step → checker input excludes the plan sentence", async () => {
+    const { kbAgent } = await import("./defs/knowledge-base");
+    const { ctx, events, clock } = makeCtx({ workspace: "default" });
+    const kbResult = { results: [{ n: 1, filename: "default/travel-expense.md", snippet: "台北住宿上限 3,200 元" }] };
+    const { ai, calls } = fakeAI(
+      [
+        (c) =>
+          fakeStream(c, [
+            { at: 1, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 2, part: p({ type: "text-delta", id: "t", text: "我先查詢差旅規定。" }) },
+            { at: 3, part: p({ type: "tool-call", toolCallId: "k1", toolName: "search_kb", input: { query: "住宿" } }) },
+            { at: 4, part: p({ type: "tool-result", toolCallId: "k1", toolName: "search_kb", input: {}, output: kbResult }) },
+            { at: 5, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "tool-calls" }) },
+            { at: 6, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 7, part: p({ type: "text-delta", id: "t", text: "台北出差住宿上限為每晚 3,200 元 [1]。" }) },
+            { at: 8, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+          ]),
+        (c) =>
+          fakeStream(c, [
+            { at: 9, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 10, part: p({ type: "text-delta", id: "t", text: '{"unsupported":[]}' }) },
+            { at: 11, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+          ]),
+      ],
+      clock,
+    );
+    await runAgent(kbAgent, [{ role: "user", content: "出差住宿上限多少？" }], "kimi-k2.6", { ...ctx, ai });
+    expect(calls).toHaveLength(2);
+    const checkerPrompt = calls[1]!.prompt as string;
+    expect(calls[1]!.system).toContain("事實查核員");
+    expect(checkerPrompt).toContain("台北出差住宿上限為每晚 3,200 元 [1]。");
+    expect(checkerPrompt).not.toContain("我先查詢差旅規定");
+    expect(checkerPrompt).toContain("[1] default/travel-expense.md");
+    expect(events.at(-1)).toMatchObject({ type: "run-end", status: "ok" });
+  });
+
+  it("finalText skips whitespace-only trailing steps and falls back to the whole text without step boundaries", async () => {
+    const { ctx, clock } = makeCtx();
+    const res = await pipeStepStream(
+      fakeStream(clock, [
+        { at: 1, part: p({ type: "start-step", request: {}, warnings: [] }) },
+        { at: 2, part: p({ type: "text-delta", id: "t", text: " answer " }) },
+        { at: 3, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "tool-calls" }) },
+        { at: 4, part: p({ type: "start-step", request: {}, warnings: [] }) },
+        { at: 5, part: p({ type: "text-delta", id: "t", text: "  " }) },
+        { at: 6, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "kimi-k2.6", forwardText: false },
+    );
+    expect(res.finalText).toBe("answer");
+    const bare = await pipeStepStream(
+      fakeStream(clock, [{ at: 7, part: p({ type: "text-delta", id: "t", text: "no steps" }) }]),
+      ctx,
+      { parentSpanId: "Q", modelLabel: "kimi-k2.6", forwardText: false },
+    );
+    expect(bare.finalText).toBe("no steps");
+  });
+});
+
+describe("user aborts are not recorded as span exceptions", () => {
+  const def: AgentDef = {
+    id: "cloudflare-docs",
+    functionId: "docs-agent",
+    defaultModel: "glm-5.3-flash",
+    maxSteps: 3,
+    system: () => "sys",
+    tools: () => ({}),
+  };
+  const sub: SubagentDef<string> = {
+    functionId: "r",
+    model: "glm-5.3-flash",
+    system: "s",
+    maxSteps: 1,
+    tools: () => ({}),
+    prompt: (s) => s,
+  };
+  const installSpan = () => {
+    const span = { setAttribute: vi.fn(), recordException: vi.fn() };
+    (globalThis as { __CF_WORKERS__?: unknown }).__CF_WORKERS__ = { tracing: { getActiveSpan: () => span } };
+    return span;
+  };
+  const abortingStream = (ac: AbortController) => (c: { t: number }) =>
+    fakeStream(c, [
+      { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+      { at: 1, run: () => ac.abort() },
+      { at: 2, part: p({ type: "text-delta", id: "t", text: "x" }) },
+    ]);
+
+  it("runAgent: abort by the user → no recordException", async () => {
+    const span = installSpan();
+    const { ctx, ac, clock, events } = makeCtx();
+    const { ai } = fakeAI([abortingStream(ac)], clock);
+    await runAgent(def, [{ role: "user", content: "hi" }], "kimi-k2.6", { ...ctx, ai });
+    expect(events.at(-1)).toMatchObject({ type: "run-end", status: "aborted" });
+    expect(span.recordException).not.toHaveBeenCalled();
+  });
+
+  it("runSubagent: abort by the user → no recordException (and no retry)", async () => {
+    const span = installSpan();
+    const { ctx, ac, clock } = makeCtx();
+    const { ai, calls } = fakeAI([abortingStream(ac)], clock);
+    await expect(runSubagent(sub, "q", { ...ctx, ai }, "P", 0)).rejects.toMatchObject({ name: "AbortError" });
+    expect(span.recordException).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+  });
+
+  it("idle timeouts and stream errors are still recorded", async () => {
+    vi.useFakeTimers();
+    const span = installSpan();
+    const { ctx, clock, events } = makeCtx();
+    const { ai } = fakeAI(
+      [
+        (c) =>
+          fakeStream(c, [
+            { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 1, part: p({ type: "text-delta", id: "t", text: "x" }) },
+            { hang: true },
+          ]),
+        (c) =>
+          fakeStream(c, [
+            { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 1, part: p({ type: "error", error: "upstream 500" }) },
+          ]),
+      ],
+      clock,
+    );
+    const run = runAgent(def, [{ role: "user", content: "hi" }], "kimi-k2.6", { ...ctx, ai });
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS + 1);
+    await vi.advanceTimersByTimeAsync(3000);
+    await run;
+    expect(events.find((e) => e.type === "run-end")).toMatchObject({ status: "error", error: "idle timeout" });
+    expect(span.recordException).toHaveBeenCalledTimes(1);
+    const second = runAgent(def, [{ role: "user", content: "hi" }], "kimi-k2.6", { ...ctx, ai });
+    await vi.advanceTimersByTimeAsync(3000);
+    await second;
+    expect(span.recordException).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("run-start reports whether tracing is active", () => {
+  it("carries ctx.traced, and omits the field when the route didn't set it", async () => {
+    const def: AgentDef = {
+      id: "cloudflare-docs",
+      functionId: "docs-agent",
+      defaultModel: "glm-5.3-flash",
+      maxSteps: 1,
+      system: () => "sys",
+      tools: () => ({}),
+    };
+    const stream = (c: { t: number }) =>
+      fakeStream(c, [
+        { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+        { at: 1, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+      ]);
+    const a = makeCtx({ traced: false });
+    await runAgent(def, [{ role: "user", content: "hi" }], "kimi-k2.6", { ...a.ctx, ai: fakeAI([stream], a.clock).ai });
+    expect(a.events[0]).toMatchObject({ type: "run-start", traced: false });
+    const b = makeCtx();
+    await runAgent(def, [{ role: "user", content: "hi" }], "kimi-k2.6", { ...b.ctx, ai: fakeAI([stream], b.clock).ai });
+    expect(b.events[0]).not.toHaveProperty("traced");
   });
 });

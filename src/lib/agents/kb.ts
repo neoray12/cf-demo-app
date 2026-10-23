@@ -164,20 +164,41 @@ export async function kbSearch(
   return { results, topScore: results.reduce((m, r) => Math.max(m, r.score), 0) };
 }
 
+/** R2 REST list API maximum page size (per_page > 1000 → 10029 "per_page must be between 0 and 1000"). */
+const R2_LIST_PER_PAGE = 1000;
+const R2_LIST_MAX_PAGES = 5;
+
+/**
+ * Every object below `<workspace>/` in the KB bucket. The R2 REST list API pages with an opaque cursor:
+ * `result_info: { cursor, is_truncated, per_page }` (result_info is null when everything fit in one page);
+ * the next page is `?cursor=<cursor>`. Asks for 1000 per page and follows the cursor for at most 5 pages.
+ */
 export async function kbListDocs(
   env: AgentEnv,
   workspace: string,
 ): Promise<Array<{ key: string; size: number; uploaded: string }>> {
   assertWorkspace(workspace);
-  const res = await fetch(
-    `${API_BASE}/${env.CF_ACCOUNT_ID}/r2/buckets/${env.KB_BUCKET_NAME}/objects?prefix=${encodeURIComponent(`${workspace}/`)}`,
-    { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` }, signal: AbortSignal.timeout(API_TIMEOUT_MS) },
-  );
-  const data = (await res.json().catch(() => null)) as ApiEnvelope<
-    Array<{ key: string; size: number; last_modified?: string }>
-  > | null;
-  if (!res.ok || !data?.success) throw apiError(res, data);
-  return (data.result ?? []).map((o) => ({ key: o.key, size: o.size, uploaded: o.last_modified ?? "" }));
+  const out: Array<{ key: string; size: number; uploaded: string }> = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < R2_LIST_MAX_PAGES; page++) {
+    const qs = new URLSearchParams({ prefix: `${workspace}/`, per_page: String(R2_LIST_PER_PAGE) });
+    if (cursor) qs.set("cursor", cursor);
+    const res = await fetch(`${API_BASE}/${env.CF_ACCOUNT_ID}/r2/buckets/${env.KB_BUCKET_NAME}/objects?${qs}`, {
+      headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+    const data = (await res.json().catch(() => null)) as
+      | (ApiEnvelope<Array<{ key: string; size: number; last_modified?: string }>> & {
+          result_info?: { cursor?: string; is_truncated?: boolean } | null;
+        })
+      | null;
+    if (!res.ok || !data?.success) throw apiError(res, data);
+    for (const o of data.result ?? []) out.push({ key: o.key, size: o.size, uploaded: o.last_modified ?? "" });
+    const info = data.result_info;
+    if (!info?.is_truncated || !info.cursor) break;
+    cursor = info.cursor;
+  }
+  return out;
 }
 
 /** Starts an indexing job; returns the job id (null when the API does not return one). */
@@ -209,11 +230,13 @@ export interface KbFileStatus {
   error?: string;
 }
 
+/** AI Search items API maximum page size (per_page 51 → 7001 "Too big: expected number to be <=50"). */
 const ITEMS_PER_PAGE = 50;
-const ITEMS_MAX_PAGES = 2;
+const ITEMS_MAX_PAGES = 5;
 
 /**
- * Per-file indexing status of one workspace, from the AI Search items API (paginated, 50/page, at most 2 pages).
+ * Per-file indexing status of one workspace, from the AI Search items API (paginated, 50/page, at most 5 pages;
+ * the instance holds every workspace, so the workspace filter is applied here).
  *
  * The status is returned exactly as AI Search reports it, with no inference: AI Search per-file status is known to
  * be unreliable, an item can stay `running` long after it is searchable. Callers should treat it as a hint.

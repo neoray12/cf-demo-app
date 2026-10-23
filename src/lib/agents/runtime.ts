@@ -22,6 +22,8 @@ export type { AgentEnv };
  *   between `tool-call` and `tool-result` / `tool-error`; tools enforce their own timeouts).
  */
 export const STREAM_IDLE_MS = 60_000;
+/** Subagents use a shorter between-parts window: they get one retry (R32), so a stalled one should fail fast. */
+export const SUBAGENT_STREAM_IDLE_MS = 45_000;
 export const FIRST_PART_IDLE_MS = 150_000;
 const DETAIL_MAX_CHARS = 2000;
 const SPAN_INPUT_MAX_CHARS = 500;
@@ -42,6 +44,8 @@ export interface RunContext {
   modelKey?: ModelKey;
   /** Run-scoped shared resources (e.g. one MCP connection for all parallel subagents); disposed when the run ends. */
   scope?: RunScope;
+  /** Whether Cloudflare Agents tracing wraps `ai` (reported on run-start; set by the route from isTracingActive()). */
+  traced?: boolean;
 }
 
 /**
@@ -120,9 +124,14 @@ export interface AgentDef {
   maxSteps: number;
   system(ctx: RunContext): string;
   tools(ctx: RunContext): ToolSet;
+  /**
+   * Runs after the root stream. `text` = every root step's text glued together; `finalText` = the text of the last
+   * root chat step that wrote any (trimmed) — the answer without a plan sentence written before the tool calls
+   * (same rule as the UI's historyAnswer).
+   */
   after?(
     ctx: RunContext,
-    result: { text: string; rootSpanId: string; toolResults: ToolResultRecord[] },
+    result: { text: string; finalText: string; rootSpanId: string; toolResults: ToolResultRecord[] },
   ): Promise<void>;
 }
 
@@ -198,11 +207,17 @@ function spanInputValue(value: unknown): unknown {
   return json.length > DETAIL_MAX_CHARS ? clipString(json, SPAN_INPUT_MAX_CHARS) : clipped;
 }
 
-function telemetry(functionId: string, conversationId: string) {
+/** experimental_telemetry for a streamText call (spec §6.4): agentId, conversationId, model key, workspace when set. */
+function telemetry(functionId: string, ctx: RunContext, modelKey: ModelKey) {
   return {
     isEnabled: true,
     functionId,
-    metadata: { agentId: `${functionId}-demo`, conversationId },
+    metadata: {
+      agentId: `${functionId}-demo`,
+      conversationId: ctx.conversationId,
+      model: modelKey,
+      ...(ctx.workspace ? { workspace: ctx.workspace } : {}),
+    },
   };
 }
 
@@ -356,12 +371,17 @@ export async function pipeStepStream(
     startedToolSpans?: Set<string>;
     inputToolSpans?: Set<string>;
     chatSpans?: ChatSpans;
+    /** Between-parts idle window (default STREAM_IDLE_MS); the first-part window is always FIRST_PART_IDLE_MS. */
+    idleMs?: number;
   },
-): Promise<{ text: string; firstTokenAt?: number; toolResults: ToolResultRecord[] }> {
+): Promise<{ text: string; finalText: string; firstTokenAt?: number; toolResults: ToolResultRecord[] }> {
   const { parentSpanId, modelLabel, forwardText } = opts;
+  const idleMs = opts.idleMs ?? STREAM_IDLE_MS;
   const iterator = stream[Symbol.asyncIterator]();
 
   let text = "";
+  // Text per chat span, in step order (finalText = the last step that wrote any).
+  const stepTexts = new Map<string, string>();
   let firstTokenAt: number | undefined;
   const toolResults: ToolResultRecord[] = [];
   const chats = (opts.chatSpans as ChatSpanTracker | undefined) ?? createChatSpans(ctx, parentSpanId, modelLabel);
@@ -414,7 +434,11 @@ export async function pipeStepStream(
         const t = ctx.now();
         if (firstTokenAt === undefined) firstTokenAt = t;
         if (chat && chat.firstAt === undefined) chat.firstAt = t;
-        if (part.type === "text-delta") text += part.text;
+        if (part.type === "text-delta") {
+          text += part.text;
+          const key = chat?.id ?? parentSpanId;
+          stepTexts.set(key, (stepTexts.get(key) ?? "") + part.text);
+        }
         if (forwardText) ctx.emit({ type: part.type, spanId: chat?.id ?? parentSpanId, text: part.text });
         return;
       }
@@ -480,7 +504,7 @@ export async function pipeStepStream(
     if (idleTimer !== undefined) clearTimeout(idleTimer);
     idleTimer = undefined;
     if (runningToolIds().length > 0) return; // tools are executing: suspended until tool-result / tool-error
-    const ms = awaitingFirstPart ? FIRST_PART_IDLE_MS : STREAM_IDLE_MS;
+    const ms = awaitingFirstPart ? FIRST_PART_IDLE_MS : idleMs;
     idleTimer = setTimeout(() => stop(idleTimeoutError()), ms);
   };
   // A step's first-part window starts when its request goes out (chat span start).
@@ -524,7 +548,8 @@ export async function pipeStepStream(
   for (const id of openToolIds()) endTool(id, "error", { error: "no tool result" });
   for (const span of chats.openSpans()) chats.end(span, "ok");
 
-  return { text, firstTokenAt, toolResults };
+  const steps = [...stepTexts.values()].map((s) => s.trim()).filter((s) => s !== "");
+  return { text, finalText: steps.at(-1) ?? text.trim(), firstTokenAt, toolResults };
 }
 
 /**
@@ -557,6 +582,12 @@ function linkedAbortController(parent: AbortSignal): { controller: AbortControll
  * The subagent runs on a child AbortSignal (linked to `ctx.signal`) that is also
  * aborted on its own failure (idle timeout, stream error) so its model request
  * and tools are cancelled without touching siblings.
+ *
+ * One-shot retry (R32): when an attempt fails for any reason other than an abort
+ * (idle timeout, stream error), it is retried once as a new `invoke_agent` span
+ * `…:${index}r` under the same parent; the failed span stays "error". The retry's
+ * result is returned; if it fails too, its error is thrown. (The root agent never
+ * retries: its text has already been streamed to the user.)
  */
 export async function runSubagent<I>(
   def: SubagentDef<I>,
@@ -565,6 +596,21 @@ export async function runSubagent<I>(
   parentSpanId: string,
   index: number,
 ): Promise<{ text: string }> {
+  try {
+    return await runSubagentAttempt(def, input, ctx, parentSpanId, String(index));
+  } catch (err) {
+    if (ctx.signal.aborted || isAbortError(err)) throw err;
+    return runSubagentAttempt(def, input, ctx, parentSpanId, `${index}r`);
+  }
+}
+
+async function runSubagentAttempt<I>(
+  def: SubagentDef<I>,
+  input: I,
+  ctx: RunContext,
+  parentSpanId: string,
+  index: string,
+): Promise<{ text: string }> {
   const id = `${parentSpanId}:${def.functionId}:${index}`;
   const link = linkedAbortController(ctx.signal);
   const subCtx: RunContext = { ...ctx, signal: link.controller.signal };
@@ -572,7 +618,8 @@ export async function runSubagent<I>(
   const inputToolSpans = new Set<string>();
   ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "invoke_agent", name: def.functionId, t: ctx.now() });
   try {
-    const model = AGENT_MODELS[ctx.modelKey ?? def.model];
+    const modelKey = ctx.modelKey ?? def.model;
+    const model = AGENT_MODELS[modelKey];
     const chatSpans = createChatSpans(subCtx, id, model.key);
     const result = ctx.ai.streamText({
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
@@ -583,7 +630,7 @@ export async function runSubagent<I>(
       stopWhen: stepCountIs(def.maxSteps),
       maxOutputTokens: model.maxTokens,
       abortSignal: subCtx.signal,
-      experimental_telemetry: telemetry(def.functionId, ctx.conversationId),
+      experimental_telemetry: telemetry(def.functionId, ctx, modelKey),
     });
     const { text } = await pipeStepStream(result.fullStream, subCtx, {
       parentSpanId: id,
@@ -592,13 +639,15 @@ export async function runSubagent<I>(
       startedToolSpans,
       inputToolSpans,
       chatSpans,
+      idleMs: SUBAGENT_STREAM_IDLE_MS,
     });
     const detail = def.toDetail ? smallDetail(def.toDetail(text)) : { output: text.slice(0, DETAIL_MAX_CHARS) };
     ctx.emit({ type: "span-end", id, t: ctx.now(), status: "ok", detail });
     return { text };
   } catch (err) {
-    recordActiveSpanException(err);
     const aborted = ctx.signal.aborted || isAbortError(err);
+    // A user stop (or the run being cancelled) is not an exception; idle timeouts and real errors are.
+    if (!aborted) recordActiveSpanException(err);
     link.controller.abort();
     ctx.emit({ type: "span-end", id, t: ctx.now(), status: "error", detail: { error: aborted ? "aborted" : errorMessage(err) } });
     throw err;
@@ -756,7 +805,14 @@ export async function runAgent(
   const inputToolSpans = new Set<string>();
 
   const t0 = ctx.now();
-  emit({ type: "run-start", runId, agent: def.id, model: modelKey, t: t0 });
+  emit({
+    type: "run-start",
+    runId,
+    agent: def.id,
+    model: modelKey,
+    t: t0,
+    ...(ctx.traced !== undefined ? { traced: ctx.traced } : {}),
+  });
   emit({ type: "span-start", id: runId, kind: "invoke_agent", name: def.functionId, t: t0 });
 
   const finish = (status: "ok" | "error" | "aborted", error?: string) => {
@@ -783,9 +839,9 @@ export async function runAgent(
       stopWhen: stepCountIs(def.maxSteps),
       maxOutputTokens: model.maxTokens,
       abortSignal: runCtx.signal,
-      experimental_telemetry: telemetry(def.functionId, ctx.conversationId),
+      experimental_telemetry: telemetry(def.functionId, ctx, modelKey),
     });
-    const { text, toolResults } = await pipeStepStream(result.fullStream, runCtx, {
+    const { text, finalText, toolResults } = await pipeStepStream(result.fullStream, runCtx, {
       parentSpanId: runId,
       modelLabel: model.key,
       forwardText: true,
@@ -793,12 +849,13 @@ export async function runAgent(
       inputToolSpans,
       chatSpans,
     });
-    await def.after?.(runCtx, { text, rootSpanId: runId, toolResults });
+    await def.after?.(runCtx, { text, finalText, rootSpanId: runId, toolResults });
     emit({ type: "span-end", id: runId, t: ctx.now(), status: "ok", detail: { output: text.slice(0, DETAIL_MAX_CHARS) } });
     finish("ok");
   } catch (err) {
-    recordActiveSpanException(err);
     const aborted = ctx.signal.aborted || isAbortError(err);
+    // A user stop is not an exception on the Cloudflare span; idle timeouts and real errors are.
+    if (!aborted) recordActiveSpanException(err);
     const message = aborted ? "aborted" : errorMessage(err);
     link.controller.abort();
     // The root span-end closes every still-open descendant first (see emit).

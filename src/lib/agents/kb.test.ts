@@ -10,7 +10,7 @@ vi.mock("./runtime", async (orig) => ({
   }),
 }));
 
-import { isValidWorkspace, kbFileStatuses, kbSearch, kbSearchBody, newWorkspaceId, safeUploadName, slugFromUrl, hostSlugFromUrl, countUploadedDocs, validateUpload } from "./kb";
+import { isValidWorkspace, kbFileStatuses, kbListDocs, kbSearch, kbSearchBody, newWorkspaceId, safeUploadName, slugFromUrl, hostSlugFromUrl, countUploadedDocs, validateUpload } from "./kb";
 import { buildKbTools } from "./tools/kb";
 import { groundingChecker, kbAgent } from "./defs/knowledge-base";
 import { AGENTS } from "./registry";
@@ -153,10 +153,22 @@ describe("kbFileStatuses", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("fetches at most two pages", async () => {
+  it("fetches at most five pages of 50", async () => {
     const full = Array.from({ length: 50 }, (_, i) => ({ key: `default/${i}.md`, status: "completed" }));
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ success: true, result: full }));
-    await kbFileStatuses(env, "default");
+    const out = await kbFileStatuses(env, "default");
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(String(fetchMock.mock.calls[4]![0])).toContain("per_page=50&page=5");
+    expect(out).toHaveLength(250);
+  });
+
+  it("stops at the first short page", async () => {
+    const full = Array.from({ length: 50 }, (_, i) => ({ key: `default/${i}.md`, status: "completed" }));
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(Response.json({ success: true, result: full }))
+      .mockResolvedValueOnce(Response.json({ success: true, result: full.slice(0, 3) }));
+    expect(await kbFileStatuses(env, "default")).toHaveLength(53);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -164,6 +176,54 @@ describe("kbFileStatuses", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     await expect(kbFileStatuses(env, "../x")).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("kbListDocs", () => {
+  const env = { CF_ACCOUNT_ID: "acc", CF_API_TOKEN: "tok", KB_BUCKET_NAME: "kb-bucket" } as never;
+  beforeEach(() => vi.restoreAllMocks());
+  const obj = (key: string) => ({ key, size: 10, last_modified: "2026-10-23T00:00:00Z" });
+
+  it("asks for 1000 per page and returns everything when result_info is null (one page)", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(Response.json({ success: true, result: [obj("default/a.md")], result_info: null }));
+    expect(await kbListDocs(env, "default")).toEqual([{ key: "default/a.md", size: 10, uploaded: "2026-10-23T00:00:00Z" }]);
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      "https://api.cloudflare.com/client/v4/accounts/acc/r2/buckets/kb-bucket/objects?prefix=default%2F&per_page=1000",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows result_info.cursor while is_truncated", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        Response.json({ success: true, result: [obj("ws-a1b2c3d4/a.md")], result_info: { cursor: "c-1", is_truncated: true, per_page: 1000 } }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ success: true, result: [obj("ws-a1b2c3d4/b.md")], result_info: { cursor: "c-2", is_truncated: false, per_page: 1000 } }),
+      );
+    const out = await kbListDocs(env, "ws-a1b2c3d4");
+    expect(out.map((d) => d.key)).toEqual(["ws-a1b2c3d4/a.md", "ws-a1b2c3d4/b.md"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]![0])).toContain("per_page=1000&cursor=c-1");
+  });
+
+  it("stops after five pages even if the bucket says there is more", async () => {
+    let n = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({ success: true, result: [obj(`default/${n}.md`)], result_info: { cursor: `c-${++n}`, is_truncated: true } }),
+    );
+    expect(await kbListDocs(env, "default")).toHaveLength(5);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it("throws the API error of any page", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(Response.json({ success: true, result: [obj("default/a.md")], result_info: { cursor: "c", is_truncated: true } }))
+      .mockResolvedValueOnce(Response.json({ success: false, errors: [{ code: 10029, message: "per_page must be between 0 and 1000" }] }, { status: 400 }));
+    await expect(kbListDocs(env, "default")).rejects.toThrow("per_page must be between 0 and 1000 (10029)");
   });
 });
 
@@ -244,7 +304,8 @@ describe("knowledge-base agent", () => {
   it("after() runs the grounding checker with numbered sources only when search_kb returned results", async () => {
     const ctx = { ...ctxBase, emit: vi.fn() } as RunContext;
     await kbAgent.after!(ctx, {
-      text: "上限 3,200 元 [1]",
+      text: "我先查詢差旅規定。上限 3,200 元 [1]",
+      finalText: "上限 3,200 元 [1]",
       rootSpanId: "root",
       toolResults: [
         { toolName: "search_kb", output: { results: [{ n: 1, filename: "default/travel-expense.md", snippet: "台北 3,200 元" }] } },
@@ -263,8 +324,24 @@ describe("knowledge-base agent", () => {
 
   it("after() skips the checker when nothing was found or search_kb was never called", async () => {
     const ctx = { ...ctxBase, emit: vi.fn() } as RunContext;
-    await kbAgent.after!(ctx, { text: "找不到", rootSpanId: "root", toolResults: [{ toolName: "search_kb", output: { results: [], instruction: "x" } }] });
-    await kbAgent.after!(ctx, { text: "hi", rootSpanId: "root", toolResults: [] });
+    await kbAgent.after!(ctx, {
+      text: "找不到",
+      finalText: "找不到",
+      rootSpanId: "root",
+      toolResults: [{ toolName: "search_kb", output: { results: [], instruction: "x" } }],
+    });
+    await kbAgent.after!(ctx, { text: "hi", finalText: "hi", rootSpanId: "root", toolResults: [] });
+    expect(sub.calls).toHaveLength(0);
+  });
+
+  it("after() skips the checker when the final step wrote nothing, even if a plan sentence exists (R30)", async () => {
+    const ctx = { ...ctxBase, emit: vi.fn() } as RunContext;
+    await kbAgent.after!(ctx, {
+      text: "我先查詢差旅規定。",
+      finalText: "",
+      rootSpanId: "root",
+      toolResults: [{ toolName: "search_kb", output: { results: [{ n: 1, filename: "a.md", snippet: "x" }] } }],
+    });
     expect(sub.calls).toHaveLength(0);
   });
 });
