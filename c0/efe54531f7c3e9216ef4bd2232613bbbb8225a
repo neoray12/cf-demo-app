@@ -1,0 +1,57 @@
+src/app/pages/agent-chat.tsx
+  s_3a8326f10dc640::t_677a0eb278870c 15,138-140
+src/lib/agents/kb.test.ts
+  s_3a8326f10dc640::t_fe10947f408bd3 15,286-287,338-402
+src/lib/agents/runtime.ts
+  s_3a8326f10dc640::t_851552d5f8b894 8-9,11,44-47,49,51-52,117-122,132-141,149-159,457-489,493-496,503,541-546,549,615,627-628,630-637,641-644,700-701,703-705,710,712,742-779,798-811,953-966,980-985,989,1006-1009,1024
+agents.md
+  s_2a3616594ca156::t_10de23c8eacf45 158-159,167,189-198
+src/app/components/agents/activity-timeline.tsx
+  s_2a3616594ca156::t_b9d326a26dee55 41-42,68-70,168,171-173,313-314
+src/i18n/agents.en.json
+  s_2a3616594ca156::t_b8216c69f9c569 17,37-38,137
+src/i18n/agents.zh-TW.json
+  s_2a3616594ca156::t_f052c2663a8012 17,37-38,137
+src/lib/agents/catalog.ts
+  s_2a3616594ca156::t_a85467e314bb35 75
+src/lib/agents/defs/docs.test.ts
+  s_2a3616594ca156::t_39e2603ac6fe75 1-118
+src/lib/agents/defs/docs.ts
+  s_2a3616594ca156::t_76d5d8c2b648fa 1-5,8-9,11-15,19-20,23-26,28-42,46-53,55,57-62,65,67-71,74-82,86,90,94,102-103,107-111,114,118-132
+src/lib/agents/defs/knowledge-base.ts
+  s_2a3616594ca156::t_74c1626c4018b0 2-3,44-59,64-65,69-75,79-95
+src/lib/agents/models.ts
+  s_2a3616594ca156::t_4c7f1d75a926f5 16-25
+src/lib/agents/runtime.speed.test.ts
+  s_2a3616594ca156::t_9746a186389e08 1-404
+src/lib/agents/runtime.test.ts
+  s_2a3616594ca156::t_47cd2fdc9a9824 1378-1379,1411-1413
+src/lib/agents/tools/kb.ts
+  s_2a3616594ca156::t_374ffbff904b6b 1-2,11-62,64,73-74
+src/lib/agents/tracing.ts
+  s_2a3616594ca156::t_6635362824c77a 22-25,124-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c0efe54531f7c3e9216ef4bd2232613bbbb8225a",
+  "prompts": {},
+  "sessions": {
+    "s_2a3616594ca156": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a42de3beac9b69f9d",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
