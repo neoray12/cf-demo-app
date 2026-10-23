@@ -1,0 +1,45 @@
+src/app/api/crawler/save-to-r2/route.ts
+  s_3a8326f10dc640::t_0cd0b629e08f90 3,79,94
+src/lib/agents/kb.test.ts
+  s_3a8326f10dc640::t_ede3c65f68be17 13,64,76,87-149
+src/lib/r2-s3.test.ts
+  s_3a8326f10dc640::t_a77a9527eef591 1-45
+src/app/api/agents/kb/docs/route.ts
+  s_e01b02401f23f7::t_20bba23770930a 1-17
+src/app/api/agents/kb/import-site/route.ts
+  s_e01b02401f23f7::t_ef0baf026c02a0 1-168
+src/app/api/agents/kb/status/route.ts
+  s_e01b02401f23f7::t_dc63f2fb17d2f0 1-32
+src/app/api/agents/kb/upload/route.ts
+  s_e01b02401f23f7::t_2085bbb17ce240 1-90
+src/lib/agents/kb-route.ts
+  s_e01b02401f23f7::t_7f63194f4f022b 1-29
+src/lib/agents/kb.ts
+  s_e01b02401f23f7::t_3349f0bf776eff 9-10,38-67,184-221
+src/lib/r2-s3.ts
+  s_e01b02401f23f7::t_c0c49e18490c3c 1-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1a95e28ab04ef641ed3b29903a44256c6666888f",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_e01b02401f23f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3200d8a0045a2c17",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
