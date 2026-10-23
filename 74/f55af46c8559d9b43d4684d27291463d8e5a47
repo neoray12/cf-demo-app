@@ -1,0 +1,41 @@
+src/app/components/agents/activity-timeline.tsx
+  s_3a8326f10dc640::t_9debdb7d8e5eff 3,148-149,234,321
+src/app/components/agents/agent-message.tsx
+  s_3a8326f10dc640::t_4abc9a120ce8bd 3,12,72-78,93,115,138,149,175,181
+src/app/components/chat/markdown-renderer.test.ts
+  s_3a8326f10dc640::t_faf8a5bf412691 1-22
+src/app/components/chat/markdown-renderer.tsx
+  s_3a8326f10dc640::t_c8270ec64acb36 111-116,122,135
+src/app/pages/agent-chat.tsx
+  s_3a8326f10dc640::t_7c07d2c7c94c62 12,132,138-144,251
+vitest.config.ts
+  s_3a8326f10dc640::t_6c7bd5409193c4 5-6
+src/app/components/agents/trace-utils.ts
+  s_278a729e1d899c::t_f25a7e4fec8ebb 107-130
+src/app/components/agents/use-agent-run.ts
+  s_278a729e1d899c::t_bf62e6b29732bf 8,115-116,118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "74f55af46c8559d9b43d4684d27291463d8e5a47",
+  "prompts": {},
+  "sessions": {
+    "s_278a729e1d899c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac6a6c67f4499a417",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
