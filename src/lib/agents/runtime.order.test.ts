@@ -111,6 +111,74 @@ describe("tool span ordering with real streamText", () => {
     expect(trace!.spans[tool]!.children.map((c) => c.id).sort()).toEqual([`${tool}:sub:0`, `${tool}:sub:1`]);
     expect(trace!.status).toBe("ok");
     expect(trace!.text).toBe("done");
+
+    // (c) subagent text is streamed live under the subagent's own chat span, but is not the answer
+    const deltas = events.filter((e) => e.type === "text-delta") as Extract<TraceEvent, { type: "text-delta" }>[];
+    expect(deltas.filter((d) => d.text === "sub-out").map((d) => d.spanId).sort()).toEqual([
+      `${tool}:sub:0:chat:0`,
+      `${tool}:sub:1:chat:0`,
+    ]);
+    expect(trace!.spans[`${tool}:sub:0:chat:0`]!.text).toBe("sub-out");
+    expect(trace!.spans[`${tool}:sub:1:chat:0`]!.text).toBe("sub-out");
+    expect(trace!.text).not.toContain("sub-out");
+
+    // (d) one span-input for the tool span, after its span-start, with the parsed arguments
+    const inputs = events.filter((e) => e.type === "span-input" && e.id === tool);
+    expect(inputs).toEqual([{ type: "span-input", id: tool, input: {} }]);
+    expect(events.indexOf(inputs[0]!)).toBeGreaterThan(events.findIndex((e) => e.type === "span-start" && e.id === tool));
+    expect(trace!.spans[tool]!.input).toEqual({});
+  });
+
+  it("streamed tool arguments: the tool span starts on tool-input-start and gets exactly one span-start / span-input / span-end", async () => {
+    const chunks = [
+      { type: "stream-start", warnings: [] },
+      { type: "tool-input-start", id: "call-9", toolName: "search_docs" },
+      { type: "tool-input-delta", id: "call-9", delta: '{"query":' },
+      { type: "tool-input-delta", id: "call-9", delta: '"kv"}' },
+      { type: "tool-input-end", id: "call-9" },
+      { type: "tool-call", toolCallId: "call-9", toolName: "search_docs", input: '{"query":"kv"}' },
+      finish("tool-calls"),
+    ];
+    const ai = {
+      ...aiNs,
+      streamText: (args: Parameters<typeof aiNs.streamText>[0]) =>
+        aiNs.streamText({ ...args, model: mockModel(chunks, textChunks("answer")) }),
+    } as unknown as typeof import("ai");
+    const events: TraceEvent[] = [];
+    const ctx: RunContext = {
+      env: {} as AgentEnv,
+      ai,
+      emit: (e) => events.push(e),
+      now: () => events.length,
+      conversationId: "c",
+      storeContent: false,
+      signal: new AbortController().signal,
+    };
+    await runAgent(
+      {
+        id: "cloudflare-docs",
+        functionId: "main",
+        defaultModel: "glm-5.3-flash",
+        maxSteps: 3,
+        system: () => "",
+        tools: () => ({
+          search_docs: aiNs.tool({
+            inputSchema: aiNs.jsonSchema<{ query: string }>({ type: "object", properties: { query: { type: "string" } } }),
+            execute: async ({ query }) => `hit:${query}`,
+          }),
+        }),
+      },
+      [{ role: "user", content: "hi" }],
+      "glm-5.3-flash",
+      ctx,
+    );
+    const runId = (events[0] as Extract<TraceEvent, { type: "run-start" }>).runId;
+    const id = `${runId}/call-9`;
+    const mine = events.filter((e) => "id" in e && e.id === id);
+    expect(mine.map((e) => e.type)).toEqual(["span-start", "span-input", "span-end"]);
+    expect(mine[1]).toEqual({ type: "span-input", id, input: { query: "kv" } });
+    expect(mine[2]).toMatchObject({ status: "ok" });
+    expect(events.at(-1)).toMatchObject({ type: "run-end", status: "ok" });
   });
 
   it("a tool whose execute throws gets exactly one span-end (error)", async () => {
@@ -348,5 +416,48 @@ describe("tool span ordering with real streamText", () => {
     await run("ok");
     await run("error");
     await run("abort");
+  });
+
+  it("run scope: once() after the run has disposed its scope closes the new resource immediately", async () => {
+    const ai = {
+      ...aiNs,
+      streamText: (args: Parameters<typeof aiNs.streamText>[0]) => aiNs.streamText({ ...args, model: mockModel(textChunks("ok")) }),
+    } as unknown as typeof import("ai");
+    let scope: RunContext["scope"];
+    await runAgent(
+      {
+        id: "cloudflare-docs",
+        functionId: "main",
+        defaultModel: "glm-5.3-flash",
+        maxSteps: 1,
+        system: () => "",
+        tools: (c) => {
+          scope = c.scope;
+          return {};
+        },
+      },
+      [{ role: "user", content: "hi" }],
+      "glm-5.3-flash",
+      {
+        env: {} as AgentEnv,
+        ai,
+        emit: () => {},
+        now: () => 0,
+        conversationId: "c",
+        storeContent: false,
+        signal: new AbortController().signal,
+      },
+    );
+    const disposed: unknown[] = [];
+    const a = scope!.once("late", () => ({ n: 1 }), (v) => void disposed.push(v));
+    expect(disposed).toEqual([a]); // closed right away, not stored for a dispose that will never run
+    const b = scope!.once("late", () => ({ n: 2 }), (v) => void disposed.push(v));
+    expect(b).not.toBe(a);
+    expect(disposed).toEqual([a, b]);
+    // an async dispose that rejects must not surface as an unhandled rejection
+    scope!.once("late-async", () => 1, async () => {
+      throw new Error("close failed");
+    });
+    await new Promise((r) => setTimeout(r, 0));
   });
 });

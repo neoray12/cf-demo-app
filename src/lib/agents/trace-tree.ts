@@ -12,6 +12,11 @@ export interface SpanNode {
   usage?: { input: number; output: number };
   ttftMs?: number;
   detail?: unknown;
+  /** Streamed text / reasoning of a chat span (subagent output shows up here as live progress). */
+  text: string;
+  reasoning: string;
+  /** Tool arguments (execute_tool spans), from `span-input`. */
+  input?: unknown;
   children: SpanNode[];
 }
 
@@ -100,6 +105,8 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
         name: e.name,
         start: e.t,
         end: null,
+        text: "",
+        reasoning: "",
         children: adopted,
       };
       if (!parentKnown) {
@@ -124,11 +131,21 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
       }));
       return { ...s, spans };
     }
+    case "span-input": {
+      if (!s.spans[e.id]) return s;
+      return { ...s, spans: updateSpan(s.spans, e.id, (n) => ({ ...n, input: e.input })) };
+    }
     case "text-delta":
-      // Only the top-level agent forwards text (subagents never emit text-delta), so spanId is intentionally ignored.
-      return { ...s, text: s.text + e.text };
-    case "reasoning-delta":
-      return { ...s, reasoning: s.reasoning + e.text };
+    case "reasoning-delta": {
+      // Every delta belongs to the chat span that produced it. Only chat spans of the root agent
+      // (parent = rootIds[0], i.e. the runId) are the answer; subagent output is progress only.
+      const node = s.spans[e.spanId];
+      if (!node) return s;
+      const field = e.type === "text-delta" ? "text" : "reasoning";
+      const spans = updateSpan(s.spans, e.spanId, (n) => ({ ...n, [field]: n[field] + e.text }));
+      const isAnswer = node.kind === "chat" && node.parentId !== undefined && node.parentId === s.rootIds[0];
+      return isAnswer ? { ...s, spans, [field]: s[field] + e.text } : { ...s, spans };
+    }
     case "citation":
       return { ...s, citations: [...s.citations, e.source] };
     case "chart":

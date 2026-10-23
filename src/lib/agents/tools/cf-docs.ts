@@ -70,6 +70,8 @@ const DOCS_CLIENT_KEY = Symbol("cf-docs-mcp-client");
 
 interface ClientHolder {
   current?: Promise<Client>;
+  /** Set by the scope's dispose. A holder disposed before use (scope.once after the run ended) is not reused. */
+  disposed?: boolean;
 }
 
 async function connectDocsClient(server: McpServerConfig): Promise<Client> {
@@ -121,9 +123,17 @@ function isRetryable(err: unknown, signal: AbortSignal): boolean {
 
 export async function searchDocs(ctx: RunContext, query: string): Promise<{ text: string; isError: boolean }> {
   const server = cfDocsServer(ctx);
-  const holder = ctx.scope?.once<ClientHolder>(DOCS_CLIENT_KEY, () => ({}), (h) => closeLater(h.current));
+  // An aborted run must not take (or re-create, after the scope was disposed) the shared holder, nor connect.
+  if (ctx.signal.aborted) throw abortError();
+  const scoped = ctx.scope?.once<ClientHolder>(DOCS_CLIENT_KEY, () => ({}), (h) => {
+    h.disposed = true;
+    closeLater(h.current);
+  });
 
   for (let attempt = 0; ; attempt++) {
+    // A disposed holder (scope.once after the run ended, or disposeAll while this call was retrying) is not
+    // reused: the call then owns its connection and closes it itself, like without a scope.
+    const holder = scoped && !scoped.disposed ? scoped : undefined;
     const connecting = holder ? (holder.current ??= connectDocsClient(server)) : connectDocsClient(server);
     const evict = () => {
       if (holder && holder.current === connecting) holder.current = undefined;

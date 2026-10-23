@@ -576,5 +576,13 @@
     "resetPrompt": "重設 prompt",
     "s3Note": "子查詢 FROM Contacts 曾經繞過，已調整 regex",
     "s4Note": "需 upstream 回傳 JSON；SSE 串流不會被 DLP 掃描"
+  },
+  "agents": {
+    "models": {
+      "glm-5.3-flash": "GLM 5.3 Flash",
+      "kimi-k2.6": "Kimi K2.6",
+      "kimi-k2.6-thinking": "Kimi K2.6（顯示思考過程）",
+      "glm-5.3": "GLM 5.3"
+    }
   }
 }

@@ -24,6 +24,7 @@ export type { AgentEnv };
 export const STREAM_IDLE_MS = 60_000;
 export const FIRST_PART_IDLE_MS = 150_000;
 const DETAIL_MAX_CHARS = 2000;
+const SPAN_INPUT_MAX_CHARS = 500;
 
 export interface RunContext {
   env: AgentEnv;
@@ -44,7 +45,8 @@ export interface RunContext {
 /**
  * Per-run resource registry. `once(key, create, dispose)` creates the resource on first use and returns the same
  * instance to every later caller (subagents get a spread copy of the RunContext, so the scope object is shared).
- * runAgent disposes everything in its `finally`, i.e. on success, error and abort.
+ * runAgent disposes everything in its `finally`, i.e. on success, error and abort. A `once()` that comes in after
+ * that (a straggling tool) still gets a value, but it is disposed immediately instead of being stored, so it can't leak.
  */
 export interface RunScope {
   once<T>(key: unknown, create: () => T, dispose: (value: T) => void | Promise<void>): T;
@@ -52,17 +54,27 @@ export interface RunScope {
 
 function createRunScope(): { scope: RunScope; disposeAll(): Promise<void> } {
   const entries = new Map<unknown, { value: unknown; dispose: (v: never) => void | Promise<void> }>();
+  let disposed = false;
   return {
     scope: {
       once<T>(key: unknown, create: () => T, dispose: (value: T) => void | Promise<void>): T {
         const hit = entries.get(key);
         if (hit) return hit.value as T;
         const value = create();
+        if (disposed) {
+          try {
+            void Promise.resolve(dispose(value)).catch(() => {});
+          } catch {
+            // best-effort close
+          }
+          return value;
+        }
         entries.set(key, { value, dispose: dispose as (v: never) => void | Promise<void> });
         return value;
       },
     },
     async disposeAll() {
+      disposed = true;
       const all = [...entries.values()];
       entries.clear();
       await Promise.allSettled(
@@ -162,6 +174,28 @@ function smallDetail(value: unknown, max = DETAIL_MAX_CHARS): unknown {
   return s.length > max ? `${s.slice(0, max)}…` : JSON.parse(s);
 }
 
+function clipString(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+/**
+ * Tool arguments for `span-input`: a JSON-safe copy (via smallDetail's JSON round-trip) with every string
+ * clipped to ≤ SPAN_INPUT_MAX_CHARS; if the whole thing is still large (huge arrays), its JSON text clipped instead.
+ */
+function spanInputValue(value: unknown): unknown {
+  const safe = smallDetail(value, Number.POSITIVE_INFINITY);
+  if (safe === undefined) return null;
+  const clip = (v: unknown): unknown => {
+    if (typeof v === "string") return clipString(v, SPAN_INPUT_MAX_CHARS);
+    if (Array.isArray(v)) return v.map(clip);
+    if (v !== null && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clip(x)]));
+    return v;
+  };
+  const clipped = clip(safe);
+  const json = JSON.stringify(clipped);
+  return json.length > DETAIL_MAX_CHARS ? clipString(json, SPAN_INPUT_MAX_CHARS) : clipped;
+}
+
 function telemetry(functionId: string, conversationId: string) {
   return {
     isEnabled: true,
@@ -178,14 +212,21 @@ type StreamPart = TextStreamPart<ToolSet>;
 /**
  * Wrap every tool's `execute` so its `execute_tool` span-start (id = toolCallId,
  * parent = `parentSpanId`, i.e. the calling agent's span — the same parent
- * pipeStepStream uses) is emitted *before* the tool runs. In ai@6 the tool
- * starts executing before its `tool-call` part reaches the fullStream consumer,
- * so without this, subagents started inside `execute` would be emitted before
- * their parent tool span. `started` is shared with pipeStepStream (opts
- * `startedToolSpans`), which then skips its own span-start and still emits the
- * single span-end on tool-result / tool-error.
+ * pipeStepStream uses) and its `span-input` are emitted *before* the tool runs.
+ * In ai@6 the tool starts executing before its `tool-call` part reaches the
+ * fullStream consumer, so without this, subagents started inside `execute` would
+ * be emitted before their parent tool span. `started` / `inputs` are shared with
+ * pipeStepStream (opts `startedToolSpans` / `inputToolSpans`), so whichever side
+ * comes first emits the span-start and the span-input, exactly once each;
+ * pipeStepStream still emits the single span-end on tool-result / tool-error.
  */
-function traceToolExecutions(tools: ToolSet, ctx: RunContext, parentSpanId: string, started: Set<string>): ToolSet {
+function traceToolExecutions(
+  tools: ToolSet,
+  ctx: RunContext,
+  parentSpanId: string,
+  started: Set<string>,
+  inputs: Set<string>,
+): ToolSet {
   const wrapped: ToolSet = {};
   for (const [name, t] of Object.entries(tools)) {
     const execute = t.execute as ((input: unknown, options: { toolCallId: string }) => unknown) | undefined;
@@ -203,6 +244,10 @@ function traceToolExecutions(tools: ToolSet, ctx: RunContext, parentSpanId: stri
           started.add(id);
           ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "execute_tool", name, t: ctx.now() });
         }
+        if (!inputs.has(id)) {
+          inputs.add(id);
+          ctx.emit({ type: "span-input", id, input: spanInputValue(input) });
+        }
         return execute.call(t, input, { ...options, toolCallId: id });
       },
     } as typeof t;
@@ -212,9 +257,13 @@ function traceToolExecutions(tools: ToolSet, ctx: RunContext, parentSpanId: stri
 
 /**
  * Consume an AI SDK v6 `fullStream`, emitting one `chat` span per step and one
- * `execute_tool` span per tool call (both children of `parentSpanId`). Tool spans
- * already started by `traceToolExecutions` (ids in `opts.startedToolSpans`) are
- * not started again.
+ * `execute_tool` span per tool call (both children of `parentSpanId`).
+ * A tool span starts as soon as the model begins writing its arguments
+ * (`tool-input-start`, whose `id` is the toolCallId), so the tool shows up live;
+ * its `span-input` follows on `tool-call` (arguments complete). Tool spans / inputs
+ * already emitted by `traceToolExecutions` (ids in `opts.startedToolSpans` /
+ * `opts.inputToolSpans`) are not emitted again. A started tool counts as open
+ * (idle timer suspended) until its span-end.
  * On abort / idle timeout / stream error, every span still open is closed with
  * `status: "error"` and `detail: { error }`, then the error is rethrown
  * (abort → an `AbortError`).
@@ -222,7 +271,13 @@ function traceToolExecutions(tools: ToolSet, ctx: RunContext, parentSpanId: stri
 export async function pipeStepStream(
   stream: AsyncIterable<StreamPart>,
   ctx: RunContext,
-  opts: { parentSpanId: string; modelLabel: string; forwardText: boolean; startedToolSpans?: Set<string> },
+  opts: {
+    parentSpanId: string;
+    modelLabel: string;
+    forwardText: boolean;
+    startedToolSpans?: Set<string>;
+    inputToolSpans?: Set<string>;
+  },
 ): Promise<{ text: string; firstTokenAt?: number; toolResults: ToolResultRecord[] }> {
   const { parentSpanId, modelLabel, forwardText } = opts;
   const iterator = stream[Symbol.asyncIterator]();
@@ -236,6 +291,7 @@ export async function pipeStepStream(
   // a tool is open (running) while started but not yet ended.
   const startedTools = opts.startedToolSpans ?? new Set<string>();
   const endedTools = new Set<string>();
+  const inputSent = opts.inputToolSpans ?? new Set<string>();
   const toolInputs = new Map<string, unknown>();
   const openToolIds = () => [...startedTools].filter((id) => !endedTools.has(id));
 
@@ -244,6 +300,12 @@ export async function pipeStepStream(
     if (startedTools.has(toolCallId)) return;
     startedTools.add(toolCallId);
     ctx.emit({ type: "span-start", id: toolCallId, parentId: parentSpanId, kind: "execute_tool", name: toolName, t: ctx.now() });
+  };
+  const emitInput = (rawToolCallId: string, input: unknown) => {
+    const id = toolSpanId(parentSpanId, rawToolCallId);
+    if (inputSent.has(id) || endedTools.has(id)) return;
+    inputSent.add(id);
+    ctx.emit({ type: "span-input", id, input: spanInputValue(input) });
   };
   const endTool = (toolCallId: string, status: "ok" | "error", detail: unknown) => {
     if (endedTools.has(toolCallId)) return;
@@ -277,9 +339,15 @@ export async function pipeStepStream(
         if (forwardText) ctx.emit({ type: part.type, spanId: chat?.id ?? parentSpanId, text: part.text });
         return;
       }
+      case "tool-input-start": {
+        // v6: `id` is the toolCallId of the upcoming tool-call (openai-compatible chat provider).
+        ensureToolStarted(part.id, part.toolName);
+        return;
+      }
       case "tool-call": {
         toolInputs.set(toolSpanId(parentSpanId, part.toolCallId), part.input);
         ensureToolStarted(part.toolCallId, part.toolName);
+        emitInput(part.toolCallId, part.input);
         return;
       }
       case "tool-result": {
@@ -402,7 +470,8 @@ function linkedAbortController(parent: AbortSignal): { controller: AbortControll
 
 /**
  * Run a subagent as a child `invoke_agent` span of `parentSpanId` (normally the
- * calling tool's toolCallId). Text is not forwarded to the client.
+ * calling tool's toolCallId). Its reasoning/text deltas are forwarded under its
+ * own chat span ids, as live progress (the reducer keeps them out of the answer).
  * The subagent runs on a child AbortSignal (linked to `ctx.signal`) that is also
  * aborted on its own failure (idle timeout, stream error) so its model request
  * and tools are cancelled without touching siblings.
@@ -418,6 +487,7 @@ export async function runSubagent<I>(
   const link = linkedAbortController(ctx.signal);
   const subCtx: RunContext = { ...ctx, signal: link.controller.signal };
   const startedToolSpans = new Set<string>();
+  const inputToolSpans = new Set<string>();
   ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "invoke_agent", name: def.functionId, t: ctx.now() });
   try {
     const model = AGENT_MODELS[ctx.modelKey ?? def.model];
@@ -425,7 +495,7 @@ export async function runSubagent<I>(
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
       system: def.system,
       prompt: def.prompt(input),
-      tools: traceToolExecutions(def.tools(subCtx), subCtx, id, startedToolSpans),
+      tools: traceToolExecutions(def.tools(subCtx), subCtx, id, startedToolSpans, inputToolSpans),
       stopWhen: stepCountIs(def.maxSteps),
       maxOutputTokens: model.maxTokens,
       abortSignal: subCtx.signal,
@@ -434,8 +504,9 @@ export async function runSubagent<I>(
     const { text } = await pipeStepStream(result.fullStream, subCtx, {
       parentSpanId: id,
       modelLabel: model.key,
-      forwardText: false,
+      forwardText: true,
       startedToolSpans,
+      inputToolSpans,
     });
     const detail = def.toDetail ? smallDetail(def.toDetail(text)) : { output: text.slice(0, DETAIL_MAX_CHARS) };
     ctx.emit({ type: "span-end", id, t: ctx.now(), status: "ok", detail });
@@ -490,7 +561,7 @@ export async function runAgent(
 
   // Per-run event wrapper:
   // - sums usage over every chat span (incl. subagents that use runCtx) and records
-  //   when the first visible delta reached the client;
+  //   when the first delta of the answer (a root-agent chat span) reached the client;
   // - keeps the span tree well-formed: a span-end first closes any still-open
   //   descendants (innermost first), duplicate/late span events are dropped, and
   //   nothing is emitted after run-end.
@@ -555,9 +626,15 @@ export async function runAgent(
         }
         break;
       }
+      case "span-input":
+        if (!open.has(e.id)) return;
+        break;
       case "text-delta":
       case "reasoning-delta":
-        if (firstVisibleAt === undefined) firstVisibleAt = ctx.now();
+        // subagent deltas are progress, not the answer's first token
+        if (firstVisibleAt === undefined && (e.spanId === runId || parents.get(e.spanId) === runId)) {
+          firstVisibleAt = ctx.now();
+        }
         break;
       case "run-end":
         ended = true;
@@ -568,6 +645,7 @@ export async function runAgent(
   const runScope = createRunScope();
   const runCtx: RunContext = { ...ctx, emit, signal: link.controller.signal, modelKey, scope: runScope.scope };
   const startedToolSpans = new Set<string>();
+  const inputToolSpans = new Set<string>();
 
   const t0 = ctx.now();
   emit({ type: "run-start", runId, agent: def.id, model: modelKey, t: t0 });
@@ -591,7 +669,7 @@ export async function runAgent(
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
       system: def.system(runCtx),
       messages,
-      tools: traceToolExecutions(def.tools(runCtx), runCtx, runId, startedToolSpans),
+      tools: traceToolExecutions(def.tools(runCtx), runCtx, runId, startedToolSpans, inputToolSpans),
       stopWhen: stepCountIs(def.maxSteps),
       maxOutputTokens: model.maxTokens,
       abortSignal: runCtx.signal,
@@ -602,6 +680,7 @@ export async function runAgent(
       modelLabel: model.key,
       forwardText: true,
       startedToolSpans,
+      inputToolSpans,
     });
     await def.after?.(runCtx, { text, rootSpanId: runId, toolResults });
     emit({ type: "span-end", id: runId, t: ctx.now(), status: "ok", detail: { output: text.slice(0, DETAIL_MAX_CHARS) } });

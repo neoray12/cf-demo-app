@@ -149,4 +149,46 @@ describe("searchDocs shared connection", () => {
     await expect(searchDocs({ ...ctx, signal: ac.signal }, "x")).rejects.toThrow("aborted");
     expect(sdk.state.calls).toHaveLength(0);
   });
+
+  it("a pre-aborted search opens no connection and does not touch the run scope", async () => {
+    let onceCalls = 0;
+    const base = makeCtx(true).ctx;
+    const scope = base.scope!;
+    const ac = new AbortController();
+    ac.abort();
+    const ctx = {
+      ...base,
+      signal: ac.signal,
+      scope: { once: (...args: Parameters<typeof scope.once>) => (onceCalls++, scope.once(...args)) },
+    } as RunContext;
+    await expect(searchDocs(ctx, "x")).rejects.toThrow("aborted");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sdk.state.connects).toBe(0);
+    expect(onceCalls).toBe(0);
+    // and the same without a run scope
+    await expect(searchDocs({ ...ctx, scope: undefined }, "x")).rejects.toThrow("aborted");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sdk.state.connects).toBe(0);
+  });
+
+  it("a holder disposed before its first connect closes that connection after use instead of leaking it", async () => {
+    // simulates scope.once() after disposeAll: the dispose callback runs immediately on the fresh holder
+    const ctx = {
+      env: { MCP_SERVER_URLS: "cf-docs=https://docs.mcp.cloudflare.com/mcp" },
+      emit: () => {},
+      signal: new AbortController().signal,
+      scope: {
+        once<T>(_key: unknown, create: () => T, dispose: (v: T) => void | Promise<void>): T {
+          const v = create();
+          void dispose(v);
+          return v;
+        },
+      },
+    } as unknown as RunContext;
+    const r = await searchDocs(ctx, "x");
+    expect(r.isError).toBe(false);
+    await new Promise((r2) => setTimeout(r2, 10));
+    expect(sdk.state.connects).toBe(1);
+    expect(sdk.state.closes).toBe(1);
+  });
 });

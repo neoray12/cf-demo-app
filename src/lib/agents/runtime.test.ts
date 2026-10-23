@@ -113,6 +113,7 @@ describe("pipeStepStream", () => {
       "reasoning-delta",
       "text-delta",
       "span-start",
+      "span-input",
       "span-end",
       "span-end",
       "span-start",
@@ -123,11 +124,12 @@ describe("pipeStepStream", () => {
     expect(events[1]).toEqual({ type: "reasoning-delta", spanId: "P:chat:0", text: "think" });
     expect(events[2]).toEqual({ type: "text-delta", spanId: "P:chat:0", text: "Hello" });
     expect(events[3]).toEqual({ type: "span-start", id: "P/c1", parentId: "P", kind: "execute_tool", name: "search_docs", t: 900 });
-    expect(events[4]).toMatchObject({ type: "span-end", id: "P/c1", t: 1000, status: "ok", detail: { input: { q: "x" }, output: { hits: 1 } } });
-    expect(events[5]).toMatchObject({ type: "span-end", id: "P:chat:0", t: 1100, status: "ok", ttftMs: 500, usage: { input: 120, output: 30 } });
-    expect(events[6]).toMatchObject({ type: "span-start", id: "P:chat:1", parentId: "P", kind: "chat", t: 1200 });
-    expect(events[7]).toEqual({ type: "text-delta", spanId: "P:chat:1", text: " world" });
-    expect(events[8]).toMatchObject({ type: "span-end", id: "P:chat:1", t: 1600, status: "ok", ttftMs: 300, usage: { input: 200, output: 10 } });
+    expect(events[4]).toEqual({ type: "span-input", id: "P/c1", input: { q: "x" } });
+    expect(events[5]).toMatchObject({ type: "span-end", id: "P/c1", t: 1000, status: "ok", detail: { input: { q: "x" }, output: { hits: 1 } } });
+    expect(events[6]).toMatchObject({ type: "span-end", id: "P:chat:0", t: 1100, status: "ok", ttftMs: 500, usage: { input: 120, output: 30 } });
+    expect(events[7]).toMatchObject({ type: "span-start", id: "P:chat:1", parentId: "P", kind: "chat", t: 1200 });
+    expect(events[8]).toEqual({ type: "text-delta", spanId: "P:chat:1", text: " world" });
+    expect(events[9]).toMatchObject({ type: "span-end", id: "P:chat:1", t: 1600, status: "ok", ttftMs: 300, usage: { input: 200, output: 10 } });
 
     expect(res.text).toBe("Hello world");
     expect(res.firstTokenAt).toBe(500);
@@ -286,6 +288,152 @@ describe("pipeStepStream with execute-started tool spans", () => {
   });
 });
 
+describe("pipeStepStream early tool spans (tool-input-start) and span-input", () => {
+  const startStep = (at: number) => ({ at, part: p({ type: "start-step", request: {}, warnings: [] }) });
+  const finishStep = (at: number) => ({
+    at,
+    part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "tool-calls" }),
+  });
+
+  it("starts the execute_tool span on tool-input-start, before tool-call; then one span-input and no second span-start", async () => {
+    const { ctx, events, clock } = makeCtx();
+    await pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 100, part: p({ type: "tool-input-start", id: "c1", toolName: "search_docs" }) },
+        { at: 150, part: p({ type: "tool-input-delta", id: "c1", delta: '{"query":' }) },
+        { at: 200, part: p({ type: "tool-input-delta", id: "c1", delta: '"kv"}' }) },
+        { at: 210, part: p({ type: "tool-input-end", id: "c1" }) },
+        { at: 220, part: p({ type: "tool-call", toolCallId: "c1", toolName: "search_docs", input: { query: "kv" } }) },
+        {
+          at: 900,
+          part: p({ type: "tool-result", toolCallId: "c1", toolName: "search_docs", input: { query: "kv" }, output: "ok" }),
+        },
+        finishStep(950),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    );
+    const forTool = events.filter((e) => ("id" in e ? e.id : undefined) === "P/c1");
+    expect(forTool).toEqual([
+      { type: "span-start", id: "P/c1", parentId: "P", kind: "execute_tool", name: "search_docs", t: 100 },
+      { type: "span-input", id: "P/c1", input: { query: "kv" } },
+      expect.objectContaining({ type: "span-end", id: "P/c1", t: 900, status: "ok" }),
+    ]);
+    // the span-start is emitted when tool-input-start arrives, i.e. before the tool-call part
+    expect(events.findIndex((e) => e.type === "span-start" && e.id === "P/c1")).toBe(1);
+  });
+
+  it("emits span-input only once when the execute wrapper already sent it", async () => {
+    const { ctx, events, clock } = makeCtx();
+    const started = new Set<string>(["P/c1"]);
+    const inputs = new Set<string>(["P/c1"]);
+    await pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 10, part: p({ type: "tool-call", toolCallId: "c1", toolName: "fan", input: { a: 1 } }) },
+        { at: 20, part: p({ type: "tool-result", toolCallId: "c1", toolName: "fan", input: { a: 1 }, output: 2 }) },
+        finishStep(30),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true, startedToolSpans: started, inputToolSpans: inputs },
+    );
+    expect(events.filter((e) => e.type === "span-input")).toHaveLength(0);
+    expect(events.filter((e) => e.type === "span-start" && e.id === "P/c1")).toHaveLength(0);
+  });
+
+  it("span-input is JSON-safe and truncates strings to at most 500 chars", async () => {
+    const { ctx, events, clock } = makeCtx();
+    const long = "x".repeat(2000);
+    await pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        {
+          at: 10,
+          part: p({
+            type: "tool-call",
+            toolCallId: "c1",
+            toolName: "t",
+            input: { query: long, nested: { list: [long, 1] }, skip: undefined, fn: () => 1 },
+          }),
+        },
+        { at: 20, part: p({ type: "tool-result", toolCallId: "c1", toolName: "t", input: {}, output: 1 }) },
+        finishStep(30),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    );
+    const ev = events.find((e) => e.type === "span-input") as Extract<TraceEvent, { type: "span-input" }>;
+    const input = ev.input as { query: string; nested: { list: [string, number] } };
+    expect(JSON.parse(JSON.stringify(ev.input))).toEqual(ev.input);
+    expect(Object.keys(input).sort()).toEqual(["nested", "query"]);
+    expect(input.query.length).toBeLessThanOrEqual(500);
+    expect(input.query.startsWith("xxx")).toBe(true);
+    expect(input.nested.list[0].length).toBeLessThanOrEqual(500);
+    expect(input.nested.list[1]).toBe(1);
+  });
+
+  it("a tool started by tool-input-start gets exactly one span-end when the run aborts mid-arguments", async () => {
+    const { ctx, events, clock, ac } = makeCtx();
+    const promise = pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 5, part: p({ type: "tool-input-start", id: "c1", toolName: "research" }) },
+        { at: 6, part: p({ type: "tool-input-delta", id: "c1", delta: '{"questions":["a' }) },
+        { at: 7, run: () => ac.abort() },
+        { hang: true },
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    );
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(events.filter((e) => e.type === "span-end" && e.id === "P/c1")).toEqual([
+      expect.objectContaining({ status: "error", detail: { error: "aborted" } }),
+    ]);
+    expect(events.filter((e) => e.type === "span-input")).toHaveLength(0);
+  });
+
+  it("a tool started by tool-input-start is closed once if the stream ends without a tool-call", async () => {
+    const { ctx, events, clock } = makeCtx();
+    await pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 5, part: p({ type: "tool-input-start", id: "c1", toolName: "research" }) },
+        finishStep(9),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    );
+    expect(events.filter((e) => e.type === "span-end" && e.id === "P/c1")).toEqual([
+      expect.objectContaining({ status: "error", detail: { error: "no tool result" } }),
+    ]);
+  });
+
+  it("idle stays suspended while a tool's arguments are streaming (tool-input-start → 70 s → tool-call)", async () => {
+    vi.useFakeTimers();
+    const { ctx, events, clock } = makeCtx();
+    const settled = pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 0, part: p({ type: "text-delta", id: "t", text: "a" }) },
+        { at: 0, part: p({ type: "tool-input-start", id: "c1", toolName: "fan" }) },
+        { sleep: 70_000 },
+        { at: 0, part: p({ type: "tool-call", toolCallId: "c1", toolName: "fan", input: {} }) },
+        { at: 0, part: p({ type: "tool-result", toolCallId: "c1", toolName: "fan", input: {}, output: "ok" }) },
+        finishStep(0),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    ).then(
+      () => true,
+      () => false,
+    );
+    await vi.advanceTimersByTimeAsync(70_000);
+    expect(await settled).toBe(true);
+    expect(events.filter((e) => e.type === "span-end" && e.id === "P/c1")).toEqual([expect.objectContaining({ status: "ok" })]);
+  });
+});
+
 describe("pipeStepStream idle windows", () => {
   const run = (steps: Step[]) => {
     const { ctx, events, clock } = makeCtx();
@@ -430,7 +578,7 @@ describe("runSubagent", () => {
     prompt: (i) => `Research: ${i.q}`,
   };
 
-  it("emits a nested invoke_agent span and does not forward text", async () => {
+  it("emits a nested invoke_agent span and forwards its text under its own chat span id", async () => {
     const { ctx, events, clock } = makeCtx();
     const { ai, calls } = fakeAI(
       [
@@ -451,7 +599,9 @@ describe("runSubagent", () => {
     expect(events[0]).toEqual({ type: "span-start", id, parentId: "call-1", kind: "invoke_agent", name: "docs-researcher", t: 90 });
     expect(events[1]).toMatchObject({ type: "span-start", id: `${id}:chat:0`, parentId: id, kind: "chat" });
     expect(events.at(-1)).toEqual({ type: "span-end", id, t: 200, status: "ok", detail: { output: "finding" } });
-    expect(events.some((e) => e.type === "text-delta")).toBe(false);
+    expect(events.filter((e) => e.type === "text-delta")).toEqual([
+      { type: "text-delta", spanId: `${id}:chat:0`, text: "finding" },
+    ]);
 
     const args = calls[0]!;
     expect(args.prompt).toBe("Research: R2");
@@ -572,6 +722,8 @@ describe("runAgent", () => {
     const subStream = (c: { t: number }) =>
       fakeStream(c, [
         { at: 20, part: p({ type: "start-step", request: {}, warnings: [] }) },
+        // subagent text is streamed as progress but is not the answer's first token
+        { at: 25, part: p({ type: "text-delta", id: "t", text: "sub" }) },
         { at: 30, part: p({ type: "finish-step", usage: { inputTokens: 1000, outputTokens: 1 }, finishReason: "stop" }) },
       ]);
     const { ai } = fakeAI(

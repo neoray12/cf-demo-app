@@ -32,6 +32,8 @@ export const AGENT_MODELS: Record<ModelKey, AgentModel> = {
     slow: false,
     ttftHint: "0.7–8.8s",
   },
+  // Label 「Kimi K2.6（顯示思考過程）」/ "Kimi K2.6 (show thinking)": the opt-in model that streams its reasoning.
+  // Agents keep defaulting to the no-think "kimi-k2.6" (R20).
   "kimi-k2.6-thinking": {
     key: "kimi-k2.6-thinking",
     workersAiId: "@cf/moonshotai/kimi-k2.6",

@@ -10,6 +10,12 @@ function run(events: TraceEvent[]): RunTrace {
   return s as RunTrace;
 }
 
+/** Root agent span (id = runId) plus its first chat span: deltas on "r1:chat:0" are the answer. */
+const rootChat: TraceEvent[] = [
+  { type: "span-start", id: "r1", kind: "invoke_agent", name: "main", t: 0 },
+  { type: "span-start", id: "r1:chat:0", parentId: "r1", kind: "chat", name: "m", t: 1 },
+];
+
 const runEnd = (over: Partial<Extract<TraceEvent, { type: "run-end" }>> = {}): TraceEvent => ({
   type: "run-end",
   t: 3800,
@@ -140,25 +146,88 @@ describe("reduceTrace", () => {
     expect(waterfallRows(s).map((r) => r.node.id)).toEqual(["a", "early", "late"]);
   });
 
-  it("accumulates text and reasoning, collects citations and charts", () => {
+  it("accumulates root-agent text and reasoning, collects citations and charts", () => {
     const chart = { kind: "bar" as const, title: "t", unit: "%", period: "7d", data: [{ label: "a", value: 1 }], sourceUrl: "u" };
     const s = run([
       runStart,
-      { type: "text-delta", spanId: "a", text: "Hel" },
-      { type: "text-delta", spanId: "a", text: "lo" },
-      { type: "reasoning-delta", spanId: "a", text: "th" },
-      { type: "reasoning-delta", spanId: "a", text: "ink" },
+      ...rootChat,
+      { type: "text-delta", spanId: "r1:chat:0", text: "Hel" },
+      { type: "text-delta", spanId: "r1:chat:0", text: "lo" },
+      { type: "reasoning-delta", spanId: "r1:chat:0", text: "th" },
+      { type: "reasoning-delta", spanId: "r1:chat:0", text: "ink" },
       { type: "citation", spanId: "a", source: { title: "T", snippet: "S" } },
       { type: "chart", spanId: "a", chart },
     ]);
     expect(s.text).toBe("Hello");
     expect(s.reasoning).toBe("think");
+    // the chat span keeps its own copy (and the copy nested in the parent is the same node)
+    expect(s.spans["r1:chat:0"]).toMatchObject({ text: "Hello", reasoning: "think" });
+    expect(s.spans.r1!.children[0]).toBe(s.spans["r1:chat:0"]);
     expect(s.citations).toEqual([{ title: "T", snippet: "S" }]);
     expect(s.charts).toEqual([chart]);
   });
 
+  it("new spans start with empty text and reasoning", () => {
+    const s = run([runStart, ...rootChat]);
+    expect(s.spans.r1).toMatchObject({ text: "", reasoning: "" });
+    expect(s.spans["r1:chat:0"]).toMatchObject({ text: "", reasoning: "" });
+    expect(s.spans.r1!.input).toBeUndefined();
+  });
+
+  it("subagent chat deltas go only to that span, never to the run answer", () => {
+    const s = run([
+      runStart,
+      ...rootChat,
+      { type: "span-start", id: "r1/c1", parentId: "r1", kind: "execute_tool", name: "research", t: 2 },
+      { type: "span-start", id: "r1/c1:sub:0", parentId: "r1/c1", kind: "invoke_agent", name: "sub", t: 3 },
+      { type: "span-start", id: "r1/c1:sub:0:chat:0", parentId: "r1/c1:sub:0", kind: "chat", name: "m", t: 4 },
+      { type: "reasoning-delta", spanId: "r1/c1:sub:0:chat:0", text: "sub-think" },
+      { type: "text-delta", spanId: "r1/c1:sub:0:chat:0", text: "sub-" },
+      { type: "text-delta", spanId: "r1/c1:sub:0:chat:0", text: "out" },
+      { type: "text-delta", spanId: "r1:chat:0", text: "answer" },
+    ]);
+    expect(s.text).toBe("answer");
+    expect(s.reasoning).toBe("");
+    expect(s.spans["r1/c1:sub:0:chat:0"]).toMatchObject({ text: "sub-out", reasoning: "sub-think" });
+    // nested copies are refreshed all the way up
+    expect(s.spans.r1!.children.find((c) => c.id === "r1/c1")!.children[0]!.children[0]).toBe(
+      s.spans["r1/c1:sub:0:chat:0"],
+    );
+  });
+
+  it("emptyAnswer only looks at the root agent's text", () => {
+    const s = run([
+      runStart,
+      ...rootChat,
+      { type: "span-start", id: "sub", parentId: "r1", kind: "invoke_agent", name: "sub", t: 3 },
+      { type: "span-start", id: "sub:chat:0", parentId: "sub", kind: "chat", name: "m", t: 4 },
+      { type: "text-delta", spanId: "sub:chat:0", text: "only the subagent spoke" },
+      runEnd(),
+    ]);
+    expect(s.text).toBe("");
+    expect(s.emptyAnswer).toBe(true);
+  });
+
+  it("text-delta / reasoning-delta for an unknown span id are ignored (same state)", () => {
+    const s1 = run([runStart, ...rootChat]);
+    expect(reduceTrace(s1, { type: "text-delta", spanId: "ghost", text: "x" })).toBe(s1);
+    expect(reduceTrace(s1, { type: "reasoning-delta", spanId: "ghost", text: "x" })).toBe(s1);
+  });
+
+  it("span-input sets node.input; unknown id returns the same state", () => {
+    const s1 = run([
+      runStart,
+      ...rootChat,
+      { type: "span-start", id: "r1/c1", parentId: "r1", kind: "execute_tool", name: "search_docs", t: 2 },
+      { type: "span-input", id: "r1/c1", input: { query: "kv" } },
+    ]);
+    expect(s1.spans["r1/c1"]!.input).toEqual({ query: "kv" });
+    expect(s1.spans.r1!.children.find((c) => c.id === "r1/c1")).toBe(s1.spans["r1/c1"]);
+    expect(reduceTrace(s1, { type: "span-input", id: "nope", input: 1 })).toBe(s1);
+  });
+
   it("run-end records metrics and status", () => {
-    const s = run([runStart, { type: "text-delta", spanId: "a", text: "x" }, runEnd()]);
+    const s = run([runStart, ...rootChat, { type: "text-delta", spanId: "r1:chat:0", text: "x" }, runEnd()]);
     expect(s.ttftMs).toBe(812);
     expect(s.totalMs).toBe(3800);
     expect(s.usage).toEqual({ input: 10, output: 5 });
@@ -231,7 +300,7 @@ describe("reduceTrace", () => {
   });
 
   it("ignores unknown event types without touching state", () => {
-    const s1 = run([runStart, { type: "text-delta", spanId: "a", text: "x" }]);
+    const s1 = run([runStart, ...rootChat, { type: "text-delta", spanId: "r1:chat:0", text: "x" }]);
     const future = { type: "future-event", foo: 1 } as unknown as TraceEvent;
     expect(reduceTrace(s1, future)).toBe(s1);
   });

@@ -14,6 +14,9 @@ export type TraceEvent =
       ttftMs?: number;
       detail?: unknown;
     }
+  /** Tool arguments for an execute_tool span (once per span; JSON-safe, strings truncated to ≤ 500 chars). */
+  | { type: "span-input"; id: string; input: unknown }
+  /** Deltas carry the chat span that produced them: root-agent chat spans are the answer, others are progress. */
   | { type: "reasoning-delta"; spanId: string; text: string }
   | { type: "text-delta"; spanId: string; text: string }
   | {
