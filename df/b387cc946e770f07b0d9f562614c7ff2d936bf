@@ -1,0 +1,51 @@
+src/app/components/agents/agent-message.tsx
+  s_3a8326f10dc640::t_f665d9a9ccd1c2 5-6,10,13,75-130,153-163,172-179,182-183,201-203
+src/i18n/agents.en.json
+  s_3a8326f10dc640::t_a04e5e1aba79a2 173-229,231-238
+src/i18n/agents.zh-TW.json
+  s_3a8326f10dc640::t_0b1b368f59b208 173-229,231-238
+src/lib/agents/tools/radar.ts
+  s_3a8326f10dc640::t_8513551936d548 685-687
+src/lib/agents/trace-events.ts
+  s_3a8326f10dc640::t_b5a735ba1f7312 35-36
+src/lib/agents/trace-tree.test.ts
+  s_3a8326f10dc640::t_325af0c78a65b8 167
+src/lib/agents/trace-tree.ts
+  s_3a8326f10dc640::t_2ddd835949abd5 32-33,153
+src/app/components/agents/kb-workspace.tsx
+  s_f5ddd202b8a409::t_2482df0eab16d0 1-625
+src/app/components/agents/radar-chart.tsx
+  s_f5ddd202b8a409::t_d8b58bd2f5fe88 1-162
+src/app/pages/agent-chat.tsx
+  s_f5ddd202b8a409::t_4bf39d3d236cc6 17,45-47,79-84,164-172
+src/lib/agents/tools/radar.test.ts
+  s_f5ddd202b8a409::t_a3fcc755193ffc 379-380,387-394
+src/lib/agents/ui-helpers.test.ts
+  s_f5ddd202b8a409::t_85b23a697deabf 1-163
+src/lib/agents/ui-helpers.ts
+  s_f5ddd202b8a409::t_c96d52a5629deb 1-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "dfb387cc946e770f07b0d9f562614c7ff2d936bf",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_f5ddd202b8a409": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae7051b212d9b1b7c",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
