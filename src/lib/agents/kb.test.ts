@@ -61,7 +61,7 @@ describe("kbSearch", () => {
         success: true,
         result: {
           chunks: [
-            { score: 0.8, text: "x".repeat(900), item: { key: "default/a.md" } },
+            { score: 0.8, text: "x".repeat(2000), item: { key: "default/a.md" } },
             { score: 0.2, text: "low", item: { key: "default/b.md" } },
           ],
         },
@@ -73,7 +73,7 @@ describe("kbSearch", () => {
     );
     expect(out.results).toHaveLength(1);
     expect(out.results[0]).toMatchObject({ filename: "default/a.md", score: 0.8, sourceUrl: null });
-    expect(out.results[0]!.snippet).toHaveLength(500);
+    expect(out.results[0]!.snippet).toHaveLength(1500);
     expect(out.topScore).toBe(0.8);
   });
 
@@ -145,6 +145,11 @@ describe("knowledge-base agent", () => {
     expect(groundingChecker.model).toBe("kimi-k2.6");
     expect(groundingChecker.maxSteps).toBe(1);
     expect(groundingChecker.tools(ctxBase)).toEqual({});
+  });
+
+  it("groundingChecker tells the checker to ignore planning/meta sentences", () => {
+    expect(groundingChecker.system).toContain("計畫");
+    expect(groundingChecker.system).toContain("我先查詢");
   });
 
   it("groundingChecker.toDetail parses JSON and flags parse errors", () => {

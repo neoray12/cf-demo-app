@@ -6,7 +6,8 @@ import type { AgentEnv } from "./env";
 const API_BASE = "https://api.cloudflare.com/client/v4/accounts";
 const WORKSPACE_RE = /^(default|ws-[a-z0-9]{8})$/;
 const MIN_SCORE = 0.3;
-const SNIPPET_MAX = 500;
+// Each seed doc is one chunk of up to ~1.5k chars; a shorter snippet cut off facts that sit late in the document.
+const SNIPPET_MAX = 1500;
 const MAX_RESULTS_CAP = 10;
 const SEARCH_TIMEOUT_MS = 20_000;
 const API_TIMEOUT_MS = 15_000;
