@@ -1,0 +1,41 @@
+src/i18n/agents.en.json
+  s_3a8326f10dc640::t_8648363b01e254 25-27,88-92
+src/i18n/agents.zh-TW.json
+  s_3a8326f10dc640::t_2185f779185acd 25-27,88-92
+src/app/components/agents/trace-panel.tsx
+  s_879fd140c4db7c::t_19f74593c5efb2 177-194,239
+src/lib/agents/trace-events.ts
+  s_879fd140c4db7c::t_2cb7123d59f7de 6-14
+src/lib/agents/trace-tree.test.ts
+  s_879fd140c4db7c::t_b33ddfc9f90023 30-35
+src/lib/agents/trace-tree.ts
+  s_879fd140c4db7c::t_e8dc4f8357c4ff 27-28,90-93
+src/lib/agents/tracing.test.ts
+  s_879fd140c4db7c::t_024b5880455683 1-23
+src/lib/agents/tracing.ts
+  s_879fd140c4db7c::t_70cf1a8a4b6e89 30-42,48-49,53,57-60,64-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d8c0c283ad45535c7436769a48499a18ba188634",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_879fd140c4db7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad674571da1f307fe",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
