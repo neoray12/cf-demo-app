@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-10-23-agents-tracing-demo-design.md
+  s_3a8326f10dc640::t_cdd8f0824a38b6 1-317
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "07ccb4301578b3a81cff134108512e7a3d464256",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
