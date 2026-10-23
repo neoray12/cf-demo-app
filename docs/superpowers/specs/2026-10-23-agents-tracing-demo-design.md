@@ -87,10 +87,20 @@
 | `email/security/summary/malicious` | 0.5 s | 惡意郵件 7.7%（全球） |
 | `ranking/domain/{domain}` | 0.5–0.7 s | 例：`cloudflare.com` 第 4 名；小網域只回 bucket（如 top 50,000） |
 
+**`location` 的語意（依 [Radar glossary](https://developers.cloudflare.com/radar/glossary/) 與實測確認）**——上表的「`location=TW`」並不都代表「台灣被攻擊」：
+
+| 端點 | `location=TW` 的意思 | 工具回傳的 `scope` 標籤 |
+|------|---------------------|-------------------------|
+| `attacks/layer7/summary/*`、`attacks/layer7/timeseries` | 攻擊**來源**是台灣（從台灣發出、被 Cloudflare 擋下的請求） | 「源自台灣的應用層攻擊」 |
+| `attacks/layer7/top/locations/origin` | 攻擊**台灣**的請求從哪些國家來（實測：美 22.6%、中 5.8%、新加坡 5.8%） | 「攻擊台灣的來源國家」 |
+| `attacks/layer7/top/locations/target` | 從台灣發出的攻擊打向哪些國家（實測：美 52.4%） | 「源自台灣的攻擊目標國家」 |
+| `attacks/layer3/*` | 在**台灣的資料中心**擋下的網路層攻擊 | 「在台灣資料中心緩解的網路層攻擊」 |
+| `attacks/*/top/industry` | 產業 = **被攻擊的客戶**所屬產業；加 `location` 後語意隨該層而定 → 工具一律不帶 `location`，只回全球排名 | 「全球最常被攻擊的產業」 |
+
 **陷阱（必須在工具層防範）**：
-1. `attacks/layer7/summary/...?industry=Banking` **會被靜默忽略**，回傳的是全台數字 → 不能宣稱「台灣金融業被攻擊 X%」。產業只能用 `top/industry` 的排名回答。
+1. `attacks/layer7/summary/...?industry=Banking` **會被靜默忽略** → 工具不提供 industry 參數，不能宣稱「台灣金融業被攻擊 X%」。
 2. 所有數字是**占比（%）**或**正規化值**，不是絕對次數。
-3. `location` 在不同端點代表「來源」或「目標」的語意不同（例：`top/attacks?location=TW` 回傳的是「從台灣發出」的攻擊）→ 工具包裝層要用明確的參數名稱（`targetLocation` / `originLocation`），Spike 時逐一確認。
+3. `location` 語意依上表；每個工具回傳都帶 `scope` 文字，system prompt 要求模型照 `scope` 描述，不可改寫成「台灣被攻擊」。
 
 ## 4. 三個 Agent
 
@@ -156,7 +166,7 @@ invoke_agent docs-agent
 
 | 分析師 subagent | 工具 | 對應端點 |
 |-----------------|------|----------|
-| `attack-analyst` | `l7_attack_breakdown(dimension: mitigation_product \| http_method, compareLastWeek)`、`l7_top_industries()`、`l7_top_origins()`、`l3_attack_vectors(compareLastWeek)`、`attack_trend(layer, range)` | `attacks/layer7/*`、`attacks/layer3/*` |
+| `attack-analyst` | `attackers_of(location, compareLastWeek)`、`attack_targets_from(location)`、`l7_attacks_from(location, dimension: mitigation_product \| http_method, compareLastWeek)`、`l3_attacks_mitigated_in(location, compareLastWeek)`、`top_attacked_industries()`、`l7_attack_trend_from(location)` | `attacks/layer7/*`、`attacks/layer3/*`（語意見 3.4） |
 | `network-analyst` | `outages(recentOnly)`、`traffic_anomalies()`、`bgp_hijacks()`、`internet_quality()` | `annotations/outages`、`traffic_anomalies`、`bgp/hijacks/events`、`quality/speed/summary` |
 | `bot-analyst` | `bot_vs_human()`、`ai_crawlers()`、`email_threats()`、`domain_rank(domain)` | `http/summary/bot_class`、`ai/bots/*`、`email/security/*`、`ranking/domain/*` |
 
@@ -180,7 +190,7 @@ invoke_agent threat-intel-agent
 
 **畫面**：工具結果在聊天中以小圖表呈現（沿用已安裝的 `recharts`）——占比 → 橫條圖、時序 → 折線圖；每張圖下方附 Radar 原始頁面連結（`https://radar.cloudflare.com/{country}`）。
 
-**建議提示詞**：「台灣這週的網路攻擊狀況如何？跟上週比？」「最近有沒有影響台灣的斷網或 BGP 劫持事件？」「台灣的流量有多少是機器人？哪些 AI 爬蟲最活躍？」「哪些產業在台灣最常被攻擊？零售業該注意什麼？」「幫我看 example.com.tw 的全球排名」
+**建議提示詞**：「誰在攻擊台灣？跟上週比有什麼變化？」「最近有沒有影響台灣的斷網或 BGP 劫持事件？」「台灣的流量有多少是機器人？哪些 AI 爬蟲最活躍？」「哪些產業在台灣最常被攻擊？零售業該注意什麼？」「幫我看 example.com.tw 的全球排名」
 
 **模型**：orchestrator Kimi K2.6（no-think）；分析師 GLM-5.3-flash。
 
@@ -306,7 +316,7 @@ payload：`storeMessages: true, storeTools: true`。⚠️ Agent 1 客戶上傳�
 2. production 上 Agents 分頁：agent / subagent 巢狀、並行 subagent 的呈現、payload replay。
 3. `@ai-sdk/openai` 經 Gateway 帶 `reasoning_effort`（`providerOptions` 或自訂 body）。
 4. AI Search 新文件從上傳到可查詢要多久（決定「會議中現場上傳」是否可行；太久就以「會前準備工作區」為主）。
-5. Radar 各端點 `location` 是來源還是目標，逐一確認後寫進工具說明。
+5. ~~Radar 各端點 `location` 語意~~ → 已確認，見 3.4。
 
 > Agents 分頁只能在 **production**（git push 部署後）驗證；本地只能驗證畫面 waterfall。依 AGENTS.md，push 需你明確同意。
 
