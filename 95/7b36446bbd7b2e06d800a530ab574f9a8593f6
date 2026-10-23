@@ -1,0 +1,25 @@
+src/lib/agents/env.ts
+  s_3a8326f10dc640::t_2d5bafcc28ac4c 1-12
+src/lib/agents/gateway.test.ts
+  s_3a8326f10dc640::t_6cd622db8993fa 1-28
+src/lib/agents/gateway.ts
+  s_3a8326f10dc640::t_58119b1e1e3361 1-50
+src/lib/agents/models.ts
+  s_3a8326f10dc640::t_a5daa693683ff1 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "957b36446bbd7b2e06d800a530ab574f9a8593f6",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
