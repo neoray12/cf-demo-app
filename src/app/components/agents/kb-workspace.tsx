@@ -202,7 +202,8 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = undefined;
-        void tick().then(schedule);
+        // finally: a rejected round must not stop polling (the catch only keeps it from being an unhandled rejection).
+        void tick().finally(schedule).catch(() => {});
       }, statusPollDelay(round++));
     };
 
@@ -241,7 +242,7 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
       }
     };
 
-    void tick().then(schedule);
+    void tick().finally(schedule).catch(() => {});
     const onVisible = () => {
       if (document.visibilityState === "visible") void tick();
     };

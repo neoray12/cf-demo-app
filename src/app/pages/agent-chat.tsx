@@ -13,6 +13,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { Textarea } from "@/components/ui/textarea";
 import { AGENTS_DASHBOARD_URL, type AgentCatalogEntry } from "@/lib/agents/catalog";
 import { AGENT_MODELS, type ModelKey } from "@/lib/agents/models";
+import { MAX_MESSAGE_CHARS } from "@/lib/agents/request";
 import { AgentMessage } from "@/app/components/agents/agent-message";
 import { KbWorkspace } from "@/app/components/agents/kb-workspace";
 import { TracePanel } from "@/app/components/agents/trace-panel";
@@ -239,6 +240,7 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
                 placeholder={t("agents.chat.placeholder")}
+                maxLength={MAX_MESSAGE_CHARS}
                 rows={1}
                 className="max-h-[200px] min-h-[52px] resize-none border-0 bg-transparent px-4 pb-12 pt-3.5 shadow-none focus-visible:ring-0 md:px-5 dark:bg-transparent"
               />

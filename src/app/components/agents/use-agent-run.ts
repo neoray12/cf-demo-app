@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentId } from "@/lib/agents/ids";
 import type { ModelKey } from "@/lib/agents/models";
+import { MAX_MESSAGE_CHARS, MAX_MESSAGES, MAX_TOTAL_CHARS } from "@/lib/agents/request";
 import { createNdjsonParser, type TraceEvent } from "@/lib/agents/trace-events";
 import { reduceTrace, type RunTrace } from "@/lib/agents/trace-tree";
 import { historyAnswer, stripCitationMarkers } from "./trace-utils";
@@ -67,14 +68,56 @@ export function canRetry(turn: AgentTurn): boolean {
  * new one. Only each turn's final step is sent (not the plan sentence), without `[n]` citation markers: the next
  * turn numbers its sources from 1 again.
  */
-export function buildHistory(turns: AgentTurn[]): Array<{ role: "user" | "assistant"; content: string }> {
-  const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+export function buildHistory(turns: AgentTurn[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
   for (const t of turns) {
     const answer = t.trace?.status === "ok" ? stripCitationMarkers(historyAnswer(t.trace)).trim() : "";
     if (!answer) continue;
     messages.push({ role: "user", content: t.user }, { role: "assistant", content: answer });
   }
   return messages;
+}
+
+type ChatMessage = { role: "user" | "assistant"; content: string };
+
+/** History pairs kept per request: 9 pairs + the new question = 19 messages, under the server's MAX_MESSAGES (20). */
+export const HISTORY_MAX_PAIRS = Math.floor((MAX_MESSAGES - 1) / 2);
+/** Each earlier answer is clipped to this many characters (the server allows MAX_MESSAGE_CHARS per message). */
+export const HISTORY_ANSWER_CHARS = 6000;
+
+/** Clip to at most `max` UTF-16 units without leaving a lone high surrogate at the cut; a clipped text ends in "…". */
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let cut = max - 1;
+  const code = text.charCodeAt(cut - 1);
+  if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  return `${text.slice(0, cut)}…`;
+}
+
+/**
+ * The `messages` body for the next request, kept inside the caps that `checkAgentRequest` (src/lib/agents/request.ts)
+ * enforces — without this a long conversation turns every later request into a permanent 400. Keeps the most recent
+ * HISTORY_MAX_PAIRS user/assistant pairs, clips each answer to HISTORY_ANSWER_CHARS and each question to
+ * MAX_MESSAGE_CHARS, then drops the oldest pairs until the total (new question included) is ≤ MAX_TOTAL_CHARS.
+ */
+export function buildRequestMessages(turns: AgentTurn[], question: string): ChatMessage[] {
+  const history = buildHistory(turns);
+  const pairs: Array<[ChatMessage, ChatMessage]> = [];
+  for (let i = 0; i + 1 < history.length; i += 2) {
+    const [u, a] = [history[i]!, history[i + 1]!];
+    pairs.push([
+      { role: "user", content: clip(u.content, MAX_MESSAGE_CHARS) },
+      { role: "assistant", content: clip(a.content, HISTORY_ANSWER_CHARS) },
+    ]);
+  }
+  const kept = pairs.slice(-HISTORY_MAX_PAIRS);
+  const last: ChatMessage = { role: "user", content: clip(question, MAX_MESSAGE_CHARS) };
+  let total = last.content.length + kept.reduce((n, [u, a]) => n + u.content.length + a.content.length, 0);
+  while (kept.length > 0 && total > MAX_TOTAL_CHARS) {
+    const [u, a] = kept.shift()!;
+    total -= u.content.length + a.content.length;
+  }
+  return [...kept.flat(), last];
 }
 
 function newId(): string {
@@ -132,8 +175,7 @@ export function useAgentRun(agentId: AgentId) {
       const question = text.trim();
       if (!question || runningRef.current) return;
 
-      const messages = buildHistory(turnsRef.current);
-      messages.push({ role: "user", content: question });
+      const messages = buildRequestMessages(turnsRef.current, question);
 
       const id = newId();
       const sentAt = performance.now();

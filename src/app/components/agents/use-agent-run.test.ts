@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { TraceEvent } from "@/lib/agents/trace-events";
 import { reduceTrace, type RunTrace } from "@/lib/agents/trace-tree";
 import { isRetrySpan, stripCitationMarkers, subagentOrdinal } from "./trace-utils";
-import { buildHistory, canRetry, type AgentTurn } from "./use-agent-run";
+import { checkAgentRequest, MAX_MESSAGE_CHARS, MAX_MESSAGES, MAX_TOTAL_CHARS } from "@/lib/agents/request";
+import {
+  buildHistory,
+  buildRequestMessages,
+  canRetry,
+  HISTORY_ANSWER_CHARS,
+  HISTORY_MAX_PAIRS,
+  type AgentTurn,
+} from "./use-agent-run";
 
 function trace(steps: string[], status: "ok" | "error" | "aborted"): RunTrace {
   const events: TraceEvent[] = [
@@ -56,6 +64,51 @@ describe("buildHistory", () => {
 
   it("skips an ok turn whose answer is only citation markers", () => {
     expect(buildHistory([turn({ trace: trace(["[1][2]"], "ok") })])).toEqual([]);
+  });
+});
+
+describe("buildRequestMessages", () => {
+  const longTurns = (n: number, userChars: number, answerChars: number) =>
+    Array.from({ length: n }, (_, i) =>
+      turn({ id: `t${i}`, user: `Q${i}:`.padEnd(userChars, "問"), trace: trace([`A${i}:`.padEnd(answerChars, "答")], "ok") }),
+    );
+
+  it("keeps 12 long turns inside the server caps (checkAgentRequest accepts the body)", () => {
+    const question = "下一個問題".padEnd(MAX_MESSAGE_CHARS, "？");
+    const messages = buildRequestMessages(longTurns(12, 9000, 12_000), question);
+    expect(checkAgentRequest({ messages, conversationId: "conv-1" }).ok).toBe(true);
+    expect(messages.length).toBeLessThanOrEqual(MAX_MESSAGES);
+    expect(messages.reduce((n, m) => n + m.content.length, 0)).toBeLessThanOrEqual(MAX_TOTAL_CHARS);
+    for (const m of messages) {
+      expect(m.content.length).toBeLessThanOrEqual(m.role === "assistant" ? HISTORY_ANSWER_CHARS : MAX_MESSAGE_CHARS);
+    }
+    expect(messages.at(-1)).toEqual({ role: "user", content: question });
+    // The newest pairs survive, the oldest are dropped.
+    expect(messages.at(-2)?.content.startsWith("A11:")).toBe(true);
+    expect(messages.some((m) => m.content.startsWith("Q0:"))).toBe(false);
+  });
+
+  it("keeps at most the most recent HISTORY_MAX_PAIRS pairs of short turns, oldest first", () => {
+    const messages = buildRequestMessages(longTurns(12, 10, 10), "new");
+    expect(checkAgentRequest({ messages, conversationId: "c" }).ok).toBe(true);
+    expect(messages).toHaveLength(HISTORY_MAX_PAIRS * 2 + 1);
+    expect(messages[0]?.content.startsWith(`Q${12 - HISTORY_MAX_PAIRS}:`)).toBe(true);
+    expect(messages.map((m) => m.role)).toEqual([...Array(HISTORY_MAX_PAIRS).fill(["user", "assistant"]).flat(), "user"]);
+  });
+
+  it("clips an over-long new question and sends it alone when nothing else fits", () => {
+    const messages = buildRequestMessages([], "x".repeat(MAX_MESSAGE_CHARS + 50));
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.content.length).toBe(MAX_MESSAGE_CHARS);
+    expect(checkAgentRequest({ messages, conversationId: "c" }).ok).toBe(true);
+  });
+
+  it("does not leave a lone surrogate at a clip boundary", () => {
+    const answer = "a".repeat(HISTORY_ANSWER_CHARS - 2) + "😀".repeat(10);
+    const a = buildRequestMessages([turn({ user: "q", trace: trace([answer], "ok") })], "next")[1]!;
+    expect(a.content.length).toBeLessThanOrEqual(HISTORY_ANSWER_CHARS);
+    expect(a.content.endsWith("…")).toBe(true);
+    expect(/[\uD800-\uDBFF]…$/.test(a.content)).toBe(false);
   });
 });
 
