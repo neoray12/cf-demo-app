@@ -3,6 +3,8 @@ import type { TextStreamPart, ToolSet } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentEnv } from "./env";
 import {
+  FIRST_PART_IDLE_MS,
+  STREAM_IDLE_MS,
   pipeStepStream,
   runAgent,
   runParallel,
@@ -23,7 +25,7 @@ function makeClock() {
   return { clock, now: () => clock.t };
 }
 
-type Step = { at: number; part: Part } | { at: number; run: () => void } | { hang: true };
+type Step = { at: number; part: Part } | { at: number; run: () => void } | { hang: true } | { sleep: number };
 
 function fakeStream(clock: { t: number }, steps: Step[]): AsyncIterable<Part> {
   return {
@@ -32,6 +34,10 @@ function fakeStream(clock: { t: number }, steps: Step[]): AsyncIterable<Part> {
         if ("hang" in s) {
           await new Promise(() => {});
           return;
+        }
+        if ("sleep" in s) {
+          await new Promise((r) => setTimeout(r, s.sleep));
+          continue;
         }
         clock.t = s.at;
         if ("run" in s) {
@@ -235,6 +241,89 @@ describe("pipeStepStream", () => {
   });
 });
 
+describe("pipeStepStream idle windows", () => {
+  const run = (steps: Step[]) => {
+    const { ctx, events, clock } = makeCtx();
+    const promise = pipeStepStream(fakeStream(clock, steps), ctx, { parentSpanId: "P", modelLabel: "m", forwardText: true });
+    const settled = promise.then(
+      (v) => ({ ok: true as const, v }),
+      (e: Error) => ({ ok: false as const, e }),
+    );
+    return { events, settled };
+  };
+  const startStep = { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) };
+  const finish = { at: 0, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) };
+
+  it("exports the windows", () => {
+    expect(STREAM_IDLE_MS).toBe(60_000);
+    expect(FIRST_PART_IDLE_MS).toBe(150_000);
+  });
+
+  it("does not time out while a tool executes (tool-call → 70 s → tool-result)", async () => {
+    vi.useFakeTimers();
+    const { events, settled } = run([
+      startStep,
+      { at: 0, part: p({ type: "text-delta", id: "t", text: "a" }) },
+      { at: 0, part: p({ type: "tool-call", toolCallId: "c1", toolName: "fan", input: {} }) },
+      { sleep: 70_000 },
+      { at: 0, part: p({ type: "tool-result", toolCallId: "c1", toolName: "fan", input: {}, output: "ok" }) },
+      finish,
+    ]);
+    await vi.advanceTimersByTimeAsync(70_000);
+    const r = await settled;
+    expect(r.ok).toBe(true);
+    expect(events.find((e) => e.type === "span-end" && e.id === "c1")).toMatchObject({ status: "ok" });
+  });
+
+  it("re-arms the 60 s window after the tool finishes", async () => {
+    vi.useFakeTimers();
+    const { settled } = run([
+      startStep,
+      { at: 0, part: p({ type: "text-delta", id: "t", text: "a" }) },
+      { at: 0, part: p({ type: "tool-call", toolCallId: "c1", toolName: "fan", input: {} }) },
+      { sleep: 70_000 },
+      { at: 0, part: p({ type: "tool-error", toolCallId: "c1", toolName: "fan", input: {}, error: "x" }) },
+      { hang: true },
+    ]);
+    await vi.advanceTimersByTimeAsync(70_000 + STREAM_IDLE_MS + 1);
+    const r = await settled;
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.e.message).toBe("idle timeout");
+  });
+
+  it("allows 100 s between start-step and the step's first part", async () => {
+    vi.useFakeTimers();
+    const { settled } = run([startStep, { sleep: 100_000 }, { at: 0, part: p({ type: "text-delta", id: "t", text: "late" }) }, finish]);
+    await vi.advanceTimersByTimeAsync(100_000);
+    expect((await settled).ok).toBe(true);
+  });
+
+  it("times out after 150 s with no first part", async () => {
+    vi.useFakeTimers();
+    const { events, settled } = run([startStep, { hang: true }]);
+    await vi.advanceTimersByTimeAsync(FIRST_PART_IDLE_MS - 1_000);
+    expect(events.some((e) => e.type === "span-end")).toBe(false);
+    await vi.advanceTimersByTimeAsync(2_000);
+    const r = await settled;
+    expect(!r.ok && r.e.message).toBe("idle timeout");
+  });
+
+  it("times out after 61 s of silence following a text-delta", async () => {
+    vi.useFakeTimers();
+    const { events, settled } = run([
+      startStep,
+      { at: 0, part: p({ type: "text-delta", id: "t", text: "a" }) },
+      { sleep: 61_000 },
+      { at: 0, part: p({ type: "text-delta", id: "t", text: "b" }) },
+      finish,
+    ]);
+    await vi.advanceTimersByTimeAsync(61_000);
+    const r = await settled;
+    expect(!r.ok && r.e.message).toBe("idle timeout");
+    expect(events.at(-1)).toMatchObject({ type: "span-end", id: "P:chat:0", status: "error", detail: { error: "idle timeout" } });
+  });
+});
+
 describe("runParallel", () => {
   it("collects successes and failures without throwing", async () => {
     const ok = (name: string) => ({ name, run: async () => name.toUpperCase() });
@@ -323,7 +412,10 @@ describe("runSubagent", () => {
     expect(args.prompt).toBe("Research: R2");
     expect(args.system).toBe("You research.");
     expect(args.maxOutputTokens).toBe(4000);
-    expect(args.abortSignal).toBe(ctx.signal);
+    // runs on a child signal linked to ctx.signal
+    expect(args.abortSignal).toBeInstanceOf(AbortSignal);
+    expect(args.abortSignal).not.toBe(ctx.signal);
+    expect((args.abortSignal as AbortSignal).aborted).toBe(false);
     expect(args.experimental_telemetry).toEqual({
       isEnabled: true,
       functionId: "docs-researcher",
@@ -529,6 +621,208 @@ describe("runAgent", () => {
       { ...ctx, ai },
     );
     expect(events.at(-1)).toMatchObject({ type: "run-end", status: "error", error: "kb write failed", ttftMs: 500 });
+  });
+});
+
+describe("run cancellation and span ordering", () => {
+  const sub: SubagentDef<number> = {
+    functionId: "sub",
+    model: "glm-5.3-flash",
+    system: "",
+    maxSteps: 1,
+    tools: () => ({}),
+    prompt: () => "x",
+  };
+  const def = (tools: AgentDef["tools"]): AgentDef => ({
+    id: "cloudflare-docs",
+    functionId: "main",
+    defaultModel: "glm-5.3-flash",
+    maxSteps: 2,
+    system: () => "",
+    tools,
+  });
+
+  /** Asserts: run-end is last; every started span ends exactly once before it; children end before parents. */
+  function expectWellFormed(events: TraceEvent[]) {
+    expect(events.at(-1)?.type).toBe("run-end");
+    expect(events.filter((e) => e.type === "run-end")).toHaveLength(1);
+    const starts = events.filter((e) => e.type === "span-start") as Extract<TraceEvent, { type: "span-start" }>[];
+    const endIndex = new Map<string, number>();
+    events.forEach((e, i) => {
+      if (e.type === "span-end") {
+        expect(endIndex.has(e.id)).toBe(false);
+        endIndex.set(e.id, i);
+      }
+    });
+    for (const s of starts) {
+      expect(endIndex.has(s.id)).toBe(true);
+      if (s.parentId) expect(endIndex.get(s.id)!).toBeLessThan(endIndex.get(s.parentId)!);
+    }
+  }
+
+  it("abort with a running subagent: all span-ends precede run-end, children before parents (reviewer probe)", async () => {
+    const { ctx, events, clock, ac } = makeCtx();
+    let toolCtx!: RunContext;
+    const { ai } = fakeAI(
+      [
+        () => ({
+          async *[Symbol.asyncIterator]() {
+            yield p({ type: "start-step", request: {}, warnings: [] });
+            yield p({ type: "tool-call", toolCallId: "c1", toolName: "fan", input: {} });
+            runSubagent(sub, 0, toolCtx, "c1", 0).catch(() => {});
+            await new Promise(() => {});
+          },
+        }),
+        () => ({
+          async *[Symbol.asyncIterator]() {
+            yield p({ type: "start-step", request: {}, warnings: [] });
+            await new Promise(() => {});
+          },
+        }),
+      ],
+      clock,
+    );
+    setTimeout(() => ac.abort(), 20);
+    await runAgent(
+      def((c) => {
+        toolCtx = c;
+        return {};
+      }),
+      [],
+      "glm-5.3-flash",
+      { ...ctx, ai },
+    );
+    await new Promise((r) => setTimeout(r, 30)); // let the subagent's own cleanup run
+    expectWellFormed(events);
+    expect(events.filter((e) => e.type === "span-start").map((e) => (e as { id: string }).id)).toContain("c1:sub:0:chat:0");
+    for (const e of events) if (e.type === "span-end") expect(e.detail).toEqual({ error: "aborted" });
+    expect(events.at(-1)).toMatchObject({ type: "run-end", status: "aborted" });
+  });
+
+  it("main-stream idle timeout aborts the run signal seen by tools and running subagents", async () => {
+    vi.useFakeTimers();
+    const { ctx, events, clock } = makeCtx();
+    let toolCtx!: RunContext;
+    let subSignal: AbortSignal | undefined;
+    let subResult: Promise<unknown> | undefined;
+    const { ai } = fakeAI(
+      [
+        () => ({
+          async *[Symbol.asyncIterator]() {
+            yield p({ type: "start-step", request: {}, warnings: [] });
+            yield p({ type: "text-delta", id: "t", text: "hi" });
+            const runId = (events[0] as Extract<TraceEvent, { type: "run-start" }>).runId;
+            subResult = runSubagent(
+              {
+                ...sub,
+                tools: (c) => {
+                  subSignal = c.signal;
+                  return {};
+                },
+              },
+              0,
+              toolCtx,
+              runId,
+              0,
+            ).catch((e: unknown) => e);
+            await new Promise(() => {});
+          },
+        }),
+        () => ({
+          async *[Symbol.asyncIterator]() {
+            yield p({ type: "start-step", request: {}, warnings: [] });
+            await new Promise(() => {});
+          },
+        }),
+      ],
+      clock,
+    );
+    const done = runAgent(
+      def((c) => {
+        toolCtx = c;
+        return {};
+      }),
+      [],
+      "glm-5.3-flash",
+      { ...ctx, ai },
+    );
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS + 1);
+    await done;
+    expect(ctx.signal.aborted).toBe(false);
+    expect(toolCtx.signal.aborted).toBe(true);
+    expect(subSignal?.aborted).toBe(true);
+    expect(await subResult).toMatchObject({ name: "AbortError" });
+    expect(events.at(-1)).toMatchObject({ type: "run-end", status: "error", error: "idle timeout" });
+    expectWellFormed(events);
+  });
+
+  it("stream error and after() failure also abort the run signal", async () => {
+    for (const mode of ["stream", "after"] as const) {
+      const { ctx, clock } = makeCtx();
+      let toolCtx!: RunContext;
+      const { ai } = fakeAI(
+        [
+          (c) =>
+            fakeStream(c, [
+              { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+              mode === "stream"
+                ? { at: 1, part: p({ type: "error", error: "boom" }) }
+                : { at: 1, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+            ]),
+        ],
+        clock,
+      );
+      await runAgent(
+        {
+          ...def((c) => {
+            toolCtx = c;
+            return {};
+          }),
+          after: async () => {
+            throw new Error("after failed");
+          },
+        },
+        [],
+        "glm-5.3-flash",
+        { ...ctx, ai },
+      );
+      expect(toolCtx.signal.aborted).toBe(true);
+      expect(ctx.signal.aborted).toBe(false);
+    }
+  });
+
+  it("subagent idle aborts only its own child signal", async () => {
+    vi.useFakeTimers();
+    const { ctx, clock } = makeCtx();
+    let subSignal: AbortSignal | undefined;
+    const { ai } = fakeAI(
+      [
+        (c) =>
+          fakeStream(c, [
+            { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 1, part: p({ type: "text-delta", id: "t", text: "x" }) },
+            { hang: true },
+          ]),
+      ],
+      clock,
+    );
+    const res = runSubagent(
+      {
+        ...sub,
+        tools: (c) => {
+          subSignal = c.signal;
+          return {};
+        },
+      },
+      0,
+      { ...ctx, ai },
+      "P",
+      0,
+    ).catch((e: Error) => e);
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_MS + 1);
+    expect(((await res) as Error).message).toBe("idle timeout");
+    expect(subSignal?.aborted).toBe(true);
+    expect(ctx.signal.aborted).toBe(false);
   });
 });
 
