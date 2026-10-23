@@ -1,0 +1,45 @@
+scripts/seed-kb/customer-service-sop.md
+  s_3a8326f10dc640::t_d66ad104b5fe65 1-31
+scripts/seed-kb/employee-handbook.md
+  s_3a8326f10dc640::t_09a44ff926f77c 1-42
+scripts/seed-kb/it-support-faq.md
+  s_3a8326f10dc640::t_cda649902c499b 1-31
+scripts/seed-kb/office-guide.md
+  s_3a8326f10dc640::t_8002c0c378bebf 1-33
+scripts/seed-kb/onboarding-checklist.md
+  s_3a8326f10dc640::t_53e2f6e235d27a 1-33
+scripts/seed-kb/product-spec-cloudbox.md
+  s_3a8326f10dc640::t_4a20b2f26282c9 1-31
+scripts/seed-kb/security-policy.md
+  s_3a8326f10dc640::t_80b3d855f3c37d 1-29
+scripts/seed-kb/travel-expense.md
+  s_3a8326f10dc640::t_5c9c817a487bbd 1-33
+scripts/seed-kb/upload.sh
+  s_3a8326f10dc640::t_4f1addf3d90e49 1-24
+src/lib/agents/defs/knowledge-base.ts
+  s_3a8326f10dc640::t_19015fb3b86805 1-70
+src/lib/agents/kb.test.ts
+  s_3a8326f10dc640::t_8dbe9b095731fc 1-182
+src/lib/agents/kb.ts
+  s_3a8326f10dc640::t_a0b9f6eba44791 1-152
+src/lib/agents/registry.ts
+  s_3a8326f10dc640::t_fba58f8c8dc3f6 2,7-8
+src/lib/agents/tools/kb.ts
+  s_3a8326f10dc640::t_40581a99479c68 1-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d11f7c68ee475ccab65972e1fc6dc5b4f3d38389",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
