@@ -174,6 +174,24 @@ function Waterfall({
   );
 }
 
+/** Whether the server wrapped this run with Cloudflare Agents tracing (from run-start; off under local next dev). */
+function TracingBadge({ traced }: { traced: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "w-fit gap-1.5 px-2 py-0.5 text-[11px] font-normal",
+        traced ? "border-emerald-500/50 text-emerald-700 dark:text-emerald-300" : "text-muted-foreground",
+      )}
+      title={traced ? undefined : t("agents.trace.tracingOffHint")}
+    >
+      <span className={cn("size-1.5 rounded-full", traced ? "bg-emerald-500" : "bg-muted-foreground/60")} />
+      {t(traced ? "agents.trace.tracingOn" : "agents.trace.tracingOff")}
+    </Badge>
+  );
+}
+
 /** Right-hand trace panel: per-turn metrics, live waterfall, span details. */
 export function TracePanel({
   turns,
@@ -218,6 +236,7 @@ export function TracePanel({
               </Tabs>
             )}
             <TurnMetrics turn={turn} now={now} />
+            {turn.trace?.traced !== undefined && <TracingBadge traced={turn.trace.traced} />}
             {turn.trace?.status === "aborted" && (
               <p className="text-xs text-muted-foreground">{t("agents.trace.aborted")}</p>
             )}

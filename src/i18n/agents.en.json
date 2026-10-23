@@ -22,7 +22,9 @@
       "sources": "Sources",
       "sourcesCount": "Sources ({{n}})",
       "toolCalls": "Tool and subagent calls ({{n}})",
-      "reasoning": "Reasoning"
+      "reasoning": "Reasoning",
+      "retry": "Retry",
+      "retryHint": "Send the same question again with the same settings"
     },
     "activity": {
       "waiting": "Sent, waiting for the server",
@@ -83,7 +85,11 @@
       "legendAgent": "agent",
       "legendChat": "chat",
       "legendTool": "tool",
-      "legendError": "error"
+      "legendError": "error",
+      "tracingOn": "Cloudflare tracing: on",
+      "tracingOff": "Cloudflare tracing: off (local)",
+      "tracingOffHint": "This run was not wrapped with Cloudflare Agents tracing (local next dev / workerd has no tracing export); only the browser-side trace here is available.",
+      "subagentRetry": "retry"
     },
     "knowledgeBase": {
       "title": "Company knowledge base",

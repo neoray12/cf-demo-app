@@ -24,6 +24,8 @@ export interface RunTrace {
   runId: string;
   agent: string;
   model: string;
+  /** From run-start: Cloudflare Agents tracing was active on the server (undefined = not reported). */
+  traced?: boolean;
   spans: Record<string, SpanNode>;
   rootIds: string[];
   text: string;
@@ -85,7 +87,10 @@ function updateSpan(
 }
 
 export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
-  if (e.type === "run-start") return emptyTrace(e.runId, e.agent, e.model);
+  if (e.type === "run-start") {
+    const fresh = emptyTrace(e.runId, e.agent, e.model);
+    return typeof e.traced === "boolean" ? { ...fresh, traced: e.traced } : fresh;
+  }
   const s = state ?? emptyTrace();
 
   switch (e.type) {

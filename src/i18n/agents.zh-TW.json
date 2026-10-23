@@ -22,7 +22,9 @@
       "sources": "來源",
       "sourcesCount": "來源（{{n}}）",
       "toolCalls": "工具與 subagent 呼叫（{{n}}）",
-      "reasoning": "思考過程"
+      "reasoning": "思考過程",
+      "retry": "重試",
+      "retryHint": "用相同的問題與設定重新送出"
     },
     "activity": {
       "waiting": "已送出，等待伺服器回應",
@@ -83,7 +85,11 @@
       "legendAgent": "agent",
       "legendChat": "chat",
       "legendTool": "tool",
-      "legendError": "錯誤"
+      "legendError": "錯誤",
+      "tracingOn": "Cloudflare tracing：已啟用",
+      "tracingOff": "Cloudflare tracing：未啟用（本地）",
+      "tracingOffHint": "這次執行沒有包上 Cloudflare Agents tracing（本地 next dev / workerd 沒有 tracing 匯出），只有這裡的瀏覽器端 trace。",
+      "subagentRetry": "重試"
     },
     "knowledgeBase": {
       "title": "企業知識庫助理",

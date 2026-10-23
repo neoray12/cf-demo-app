@@ -27,6 +27,12 @@ const runEnd = (over: Partial<Extract<TraceEvent, { type: "run-end" }>> = {}): T
 });
 
 describe("reduceTrace", () => {
+  it("run-start keeps the optional traced flag (absent stays undefined)", () => {
+    expect(reduceTrace(null, { ...runStart, traced: true } as TraceEvent).traced).toBe(true);
+    expect(reduceTrace(null, { ...runStart, traced: false } as TraceEvent).traced).toBe(false);
+    expect(reduceTrace(null, runStart)).not.toHaveProperty("traced");
+  });
+
   it("run-start initialises a running trace", () => {
     const s = run([runStart]);
     expect(s).toMatchObject({

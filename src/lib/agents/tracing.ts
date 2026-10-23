@@ -27,23 +27,43 @@ declare global {
 }
 
 const tracedAICache = new Map<boolean, Promise<AI>>();
+let tracingActive = false;
+let warned = false;
+
+/** Falling back to plain `ai` means no Cloudflare spans for this isolate: say so (once per isolate), not silently. */
+function tracingDisabled(err: unknown): AI {
+  tracingActive = false;
+  if (!warned) {
+    warned = true;
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`agents tracing disabled: ${reason}`);
+  }
+  return aiNamespace;
+}
 
 async function loadTracedAI(storeContent: boolean): Promise<AI> {
   try {
     const spec = "cloudflare:workers";
     globalThis.__CF_WORKERS__ = await import(/* webpackIgnore: true */ /* @vite-ignore */ spec);
-  } catch {
-    return aiNamespace;
+  } catch (err) {
+    return tracingDisabled(err);
   }
   try {
     const { wrapAISDK } = await import("agents/observability/ai");
-    return wrapAISDK(aiNamespace as unknown as Record<string, unknown>, {
+    const wrapped = wrapAISDK(aiNamespace as unknown as Record<string, unknown>, {
       storeMessages: storeContent,
       storeTools: storeContent,
     }) as unknown as AI;
-  } catch {
-    return aiNamespace;
+    tracingActive = true;
+    return wrapped;
+  } catch (err) {
+    return tracingDisabled(err);
   }
+}
+
+/** Whether getTracedAI() wrapped the AI SDK with Cloudflare Agents tracing (false in node / next dev / on failure). */
+export function isTracingActive(): boolean {
+  return tracingActive;
 }
 
 /** AI SDK namespace wrapped with Agents tracing when running in workerd; plain `ai` otherwise. */

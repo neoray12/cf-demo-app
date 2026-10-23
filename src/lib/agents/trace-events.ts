@@ -3,7 +3,15 @@
 export type SpanKind = "invoke_agent" | "chat" | "execute_tool";
 
 export type TraceEvent =
-  | { type: "run-start"; runId: string; agent: string; model: string; t: number }
+  | {
+      type: "run-start";
+      runId: string;
+      agent: string;
+      model: string;
+      t: number;
+      /** Whether Cloudflare Agents tracing wrapped this run's AI SDK calls (optional: absent from older servers). */
+      traced?: boolean;
+    }
   | { type: "span-start"; id: string; parentId?: string; kind: SpanKind; name: string; t: number }
   | {
       type: "span-end";
