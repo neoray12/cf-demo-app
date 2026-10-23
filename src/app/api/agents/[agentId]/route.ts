@@ -4,15 +4,16 @@ import { AGENT_IDS, type AgentId } from "@/lib/agents/ids";
 import { AGENT_MODELS, type ModelKey } from "@/lib/agents/models";
 import { AGENTS } from "@/lib/agents/registry";
 import { errorMessage, runAgent, type AgentEnv, type RunContext } from "@/lib/agents/runtime";
+import { checkAgentRequest } from "@/lib/agents/request";
 import { encodeEvent } from "@/lib/agents/trace-events";
-import { getTracedAI } from "@/lib/agents/tracing";
+import { getTracedAI, isTracingActive } from "@/lib/agents/tracing";
 
 export const dynamic = "force-dynamic";
 
 interface AgentRequestBody {
-  messages?: Array<{ role?: string; content?: unknown }>;
+  messages?: unknown;
   model?: string;
-  conversationId?: string;
+  conversationId?: unknown;
   workspace?: string;
   storeContent?: boolean;
 }
@@ -37,16 +38,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
   const body = parsed as AgentRequestBody;
 
-  const messages = Array.isArray(body.messages)
-    ? body.messages.filter(
-        (m): m is { role: "user" | "assistant"; content: string } =>
-          (m?.role === "user" || m?.role === "assistant") && typeof m.content === "string" && m.content.length > 0,
-      )
-    : [];
-  if (messages.length === 0) return json({ error: "messages must be a non-empty array" }, 400);
-  if (typeof body.conversationId !== "string" || !body.conversationId) {
-    return json({ error: "conversationId is required" }, 400);
-  }
+  const check = checkAgentRequest(body);
+  if (!check.ok) return json({ error: check.error }, 400);
+  const { messages, conversationId } = check;
   // Object.hasOwn: "constructor" / "toString" / "__proto__" must not pass as model keys.
   const modelKey: ModelKey =
     typeof body.model === "string" && Object.hasOwn(AGENT_MODELS, body.model) ? (body.model as ModelKey) : def.defaultModel;
@@ -92,10 +86,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           }
         },
         now: () => Date.now() - start,
-        conversationId: body.conversationId!,
+        conversationId,
         storeContent,
         workspace: typeof body.workspace === "string" ? body.workspace : undefined,
         signal: abort.signal,
+        traced: isTracingActive(),
       };
       await runAgent(def, messages, modelKey, ctx);
       try {
