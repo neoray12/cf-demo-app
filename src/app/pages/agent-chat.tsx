@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AGENTS_DASHBOARD_URL, type AgentCatalogEntry } from "@/lib/agents/catalog";
 import { AGENT_MODELS, type ModelKey } from "@/lib/agents/models";
 import { AgentMessage } from "@/app/components/agents/agent-message";
+import { KbWorkspace } from "@/app/components/agents/kb-workspace";
 import { TracePanel } from "@/app/components/agents/trace-panel";
 import { useAgentRun } from "@/app/components/agents/use-agent-run";
 
@@ -41,9 +42,9 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
   const { turns, send, stop, running, reset } = useAgentRun(agent.id);
   const [model, setModel] = useState<ModelKey>(agent.defaultModel);
   const [input, setInput] = useState("");
-  // Knowledge-base workspace controls (Task 10 adds the UI); defaults = sample workspace, content recorded.
-  const [workspace] = useState<string | undefined>(undefined);
-  const [storeContent] = useState(true);
+  // Knowledge-base workspace controls: defaults = sample workspace, content recorded in the trace.
+  const [workspace, setWorkspace] = useState("default");
+  const [storeContent, setStoreContent] = useState(true);
   const [traceOpen, setTraceOpen] = useState(false);
   const [selectedTurn, setSelectedTurn] = useState(0);
 
@@ -75,7 +76,12 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
   const submit = (text: string) => {
     if (!text.trim() || running) return;
     stickRef.current = true;
-    send(text, { model, workspace, storeContent });
+    // The sample workspace is the server's default, so only a user workspace is sent explicitly.
+    send(text, {
+      model,
+      workspace: agent.features.workspace && workspace !== "default" ? workspace : undefined,
+      storeContent,
+    });
     setInput("");
   };
 
@@ -154,6 +160,15 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
             )}
           </div>
         </div>
+
+        {agent.features.workspace && (
+          <KbWorkspace
+            value={workspace}
+            onChange={setWorkspace}
+            storeContent={storeContent}
+            onStoreContentChange={setStoreContent}
+          />
+        )}
 
         {/* Messages */}
         <ScrollArea

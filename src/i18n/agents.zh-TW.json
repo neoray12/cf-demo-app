@@ -170,7 +170,72 @@
         "unknownJob": "找不到這個匯入工作（可能已過期）。",
         "wrongWorkspace": "這個匯入工作不屬於目前的工作區。",
         "server": "伺服器發生錯誤，請稍後再試。"
+      },
+      "title": "知識庫工作區",
+      "workspaceLabel": "工作區",
+      "sampleWorkspace": "雲朵科技範例",
+      "myWorkspace": "我的工作區",
+      "createWorkspace": "建立我的工作區",
+      "manage": "管理文件",
+      "prepNote": "建議會前準備好工作區：上傳/匯入後約 2–10 分鐘才能查到",
+      "prepNoteMore": "會中現場上傳是加分項，但索引時間不固定；等待期間不影響提問，也可以先問「雲朵科技範例」。",
+      "readOnly": "「雲朵科技範例」為唯讀，無法上傳或匯入。要用自己的文件，請先建立「我的工作區」。",
+      "dropTitle": "拖放檔案到這裡，或點擊選擇檔案",
+      "dropHint": "支援 PDF、DOCX、MD、TXT；單檔 10 MB 以內；每個工作區最多 20 個檔案",
+      "importTitle": "匯入網站",
+      "importPlaceholder": "https://example.com",
+      "importButton": "匯入",
+      "importHint": "一次最多匯入 30 頁，儲存在 site/{主機}/ 之下，不計入 20 個檔案上限。",
+      "importStarting": "正在啟動爬取…",
+      "importRunning": "爬取中… {{finished}}/{{total}} 頁",
+      "importRunningUnknown": "爬取中…",
+      "importDone": "匯入完成：已儲存 {{saved}} 頁，{{failed}} 頁失敗。索引約需數分鐘。",
+      "importFailed": "匯入未成功完成（狀態：{{status}}）：已儲存 {{saved}} 頁，{{failed}} 頁失敗。",
+      "importTimeout": "匯入逾時，請稍後再查看文件清單確認結果。",
+      "docsTitle": "文件清單（{{n}}）",
+      "docsLoading": "載入中…",
+      "docsEmpty": "尚無文件",
+      "loadFailed": "無法載入文件清單，稍後會自動重試。",
+      "statusColumn": "索引狀態（僅供參考）",
+      "statusNote": "索引狀態僅供參考：文件在顯示「索引中」時就可能已經查得到，不需要等到「完成」才能提問。",
+      "state": {
+        "indexing": "索引中",
+        "done": "完成",
+        "failed": "失敗",
+        "unknown": "未知"
+      },
+      "sync": {
+        "indexing": "索引中（{{n}}）",
+        "done": "索引完成",
+        "failed": "{{n}} 個索引失敗",
+        "unknown": "狀態未知（{{n}}）",
+        "instance": "AI Search 狀態：{{status}}"
+      },
+      "retentionOff": "已開啟「不記錄內容」：提問與文件內容不會寫入 trace。"
+    },
+    "chart": {
+      "thisPeriod": "本期",
+      "lastWeek": "上週",
+      "period": "期間：{{period}}",
+      "compared": "與上週比較",
+      "source": "資料來源：Cloudflare Radar",
+      "noData": "沒有可繪製的資料",
+      "unit": {
+        "percent": "占比（%，非次數）",
+        "normalized": "相對值（0–1，非次數）",
+        "mbps": "頻寬（Mbps）",
+        "ms": "延遲（ms）",
+        "rank": "排名",
+        "events": "事件"
       }
+    },
+    "grounding": {
+      "ok": "引用驗證：全部有依據",
+      "unsupported": "{{n}} 句缺少依據",
+      "unsupportedHint": "以下句子在引用的來源片段中找不到依據（編號 [n] 與上方來源清單相同）：",
+      "checking": "引用驗證：查核中…",
+      "incomplete": "驗證未完成",
+      "incompleteHint": "查核員沒有產出可用的結果，這不代表回答有問題。"
     }
   }
 }

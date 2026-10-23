@@ -32,7 +32,8 @@ export type TraceEvent =
         title: string;
         unit: string;
         period: string;
-        data: { label: string; value: number }[];
+        /** `previous` = last week's value for the same label (only when the tool compared; absent ≠ 0). */
+        data: { label: string; value: number; previous?: number }[];
         sourceUrl: string;
       };
     }

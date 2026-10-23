@@ -170,7 +170,72 @@
         "unknownJob": "Import job not found (it may have expired).",
         "wrongWorkspace": "This import job belongs to a different workspace.",
         "server": "Server error. Please try again later."
+      },
+      "title": "Knowledge base workspace",
+      "workspaceLabel": "Workspace",
+      "sampleWorkspace": "Cloud Co. sample",
+      "myWorkspace": "My workspace",
+      "createWorkspace": "Create my workspace",
+      "manage": "Manage documents",
+      "prepNote": "Prepare your workspace before the meeting: allow about 2–10 minutes after uploading/importing before it can be searched",
+      "prepNoteMore": "Uploading live during a meeting is a bonus, but indexing time varies. You can keep asking questions while you wait, or use the sample workspace.",
+      "readOnly": "The sample workspace is read-only: no uploads or imports. Create \"My workspace\" to use your own documents.",
+      "dropTitle": "Drop files here, or click to choose",
+      "dropHint": "PDF, DOCX, MD, TXT; up to 10 MB each; at most 20 files per workspace",
+      "importTitle": "Import a website",
+      "importPlaceholder": "https://example.com",
+      "importButton": "Import",
+      "importHint": "Up to 30 pages per import, stored under site/{host}/ and not counted toward the 20-file limit.",
+      "importStarting": "Starting the crawl…",
+      "importRunning": "Crawling… {{finished}}/{{total}} pages",
+      "importRunningUnknown": "Crawling…",
+      "importDone": "Import finished: {{saved}} pages saved, {{failed}} failed. Indexing takes a few minutes.",
+      "importFailed": "Import did not finish successfully (status: {{status}}): {{saved}} pages saved, {{failed}} failed.",
+      "importTimeout": "Import timed out. Check the document list again in a moment.",
+      "docsTitle": "Documents ({{n}})",
+      "docsLoading": "Loading…",
+      "docsEmpty": "No documents yet",
+      "loadFailed": "Could not load the document list; it will retry automatically.",
+      "statusColumn": "Index status (for reference only)",
+      "statusNote": "Index status is for reference only: a document may already be searchable while it shows \"Indexing\", so there is no need to wait for \"Done\" before asking.",
+      "state": {
+        "indexing": "Indexing",
+        "done": "Done",
+        "failed": "Failed",
+        "unknown": "Unknown"
+      },
+      "sync": {
+        "indexing": "Indexing ({{n}})",
+        "done": "Indexed",
+        "failed": "{{n}} failed to index",
+        "unknown": "Status unknown ({{n}})",
+        "instance": "AI Search status: {{status}}"
+      },
+      "retentionOff": "\"Don't record content\" is on: questions and document content are not written to the trace."
+    },
+    "chart": {
+      "thisPeriod": "This period",
+      "lastWeek": "Last week",
+      "period": "Period: {{period}}",
+      "compared": "vs last week",
+      "source": "Source: Cloudflare Radar",
+      "noData": "Nothing to plot",
+      "unit": {
+        "percent": "Share (%, not counts)",
+        "normalized": "Relative value (0–1, not counts)",
+        "mbps": "Bandwidth (Mbps)",
+        "ms": "Latency (ms)",
+        "rank": "Rank",
+        "events": "Events"
       }
+    },
+    "grounding": {
+      "ok": "Citation check: all supported",
+      "unsupported": "{{n}} sentence(s) lack support",
+      "unsupportedHint": "These sentences could not be found in the cited source passages (the [n] numbers match the sources list above):",
+      "checking": "Citation check: checking…",
+      "incomplete": "Check incomplete",
+      "incompleteHint": "The checker did not return a usable result; this does not mean the answer is wrong."
     }
   }
 }

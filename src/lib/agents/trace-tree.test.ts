@@ -164,7 +164,7 @@ describe("reduceTrace", () => {
     expect(s.spans["r1:chat:0"]).toMatchObject({ text: "Hello", reasoning: "think" });
     expect(s.spans.r1!.children[0]).toBe(s.spans["r1:chat:0"]);
     expect(s.citations).toEqual([{ title: "T", snippet: "S" }]);
-    expect(s.charts).toEqual([chart]);
+    expect(s.charts).toEqual([{ ...chart, spanId: "a" }]); // keeps the producing span id
   });
 
   it("new spans start with empty text and reasoning", () => {

@@ -682,7 +682,9 @@ export function buildRadarTools(ctx: RunContext, names: RadarToolName[]): ToolSe
                 title: result.title,
                 unit: result.unit,
                 period: result.period,
-                data: result.data.map(({ label, value }) => ({ label, value })),
+                data: result.data.map(({ label, value, previous }) =>
+                  previous === undefined ? { label, value } : { label, value, previous },
+                ),
                 sourceUrl: result.sourceUrl,
               },
             });

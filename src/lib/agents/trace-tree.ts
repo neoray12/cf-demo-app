@@ -29,7 +29,8 @@ export interface RunTrace {
   text: string;
   reasoning: string;
   citations: CitationEvent["source"][];
-  charts: ChartEvent["chart"][];
+  /** Each chart keeps the id of the tool span that produced it, so the UI can place it under that call. */
+  charts: Array<ChartEvent["chart"] & { spanId: string }>;
   ttftMs?: number;
   totalMs?: number;
   usage?: { input: number; output: number };
@@ -149,7 +150,7 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
     case "citation":
       return { ...s, citations: [...s.citations, e.source] };
     case "chart":
-      return { ...s, charts: [...s.charts, e.chart] };
+      return { ...s, charts: [...s.charts, { ...e.chart, spanId: e.spanId }] };
     case "run-end": {
       let spans = s.spans;
       if (e.status === "aborted" || e.status === "error") {

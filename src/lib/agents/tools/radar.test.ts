@@ -376,11 +376,20 @@ describe("buildRadarTools", () => {
     const chart = events[0] as Extract<TraceEvent, { type: "chart" }>;
     expect(chart.spanId).toBe("agent/tc-7");
     expect(chart.chart).toMatchObject({ kind: "bar", unit: "percent", period: "2026-10-16 ~ 2026-10-23" });
-    expect(chart.chart.data[0]).toEqual({ label: "美國", value: 22.605155 }); // no `previous` in chart data
+    // compareLastWeek: last week's value rides along as `previous` so the chart can draw the comparison bars
+    expect(chart.chart.data[0]).toEqual({ label: "美國", value: 22.605155, previous: 22.985498 });
     expect(setAttrs).toHaveBeenCalledWith({
       "cache.hit": false,
       "radar.endpoint": "attacks/layer7/top/locations/origin",
     });
+  });
+
+  it("without compareLastWeek the chart data has no previous", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(fixture("attackers_of")), { status: 200 })));
+    const tools = buildRadarTools(makeCtx(), ["attackers_of"]);
+    await call(tools.attackers_of, { location: "tw" }, "agent/tc-8");
+    const chart = events[0] as Extract<TraceEvent, { type: "chart" }>;
+    expect(chart.chart.data[0]).toEqual({ label: "美國", value: 22.605155 });
   });
 
   it("normalized series are drawn as a line", async () => {
