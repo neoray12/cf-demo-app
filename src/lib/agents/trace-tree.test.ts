@@ -1,0 +1,178 @@
+import { describe, expect, it } from "vitest";
+import { reduceTrace, waterfallRows, type RunTrace } from "./trace-tree";
+import type { TraceEvent } from "./trace-events";
+
+const runStart: TraceEvent = { type: "run-start", runId: "r1", agent: "kb", model: "m", t: 0 };
+
+function run(events: TraceEvent[]): RunTrace {
+  let s: RunTrace | null = null;
+  for (const e of events) s = reduceTrace(s, e);
+  return s as RunTrace;
+}
+
+const runEnd = (over: Partial<Extract<TraceEvent, { type: "run-end" }>> = {}): TraceEvent => ({
+  type: "run-end",
+  t: 3800,
+  totalMs: 3800,
+  ttftMs: 812,
+  usage: { input: 10, output: 5 },
+  status: "ok",
+  ...over,
+});
+
+describe("reduceTrace", () => {
+  it("run-start initialises a running trace", () => {
+    const s = run([runStart]);
+    expect(s).toMatchObject({
+      runId: "r1",
+      agent: "kb",
+      model: "m",
+      rootIds: [],
+      text: "",
+      reasoning: "",
+      status: "running",
+      emptyAnswer: false,
+    });
+  });
+
+  it("nests child spans under parents", () => {
+    const s = run([
+      runStart,
+      { type: "span-start", id: "a", kind: "invoke_agent", name: "kb-agent", t: 0 },
+      { type: "span-start", id: "a:chat:0", parentId: "a", kind: "chat", name: "chat", t: 5 },
+      { type: "span-end", id: "a:chat:0", t: 900, status: "ok", usage: { input: 3, output: 2 }, ttftMs: 400 },
+    ]);
+    expect(s.rootIds).toEqual(["a"]);
+    expect(s.spans.a!.children[0]!.id).toBe("a:chat:0");
+    expect(s.spans.a!.children[0]!.end).toBe(900);
+    expect(s.spans["a:chat:0"]!.usage).toEqual({ input: 3, output: 2 });
+    expect(s.spans["a:chat:0"]!.ttftMs).toBe(400);
+    expect(s.spans["a:chat:0"]!.status).toBe("ok");
+    // nested child inside parent is the updated node
+    expect(s.spans.a!.children[0]).toEqual(s.spans["a:chat:0"]!);
+  });
+
+  it("is immutable", () => {
+    const s1 = run([
+      runStart,
+      { type: "span-start", id: "a", kind: "invoke_agent", name: "x", t: 0 },
+    ]);
+    const snapshot = JSON.stringify(s1);
+    const spanA = s1.spans.a;
+    reduceTrace(s1, { type: "span-start", id: "a:chat:0", parentId: "a", kind: "chat", name: "c", t: 1 });
+    reduceTrace(s1, { type: "span-end", id: "a", t: 9, status: "ok" });
+    reduceTrace(s1, { type: "text-delta", spanId: "a", text: "z" });
+    expect(JSON.stringify(s1)).toBe(snapshot);
+    expect(s1.spans.a).toBe(spanA);
+  });
+
+  it("treats a span with unknown parent as a root", () => {
+    const s = run([
+      runStart,
+      { type: "span-start", id: "x", parentId: "ghost", kind: "chat", name: "c", t: 0 },
+    ]);
+    expect(s.rootIds).toEqual(["x"]);
+  });
+
+  it("orders parallel subagents under a tool span by start then insertion", () => {
+    const s = run([
+      runStart,
+      { type: "span-start", id: "a", kind: "invoke_agent", name: "docs-agent", t: 0 },
+      { type: "span-start", id: "t1", parentId: "a", kind: "execute_tool", name: "research", t: 100 },
+      { type: "span-start", id: "s1", parentId: "t1", kind: "invoke_agent", name: "r1", t: 150 },
+      { type: "span-start", id: "s2", parentId: "t1", kind: "invoke_agent", name: "r2", t: 150 },
+      { type: "span-start", id: "s3", parentId: "t1", kind: "invoke_agent", name: "r3", t: 150 },
+      { type: "span-end", id: "s2", t: 700, status: "ok" },
+      { type: "span-end", id: "s3", t: 1200, status: "ok" },
+      { type: "span-end", id: "s1", t: 2000, status: "ok" },
+      { type: "span-end", id: "t1", t: 2000, status: "ok" },
+    ]);
+    const rows = waterfallRows(s);
+    expect(rows.map((r) => [r.node.id, r.depth])).toEqual([
+      ["a", 0],
+      ["t1", 1],
+      ["s1", 2],
+      ["s2", 2],
+      ["s3", 2],
+    ]);
+    expect(s.spans.s1!.end).toBe(2000);
+    expect(s.spans.s2!.end).toBe(700);
+  });
+
+  it("sorts siblings by start time", () => {
+    const s = run([
+      runStart,
+      { type: "span-start", id: "a", kind: "invoke_agent", name: "a", t: 0 },
+      { type: "span-start", id: "late", parentId: "a", kind: "chat", name: "late", t: 500 },
+      { type: "span-start", id: "early", parentId: "a", kind: "chat", name: "early", t: 100 },
+    ]);
+    expect(waterfallRows(s).map((r) => r.node.id)).toEqual(["a", "early", "late"]);
+  });
+
+  it("accumulates text and reasoning, collects citations and charts", () => {
+    const chart = { kind: "bar" as const, title: "t", unit: "%", period: "7d", data: [{ label: "a", value: 1 }], sourceUrl: "u" };
+    const s = run([
+      runStart,
+      { type: "text-delta", spanId: "a", text: "Hel" },
+      { type: "text-delta", spanId: "a", text: "lo" },
+      { type: "reasoning-delta", spanId: "a", text: "th" },
+      { type: "reasoning-delta", spanId: "a", text: "ink" },
+      { type: "citation", spanId: "a", source: { title: "T", snippet: "S" } },
+      { type: "chart", spanId: "a", chart },
+    ]);
+    expect(s.text).toBe("Hello");
+    expect(s.reasoning).toBe("think");
+    expect(s.citations).toEqual([{ title: "T", snippet: "S" }]);
+    expect(s.charts).toEqual([chart]);
+  });
+
+  it("run-end records metrics and status", () => {
+    const s = run([runStart, { type: "text-delta", spanId: "a", text: "x" }, runEnd()]);
+    expect(s.ttftMs).toBe(812);
+    expect(s.totalMs).toBe(3800);
+    expect(s.usage).toEqual({ input: 10, output: 5 });
+    expect(s.status).toBe("ok");
+    expect(s.emptyAnswer).toBe(false);
+  });
+
+  it("flags emptyAnswer when ok but no text was streamed", () => {
+    expect(run([runStart, runEnd()]).emptyAnswer).toBe(true);
+    expect(run([runStart, runEnd({ status: "error", error: "boom" })])).toMatchObject({
+      emptyAnswer: false,
+      status: "error",
+      error: "boom",
+    });
+  });
+
+  it("aborted closes open spans at totalMs with error status", () => {
+    const s = run([
+      runStart,
+      { type: "span-start", id: "a", kind: "invoke_agent", name: "a", t: 0 },
+      { type: "span-start", id: "c", parentId: "a", kind: "chat", name: "c", t: 10 },
+      { type: "span-start", id: "done", parentId: "a", kind: "execute_tool", name: "t", t: 20 },
+      { type: "span-end", id: "done", t: 30, status: "ok" },
+      runEnd({ status: "aborted", totalMs: 1500 }),
+    ]);
+    expect(s.status).toBe("aborted");
+    expect(s.spans.a!).toMatchObject({ end: 1500, status: "error" });
+    expect(s.spans.c!).toMatchObject({ end: 1500, status: "error" });
+    expect(s.spans.done!).toMatchObject({ end: 30, status: "ok" });
+    expect(s.spans.a!.children.find((c) => c.id === "c")).toMatchObject({ end: 1500, status: "error" });
+    expect(s.emptyAnswer).toBe(false);
+  });
+
+  it("keeps detail on errored span-end", () => {
+    const s = run([
+      runStart,
+      { type: "span-start", id: "t", kind: "execute_tool", name: "t", t: 0 },
+      { type: "span-end", id: "t", t: 5, status: "error", detail: { message: "nope" } },
+    ]);
+    expect(s.spans.t!.status).toBe("error");
+    expect(s.spans.t!.detail).toEqual({ message: "nope" });
+  });
+
+  it("ignores span-end for unknown spans", () => {
+    const s1 = run([runStart]);
+    expect(reduceTrace(s1, { type: "span-end", id: "nope", t: 1, status: "ok" })).toBe(s1);
+  });
+});
