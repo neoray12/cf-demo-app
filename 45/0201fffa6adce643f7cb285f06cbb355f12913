@@ -1,0 +1,49 @@
+docs/superpowers/specs/2026-10-23-agents-tracing-demo-design.md
+  s_3a8326f10dc640::t_27b3d4e415b87e 323-363
+src/lib/agents/tools/__fixtures__/cf-docs-search.txt
+  s_3a8326f10dc640::t_5dcf63d32c291a 1-517
+src/lib/agents/tools/__fixtures__/radar/ai_crawlers.json
+  s_3a8326f10dc640::t_a26141972d92ec 1-38
+src/lib/agents/tools/__fixtures__/radar/attack_targets_from.json
+  s_3a8326f10dc640::t_fab1fce3aedde0 1-85
+src/lib/agents/tools/__fixtures__/radar/attackers_of.json
+  s_3a8326f10dc640::t_a5c97bea47a9a9 1-151
+src/lib/agents/tools/__fixtures__/radar/bgp_hijacks.json
+  s_3a8326f10dc640::t_4eb20dde5b07bd 1-148
+src/lib/agents/tools/__fixtures__/radar/bot_vs_human.json
+  s_3a8326f10dc640::t_09f26fd3390346 1-30
+src/lib/agents/tools/__fixtures__/radar/domain_rank.json
+  s_3a8326f10dc640::t_1438d3721203c0 1-25
+src/lib/agents/tools/__fixtures__/radar/email_threats.json
+  s_3a8326f10dc640::t_3ec15601c8ed3d 1-30
+src/lib/agents/tools/__fixtures__/radar/internet_quality.json
+  s_3a8326f10dc640::t_e755b27a760e78 1-62
+src/lib/agents/tools/__fixtures__/radar/l3_attacks_mitigated_in.json
+  s_3a8326f10dc640::t_f7f0ecfe676f30 1-54
+src/lib/agents/tools/__fixtures__/radar/l7_attack_trend_from.json
+  s_3a8326f10dc640::t_b062b57b1d320a 1-47
+src/lib/agents/tools/__fixtures__/radar/l7_attacks_from.json
+  s_3a8326f10dc640::t_b620378d72b4ca 1-48
+src/lib/agents/tools/__fixtures__/radar/outages.json
+  s_3a8326f10dc640::t_a651b3656e02bc 1-110
+src/lib/agents/tools/__fixtures__/radar/top_attacked_industries.json
+  s_3a8326f10dc640::t_1681a24a0918b1 1-65
+src/lib/agents/tools/__fixtures__/radar/traffic_anomalies.json
+  s_3a8326f10dc640::t_4d3f1519fa472c 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "450201fffa6adce643f7cb285f06cbb355f12913",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
