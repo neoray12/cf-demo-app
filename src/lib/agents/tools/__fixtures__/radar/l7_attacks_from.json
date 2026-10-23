@@ -1,0 +1,48 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "summary_0": {
+      "WAF": "88.383387",
+      "DDOS": "8.605242",
+      "IP_REPUTATION": "1.624077",
+      "ACCESS_RULES": "1.376098",
+      "API_SHIELD": "0.006358",
+      "BOT_MANAGEMENT": "0.004838",
+      "DATA_LOSS_PREVENTION": "0.0"
+    },
+    "summary_1": {
+      "WAF": "63.156337",
+      "DDOS": "32.082776",
+      "IP_REPUTATION": "2.27493",
+      "ACCESS_RULES": "1.802843",
+      "BOT_MANAGEMENT": "0.68187",
+      "API_SHIELD": "0.001243",
+      "DATA_LOSS_PREVENTION": "0.0"
+    },
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-10-16T09:00:00Z",
+          "endTime": "2026-10-23T09:00:00Z"
+        },
+        {
+          "startTime": "2026-10-09T09:00:00Z",
+          "endTime": "2026-10-16T09:00:00Z"
+        }
+      ],
+      "confidenceInfo": {
+        "level": null,
+        "annotations": []
+      },
+      "normalization": "PERCENTAGE",
+      "lastUpdated": "2026-10-23T07:30:00Z",
+      "units": [
+        {
+          "name": "*",
+          "value": "requests"
+        }
+      ]
+    }
+  }
+}

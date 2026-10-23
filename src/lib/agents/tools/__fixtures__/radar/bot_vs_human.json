@@ -1,0 +1,30 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "summary_0": {
+      "human": "66.857579",
+      "bot": "33.142421"
+    },
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-10-16T09:00:00Z",
+          "endTime": "2026-10-23T09:00:00Z"
+        }
+      ],
+      "confidenceInfo": {
+        "level": null,
+        "annotations": []
+      },
+      "normalization": "PERCENTAGE",
+      "lastUpdated": "2026-10-23T09:05:00Z",
+      "units": [
+        {
+          "name": "*",
+          "value": "requests"
+        }
+      ]
+    }
+  }
+}

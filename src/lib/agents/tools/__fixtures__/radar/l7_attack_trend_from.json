@@ -1,0 +1,47 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "serie_0": {
+      "timestamps": [
+        "2026-10-16T00:00:00Z",
+        "2026-10-17T00:00:00Z",
+        "2026-10-18T00:00:00Z",
+        "2026-10-19T00:00:00Z",
+        "2026-10-20T00:00:00Z",
+        "2026-10-21T00:00:00Z",
+        "2026-10-22T00:00:00Z"
+      ],
+      "values": [
+        "0.585832",
+        "0.98931",
+        "1.0",
+        "0.697124",
+        "0.766644",
+        "0.894571",
+        "0.673182"
+      ]
+    },
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-10-16T00:00:00Z",
+          "endTime": "2026-10-23T00:00:00Z"
+        }
+      ],
+      "confidenceInfo": {
+        "level": null,
+        "annotations": []
+      },
+      "normalization": "MIN0_MAX",
+      "aggInterval": "ONE_DAY",
+      "lastUpdated": "2026-10-23T07:30:00Z",
+      "units": [
+        {
+          "name": "*",
+          "value": "requests"
+        }
+      ]
+    }
+  }
+}

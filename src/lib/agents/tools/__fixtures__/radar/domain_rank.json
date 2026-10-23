@@ -1,0 +1,25 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "details_0": {
+      "rank": 4,
+      "bucket": "200",
+      "categories": [
+        {
+          "id": 155,
+          "name": "Technology",
+          "superCategoryId": 26
+        }
+      ]
+    },
+    "meta": {
+      "dateRange": [
+        {
+          "endTime": "2026-10-23T00:00:00Z",
+          "startTime": "2026-10-23T00:00:00Z"
+        }
+      ]
+    }
+  }
+}

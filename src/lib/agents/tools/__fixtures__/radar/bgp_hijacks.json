@@ -1,0 +1,148 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "asn_info": [
+      {
+        "asn": 38042,
+        "org_name": "Sky Digital Co., Ltd.",
+        "country_code": "TW"
+      },
+      {
+        "asn": 134823,
+        "org_name": "Sky Digital Co., Ltd.",
+        "country_code": "TW"
+      },
+      {
+        "asn": 148996,
+        "org_name": "GLOBAL COMMUNICATION NETWORK LIMITED",
+        "country_code": "HK"
+      }
+    ],
+    "events": [
+      {
+        "duration": 927,
+        "event_type": 0,
+        "hijack_msgs_count": 4,
+        "hijacker_asn": 134823,
+        "hijacker_country": "TW",
+        "id": 167406,
+        "is_stale": true,
+        "max_hijack_ts": "2026-10-09T08:15:04.550",
+        "max_msg_ts": "2026-10-09T08:29:59.686",
+        "min_hijack_ts": "2026-10-09T08:14:32.891",
+        "on_going_count": 0,
+        "peer_asns": [
+          6939,
+          20130
+        ],
+        "peer_ip_count": 2,
+        "prefixes": [
+          "103.177.32.0/23"
+        ],
+        "tags": [
+          {
+            "name": "asrel_sibling_origins",
+            "score": -4
+          },
+          {
+            "name": "irr_new_origin_unknown",
+            "score": 0
+          },
+          {
+            "name": "irr_old_origin_unknown",
+            "score": 0
+          },
+          {
+            "name": "rpki_new_origin_invalid",
+            "score": 8
+          },
+          {
+            "name": "rpki_old_origin_valid",
+            "score": 0
+          }
+        ],
+        "victim_asns": [
+          38042
+        ],
+        "victim_countries": [
+          "TW"
+        ],
+        "confidence_score": 4
+      },
+      {
+        "duration": 15090,
+        "event_type": 0,
+        "hijack_msgs_count": 40,
+        "hijacker_asn": 134823,
+        "hijacker_country": "TW",
+        "id": 166849,
+        "is_stale": true,
+        "max_hijack_ts": "2026-10-05T10:27:26.886",
+        "max_msg_ts": "2026-10-05T10:27:41.740",
+        "min_hijack_ts": "2026-10-05T06:16:11.567",
+        "on_going_count": 0,
+        "peer_asns": [
+          6939,
+          14537,
+          20130
+        ],
+        "peer_ip_count": 3,
+        "prefixes": [
+          "74.120.122.0/24",
+          "74.120.123.0/24",
+          "198.65.208.0/20",
+          "202.160.72.0/21",
+          "202.160.73.0/24",
+          "202.160.74.0/24",
+          "202.160.75.0/24",
+          "202.160.76.0/24"
+        ],
+        "tags": [
+          {
+            "name": "asrel_new_origin_provider",
+            "score": -4
+          },
+          {
+            "name": "irr_new_origin_invalid",
+            "score": 4
+          },
+          {
+            "name": "irr_new_origin_unknown",
+            "score": 0
+          },
+          {
+            "name": "irr_old_origin_invalid",
+            "score": -2
+          },
+          {
+            "name": "irr_old_origin_unknown",
+            "score": 0
+          },
+          {
+            "name": "rpki_new_origin_invalid",
+            "score": 8
+          },
+          {
+            "name": "rpki_old_origin_valid",
+            "score": 0
+          }
+        ],
+        "victim_asns": [
+          148996
+        ],
+        "victim_countries": [
+          "US"
+        ],
+        "confidence_score": 6
+      }
+    ],
+    "total_monitors": 279
+  },
+  "result_info": {
+    "count": 2,
+    "total_count": 2,
+    "page": 1,
+    "per_page": 10
+  }
+}

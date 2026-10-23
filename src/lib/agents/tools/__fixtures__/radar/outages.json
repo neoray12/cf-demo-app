@@ -1,0 +1,110 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "annotations": [
+      {
+        "id": "839",
+        "dataSource": "ALL",
+        "description": "The magnitude 7.4 earthquake that hit Taiwan at 23:58 UTC briefly impacted mobile networks",
+        "tags": [],
+        "scope": null,
+        "startDate": "2024-04-03T00:00:37Z",
+        "endDate": "2024-04-03T03:00:00Z",
+        "locations": [
+          "TW"
+        ],
+        "asns": [
+          17421,
+          24158
+        ],
+        "geoIds": [],
+        "origins": [],
+        "entities": [
+          {
+            "entityType": "LOCATION",
+            "entityValue": "TW",
+            "entityName": "Taiwan"
+          },
+          {
+            "entityType": "AS",
+            "entityValue": "17421",
+            "entityName": "EMOME-NET"
+          },
+          {
+            "entityType": "AS",
+            "entityValue": "24158",
+            "entityName": "taiwanmobile-as"
+          }
+        ],
+        "eventType": "OUTAGE",
+        "linkedUrl": "https://twitter.com/CloudflareRadar/status/1775458065606676770",
+        "asnsDetails": [
+          {
+            "asn": "17421",
+            "name": "EMOME-NET",
+            "location": {
+              "code": "TW",
+              "name": "Taiwan"
+            }
+          },
+          {
+            "asn": "24158",
+            "name": "taiwanmobile-as",
+            "location": {
+              "code": "TW",
+              "name": "Taiwan"
+            }
+          }
+        ],
+        "locationsDetails": [
+          {
+            "name": "Taiwan",
+            "code": "TW"
+          }
+        ],
+        "originsDetails": [],
+        "outage": {
+          "outageCause": "NATURAL_DISASTER",
+          "outageType": "NETWORK"
+        }
+      },
+      {
+        "id": "214",
+        "dataSource": "ALL",
+        "description": null,
+        "tags": [],
+        "scope": null,
+        "startDate": "2022-03-03T01:00:00Z",
+        "endDate": "2022-03-03T11:00:00Z",
+        "locations": [
+          "TW"
+        ],
+        "asns": [],
+        "geoIds": [],
+        "origins": [],
+        "entities": [
+          {
+            "entityType": "LOCATION",
+            "entityValue": "TW",
+            "entityName": "Taiwan"
+          }
+        ],
+        "eventType": "OUTAGE",
+        "linkedUrl": "https://twitter.com/CloudflareRadar/status/1499372444326506499",
+        "asnsDetails": [],
+        "locationsDetails": [
+          {
+            "name": "Taiwan",
+            "code": "TW"
+          }
+        ],
+        "originsDetails": [],
+        "outage": {
+          "outageCause": "POWER_OUTAGE",
+          "outageType": "NATIONWIDE"
+        }
+      }
+    ]
+  }
+}

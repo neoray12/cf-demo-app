@@ -145,12 +145,76 @@
 | `src/app/components/chat/process-timeline.tsx` / `gateway-block-card.tsx` | 時間軸、攔截卡片 |
 | `src/app/pages/mcp-guardrails.tsx` | `/mcp-guardrails` 政策說明頁 |
 
+### 8. Agents Demo（通用型 Agent + Agent Tracing）
+
+設計：`docs/superpowers/specs/2026-10-23-agents-tracing-demo-design.md`；計畫：`docs/superpowers/plans/2026-10-23-agents-tracing.md`；裁決紀錄：`.superpowers/sdd/2026-10-23-agents-tracing/progress.md`（R1–R32）。
+
+同樣走 Vercel AI SDK v6 `streamText` + HTTP（不是 Agents SDK / Durable Objects），模型經 `nkcf-gateway-01` compat 呼叫 Workers AI（帶 `cf-aig-skip-cache: true`，延遲數字不被快取扭曲）。每次執行以 NDJSON 串流 span 事件（`src/lib/agents/trace-events.ts`），右側 Trace 面板即時畫 waterfall；同一組 span 也透過 Cloudflare Agents tracing 送到 Dashboard 的 Agents 分頁。
+
+- **三個 Agent**（路由 `/agents/{agentId}`，sidebar「Agents ▸」）：
+
+  | agentId | 模式 | 資料源 | Trace 形狀 |
+  |---------|------|--------|-----------|
+  | `knowledge-base`（企業知識庫） | RAG + 引用驗證 | AI Search instance `cf-demo-kb`（R2 bucket `cf-demo-kb`，資料夾 = 工作區） | `kb-agent` → `search_kb` → 答案 → subagent `grounding-checker` |
+  | `cloudflare-docs`（Cloudflare 文件專家） | Orchestrator + 並行研究 | Cloudflare Docs MCP（`search_docs`，整個 run 共用一條連線，R15）＋ Browser Rendering `/markdown`（`read_doc_page`，僅 `developers.cloudflare.com`） | `docs-agent` → `research` → 並行 `docs-researcher` ×N |
+  | `threat-intel`（資安情資） | 多位分析師並行 | Cloudflare Radar API（白名單工具、KV 快取 10 分鐘、span 屬性 `cache.hit`） | `threat-intel-agent` → `brief` → `attack-analyst` / `network-analyst` / `bot-analyst` |
+
+- **API**：`POST /api/agents/{agentId}`（NDJSON；body `messages`、`model`、`conversationId`、`workspace`、`storeContent`）。輸入上限：≤ 20 則訊息、每則 ≤ 8000 字、合計 ≤ 32000 字、role 只能 user/assistant 且最後一則是 user、`conversationId` ≤ 100 字且符合 `[\w-]+`，違反回 400。知識庫：`/api/agents/kb/{docs,upload,import-site,status}`。
+- **知識庫**：`default/` 是唯讀範例工作區（虛構「雲朵科技」8 份文件，來源 `scripts/seed-kb/`，API 寫入回 `agents.kb.errors.readOnlyWorkspace`）；使用者工作區 `ws-xxxxxxxx/`（id 存 localStorage）。R29 上限語意：每工作區 20 檔只計頂層上傳（不含 `site/`），單檔 ≤ 10 MB；匯入網站每次 ≤ 30 頁，存到 `{ws}/site/{hostSlug}/{slug}.md`（重匯同一 host 只覆蓋該 host），import job 綁定工作區（KV `kb-import:{jobId}`，TTL 1 h），完成後重複查詢為冪等。
+  - AI Search 設定：`query_rewrite` **關閉**（R24：中文查詢被改寫成英文後分數低於 0.4，0 筆）；instance 結果快取 **關閉**（R25：避免上傳未索引完時的空結果被快取兩天）。
+  - 索引實測 86–573 秒、偶發 `workers_ai_timeout_error`，每檔狀態「僅供參考」（R26，item 可能卡 `running` 但已可搜尋）→ UI 文案以「會前準備工作區」為主。狀態輪詢：空工作區不輪詢；有未完成檔案時 10 → 20 → 40 → 60 秒退避；上傳 / 匯入完成後重新開始。
+  - 引用驗證（R30）：`grounding-checker` 只檢查**最後一個有文字的 root 步驟**（`AgentDef.after` 的 `finalText`），不含開頭的計畫句。
+- **模型**（`src/lib/agents/models.ts`，選單選擇同時套用到 subagent）：預設一律 **Kimi K2.6 no-think**（`reasoning_effort: "none"`，R14/R20）——實測首字 0.7–8.8 s（多數 < 3 s），比 GLM-5.3-flash 快約 3–5 倍；主 agent 先寫一句計畫再呼叫工具（R16），約 3 秒就有第一個字。選單另有「Kimi K2.6（顯示思考過程）」（思考 token 0.6–1 s 開始串流，但正文要多等約 40 秒）、GLM-5.3-flash、GLM-5.3（推理無法關閉且不串流，首字 1–36 s）。Kimi 只能用 `reasoning_effort: "none"` 關思考（`enable_thinking=false` 無效）。
+- **Radar `location` 語意**（工具回傳都帶 `scope`，system prompt 要求照 `scope` 描述）：
+
+  | 端點 | `location=TW` 的意思 |
+  |------|---------------------|
+  | `attacks/layer7/summary/*`、`attacks/layer7/timeseries` | 攻擊**來源**是台灣（源自台灣、被擋下的應用層攻擊） |
+  | `attacks/layer7/top/locations/origin` | 攻擊**台灣**的請求來自哪些國家 |
+  | `attacks/layer7/top/locations/target` | 源自台灣的攻擊打向哪些國家 |
+  | `attacks/layer3/*` | 在**台灣資料中心**緩解的網路層攻擊 |
+  | `attacks/*/top/industry` | 被攻擊客戶的產業；工具一律不帶 `location`，只回全球排名 |
+
+  陷阱：`attacks/layer7/summary/...?industry=` 會被靜默忽略（工具不提供 industry 參數）；數字都是占比或 0–1 正規化值，不是次數。
+- **Tracing 設定**：
+  - `wrangler.toml` `[observability.traces] enabled = true`、`head_sampling_rate = 1`。
+  - `agents/observability/ai` 在模組頂層 import `cloudflare:workers`，`next dev` / `next build` / OpenNext esbuild 都解析不了 → `getTracedAI()`（`src/lib/agents/tracing.ts`）先用**變數路徑動態 import** `cloudflare:workers` 存到 `globalThis.__CF_WORKERS__`，再動態 import `wrapAISDK`；`next.config.mjs` 的 server webpack externals 把 `cloudflare:workers` 對應到 `var (globalThis.__CF_WORKERS__ || {})`。任何一步失敗就退回原生 `ai`，並 `console.warn("agents tracing disabled: …")`（每個 isolate 一次）。
+  - 本地沒有 tracing：`next dev` 沒有 `cloudflare:workers`，本地 workerd（1.20260317）的 `cloudflare:workers` 也沒有 `tracing` export → Dashboard Agents 分頁只能在 production 驗證。`run-start` 事件帶 `traced`，Trace 面板顯示「Cloudflare tracing：已啟用 / 未啟用（本地）」。
+  - `experimental_telemetry`：`functionId`（`kb-agent`、`docs-researcher`…）、`metadata.agentId = {functionId}-demo`、`conversationId`（同一對話 = 一個 session）、`model`、`workspace`（有時）。「記錄內容」開關關閉時 `storeMessages/storeTools: false`。使用者按停止不記成 span exception（idle timeout 與真正錯誤才記）。
+  - Traces 保留 7 天；**2026-12-01 起計入 Cloudflare Observability 的 ingestion / storage 計費**。
+- **TTFT 定義**（不要混用）：
+  - chat span 的 `ttftMs`：從該步驟**送出模型請求**（`prepareStep`，R22）到第一個 delta，包含上游排隊時間。
+  - run 的 `ttftMs`（伺服器首字）：從 run 開始到 **root agent** 第一個可見 token（含推理 token；subagent 的輸出不算）。
+  - 前端指標：「首個事件」（送出 → 第一個 NDJSON 事件）、「首個思考 token」（任何 span 的第一個 reasoning-delta）、「首字」（第一個 root 答案文字）。
+- **即時進度設計**：伺服器把 text/reasoning delta 依（span, 類型）合併、每 75 ms 送一次（其他事件前會先 flush，順序不變）；`execute_tool` span 在 `tool-input-start`（模型還在寫參數）就開始，工具晶片立即出現；chat span 在請求送出時就開（顯示「模型思考中 Ns」）；聊天中每輪有 activity timeline（思考中秒數、工具晶片與參數預覽、subagent 卡片串流其思考 / 文字尾巴）。
+- **逾時與重試**：模型串流 idle：root 60 s、subagent 45 s（步驟第一個 part 前 150 s，工具執行中暫停，R13）；最後一個允許的步驟關閉工具，強迫作答（R23）。subagent 在 idle / 串流錯誤時**自動重試一次**（新 span `…:{index}r`，失敗的 span 保留 error；R32），root agent 不自動重試；失敗或中止的回合在 UI 有「重試」按鈕（同問題、同設定），歷史只帶成功回合的最終步驟並去掉 `[n]` 引用標記。
+- **安全**：Agent 回答用 `MarkdownRenderer allowHtml={false}`（不渲染 raw HTML；markdown 圖片不載入，http(s) 圖片改成 🖼 連結，其他只顯示文字，防止透過圖片 URL 外洩資料）。
+- **`enable_request_signal` 相容性旗標**（`wrangler.toml` / `wrangler.dev.toml`）：讓 workerd 在用戶端斷線時觸發 `request.signal`，route 把它接到 run 的 AbortController → 按「停止」或關掉頁面會在伺服器端取消模型呼叫與工具（另外 response stream 的 `cancel()` 也會中止）。旗標名稱已在 workerd 與官方文件確認；OpenNext 是否把它傳到 `NextRequest.signal` 需在 production 確認（本地 `next dev` 跑在 Node，本來就會觸發）。
+- **OpenNext 與 Next 15 支援期限**：`@opennextjs/cloudflare@1.18.0` 依日期判斷支援（Next 15 發布滿 2 年後，自 2026-10-21 起）拒絕 build `next@15.5.14`（`Next.js version 15.5.14 is not supported`），只有 CLI 旗標 `--dangerouslyUseUnsupportedNextVersion` 能繞過（沒有環境變數 / 設定檔選項）。CI 是 Workers Builds，build 指令在 Dashboard 設定（`CF_API_TOKEN` 沒有 Builds 權限，無法用 API 改）→ 需在 Dashboard 的 build 指令加上此旗標，或另外升級 Next 16。這會影響**每一次** push 到 main。
+
+| 檔案 | 說明 |
+|------|------|
+| `src/lib/agents/runtime.ts` | `runAgent` / `runSubagent`（含重試）/ `runParallel`、`pipeStepStream`（stream → span 事件、idle 計時）、emit wrapper（delta 合併、span 樹維護）、`toolSpanId` |
+| `src/lib/agents/tracing.ts` | `getTracedAI()`、`isTracingActive()`、`setActiveSpanAttributes` / `recordActiveSpanException` |
+| `src/lib/agents/trace-events.ts` / `trace-tree.ts` | NDJSON 事件型別與解析、前端 reducer（span 樹、waterfall rows） |
+| `src/lib/agents/models.ts` / `gateway.ts` | 模型清單（client-safe）、AI Gateway compat provider |
+| `src/lib/agents/request.ts` | `/api/agents/{agentId}` 輸入上限檢查 |
+| `src/lib/agents/kb.ts` / `kb-route.ts` | 工作區、上傳驗證、AI Search 搜尋 / 狀態、R2 列表（`per_page=1000` + cursor，最多 5 頁） |
+| `src/lib/agents/defs/{knowledge-base,docs,threat-intel}.ts` | 三個 agent 與其 subagent 設定 |
+| `src/lib/agents/tools/{kb,cf-docs,radar}.ts` | 真實資料源工具（Radar 為白名單包裝） |
+| `src/lib/agents/ui-helpers.ts` | 索引狀態、輪詢退避、引用分組、Radar 圖表資料 |
+| `src/app/api/agents/[agentId]/route.ts`、`src/app/api/agents/kb/*` | 執行 agent、知識庫 API |
+| `src/app/(dashboard)/agents/[agentId]/page.tsx`、`src/app/pages/agent-chat.tsx` | 路由與共用聊天頁 |
+| `src/app/components/agents/*` | `use-agent-run`（串流 + 重試）、`agent-message`、`activity-timeline`、`trace-panel`、`span-detail`、`kb-workspace`、`radar-chart` |
+| `src/i18n/agents.{zh-TW,en}.json` | Agents 專用字串（`agents.*`，R28；不要改 `src/i18n/{zh-TW,en}.json`） |
+| `scripts/seed-kb/` | `default/` 範例文件與上傳腳本 |
+
 ## 技術棧
 
 - **前端**: React 19 + Vite + Tailwind CSS 4 + shadcn (new-york style)
 - **後端**: Cloudflare Workers
 - **AI**: Workers AI via `workers-ai-provider` + Vercel AI SDK (`ai`) + AI Gateway
-- **MCP**: `@modelcontextprotocol/sdk` v1.29.0
+- **MCP**: `@modelcontextprotocol/sdk` v1.32.1
 - **RAG**: AI Search (AutoRAG) 索引 R2 爬蟲資料
 - **路由**: React Router v7
 - **框架整合**: OpenNext for Cloudflare (`@opennextjs/cloudflare`)

@@ -1,0 +1,65 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "top_0": [
+      {
+        "name": "Computer Software",
+        "value": "18.153339"
+      },
+      {
+        "name": "Retail",
+        "value": "12.90976"
+      },
+      {
+        "name": "Information Technology and Services",
+        "value": "9.505128"
+      },
+      {
+        "name": "Internet",
+        "value": "6.805509"
+      },
+      {
+        "name": "Gambling & Casinos",
+        "value": "5.407065"
+      },
+      {
+        "name": "Cryptocurrency",
+        "value": "4.441597"
+      },
+      {
+        "name": "Research",
+        "value": "4.203978"
+      },
+      {
+        "name": "Telecommunications",
+        "value": "4.19169"
+      },
+      {
+        "name": "Information Services",
+        "value": "3.204011"
+      },
+      {
+        "name": "Financial Services",
+        "value": "2.246655"
+      }
+    ],
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-10-16T09:00:00Z",
+          "endTime": "2026-10-23T09:00:00Z"
+        }
+      ],
+      "confidenceInfo": null,
+      "normalization": "PERCENTAGE",
+      "lastUpdated": "2026-10-23T08:30:00Z",
+      "units": [
+        {
+          "name": "*",
+          "value": "requests"
+        }
+      ]
+    }
+  }
+}

@@ -1,7 +1,7 @@
 name = "cf-demo-app"
 account_id = "5efa272dc28e4e3933324c44165b6dbe"
 compatibility_date = "2025-12-01"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_compat", "enable_request_signal"]
 main = ".open-next/worker.js"
 
 [assets]
@@ -10,6 +10,10 @@ binding = "ASSETS"
 
 [observability]
 enabled = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1
 
 # Run the Worker near Tokyo regardless of which colo the visitor enters.
 # Some Taiwan ISPs (e.g. CHT Mobile, AS17421) intermittently route to HKG,
@@ -57,3 +61,5 @@ AUTORAG_NAME = "cf-demo-ai-search-mm"
 # Auto Router candidate pool — only providers this gateway has credentials/credits for
 AUTO_ROUTER_ALLOWED_PROVIDERS = "anthropic,workers-ai"
 MCP_SERVER_URLS = "cf-docs=https://docs.mcp.cloudflare.com/mcp,cf-observability=https://observability.mcp.cloudflare.com/mcp:oauth,cf-radar=https://radar.mcp.cloudflare.com/mcp:oauth,saas=https://saasmcp.neokung.work/mcp:oauth,saas-cm=https://saasmcp.neokung.work/mcp?codemode=search_and_execute:oauth"
+KB_AI_SEARCH = "cf-demo-kb"
+KB_BUCKET_NAME = "cf-demo-kb"
