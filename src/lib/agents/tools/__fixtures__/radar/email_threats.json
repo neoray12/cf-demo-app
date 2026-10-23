@@ -1,0 +1,30 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "summary_0": {
+      "NOT_MALICIOUS": "92.28554",
+      "MALICIOUS": "7.71446"
+    },
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-10-16T09:00:00Z",
+          "endTime": "2026-10-23T09:00:00Z"
+        }
+      ],
+      "confidenceInfo": {
+        "level": null,
+        "annotations": []
+      },
+      "normalization": "PERCENTAGE",
+      "lastUpdated": "2026-10-23T08:30:00Z",
+      "units": [
+        {
+          "name": "*",
+          "value": "messages"
+        }
+      ]
+    }
+  }
+}

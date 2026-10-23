@@ -1,0 +1,38 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "summary_0": {
+      "ClaudeBot": "14.818327",
+      "Googlebot": "10.60073",
+      "Bingbot": "5.060761",
+      "Meta-ExternalFetcher": "5.025914",
+      "Applebot": "5.014594",
+      "Perplexity-User": "5.005882",
+      "Meta-ExternalAgent": "4.996171",
+      "OAI-SearchBot": "4.993841",
+      "ChatGPT-User": "4.985739",
+      "other": "39.498042"
+    },
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-10-16T09:00:00Z",
+          "endTime": "2026-10-23T09:00:00Z"
+        }
+      ],
+      "confidenceInfo": {
+        "level": null,
+        "annotations": []
+      },
+      "normalization": "PERCENTAGE",
+      "lastUpdated": "2026-10-23T07:30:00Z",
+      "units": [
+        {
+          "name": "*",
+          "value": "requests"
+        }
+      ]
+    }
+  }
+}

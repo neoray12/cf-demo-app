@@ -1,0 +1,54 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "summary_0": {
+      "GRE Flood": "87.241274",
+      "SSDP Flood": "4.144793",
+      "Mirai (UDP) Flood": "2.15295",
+      "Mirai (TCP) Flood": "1.801649",
+      "SYN Flood": "1.717003",
+      "UDP Flood": "1.395179",
+      "ACK Flood": "0.670531",
+      "DNS Amplification": "0.20722",
+      "NTP Amplification": "0.164192",
+      "other": "0.505206"
+    },
+    "summary_1": {
+      "Mirai (UDP) Flood": "40.685538",
+      "UDP Flood": "20.971927",
+      "Mirai (TCP) Flood": "12.630362",
+      "SYN Flood": "7.023284",
+      "ACK Flood": "5.048699",
+      "DNS Amplification": "3.669828",
+      "SFU Flood": "3.548963",
+      "SSDP Flood": "1.488127",
+      "DNS Flood": "1.05538",
+      "other": "3.877889"
+    },
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-10-16T09:00:00Z",
+          "endTime": "2026-10-23T09:00:00Z"
+        },
+        {
+          "startTime": "2026-10-09T09:00:00Z",
+          "endTime": "2026-10-16T09:00:00Z"
+        }
+      ],
+      "confidenceInfo": {
+        "level": null,
+        "annotations": []
+      },
+      "normalization": "PERCENTAGE",
+      "lastUpdated": "2026-10-23T08:15:00Z",
+      "units": [
+        {
+          "name": "*",
+          "value": "bytes"
+        }
+      ]
+    }
+  }
+}

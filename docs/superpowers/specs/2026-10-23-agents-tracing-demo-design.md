@@ -320,6 +320,47 @@ payload：`storeMessages: true, storeTools: true`。⚠️ Agent 1 客戶上傳�
 
 > Agents 分頁只能在 **production**（git push 部署後）驗證；本地只能驗證畫面 waterfall。依 AGENTS.md，push 需你明確同意。
 
+### Spike results (2026-10-23)
+
+環境：`next@15.5.14`、`ai@6.0.141`、`agents@0.30.0`、`@opennextjs/cloudflare@1.18.0`、`@modelcontextprotocol/sdk@1.32.1`、本地 workerd `1.20260317.1`；模型 `workers-ai/@cf/zai-org/glm-5.3-flash` 經 `nkcf-gateway-01` compat，帶 `experimental_telemetry: { isEnabled: true, functionId: "spike-agent", metadata: { agentId: "spike-agent-demo", conversationId: "spike-1" } }`。spike route 已刪除。
+
+- **Q1 `wrapAISDK` 在 OpenNext 下能否運作 → 決定：動態 import + `cloudflare:workers` 由 globalThis 注入 + 一行 webpack externals（Task 4 必須一起做）。**
+  - `agents/observability/ai` 會沿 `agents/dist/cloudflare-*.js` **在模組頂層** `import * as cloudflareWorkers from "cloudflare:workers"`，只讀 `cloudflareWorkers.tracing`（沒有 `startActiveSpan` 就退回 noop）。
+  - `next dev`（Turbopack/Node）：靜態 import → 整支 route 500（`Cannot find module 'cloudflare:workers'`）；`await import("agents/observability/ai")` 包 try/catch → 可攔下錯誤、退回原生 `ai`，`generateText` 正常（GLM-5.3-flash 20.9 s）。
+  - `next build`（webpack，OpenNext build 會跑）：不加設定時**靜態與動態 import 都編譯失敗**（`UnhandledSchemeError: Reading from "cloudflare:workers" is not handled by plugins`）。加 `externals` 成 `commonjs cloudflare:workers` 後：靜態 import 在「Collecting page data」（Node 執行）失敗；動態 import 通過 next build，但 OpenNext 的 esbuild 打包又失敗（`Could not resolve "cloudflare:workers"`，OpenNext 沒有對 `cloudflare:*` 設 external，`src/lib/codemode.ts` 註解提過同一問題）。
+  - **可行做法（已在 `opennextjs-cloudflare build` + `preview` 的 workerd 實測成功）**：
+    1. `next.config.mjs` 加：
+       ```js
+       webpack: (config, { isServer }) => {
+         if (isServer) {
+           const prev = Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean);
+           config.externals = [...prev, ({ request }, cb) =>
+             request === 'cloudflare:workers' ? cb(null, 'var (globalThis.__CF_WORKERS__ || {})') : cb()];
+         }
+         return config;
+       },
+       ```
+    2. `getTracedAI()` 內：先 `const spec = 'cloudflare:workers'; globalThis.__CF_WORKERS__ = await import(/* webpackIgnore: true */ spec)`（用變數讓 webpack 與 esbuild 都不解析，留給 workerd 執行期處理；Node 下會 throw → catch），**之後**才 `await import('agents/observability/ai')` 並 `wrapAISDK(ai, …)`；任何一步失敗都回傳原生 `ai`。
+  - 結果（workerd preview，兩次）：`cloudflare:workers` 載入成功、`wrapAISDK` 回傳 wrapped namespace、`generateText` 成功（17.4 s / 13.4 s，`finishReason: stop`，usage 正常）。
+  - **限制**：本地 workerd 1.20260317 的 `cloudflare:workers` **沒有 `tracing` export**（只有 `DurableObject`、`RpcTarget`、`WorkerEntrypoint`、`env`、`waitUntil` …），所以本地 span 是 noop；真正的 span／Agents 分頁只能在 production 驗證（第 2 項不變）。
+  - 附帶發現：`@opennextjs/cloudflare@1.18.0` 在今天（Next 15 發布滿 2 年）拒絕 build `next@15.5.14`：`ERROR Next.js version 15.5.14 is not supported`，需加 `--dangerouslyUseUnsupportedNextVersion`（本 spike 只在本地加）。**CI 的 `opennextjs-cloudflare build` 很可能同樣失敗**，push 前要先處理（升 Next 16 或在 CI 指令加旗標）。
+- **Q4 AI Search 上傳 → 可查詢延遲 → 決定：實測 86 s～573 s（約 1.5～9.5 分鐘），變異大且 embedding 會偶發逾時 → 超過 3 分鐘門檻，KB UI 文案強調「會前準備工作區」，現場上傳只當加分項，並顯示每個檔案的索引狀態。**
+  - 流程：`wrangler r2 object put … --remote` 後 3 s 內 `POST /ai-search/instances/cf-demo-kb/jobs`，每 15 s 查 `/ai-search/namespaces/default/instances/cf-demo-kb/search`。
+  - 第一輪：`spike-other/b.md` 在上傳後 **+69 s 還查不到、+86 s 查得到**；同批的 `spike/a.md` 卻在 item 列表變成 `status: "error"`、`error: "workers_ai_timeout_error"`，job 整體跑了 3 分 45 秒才結束，該檔不會自動重試（要重新上傳或手動 reindex）。搜尋 API 也偶發 `7031 ai_gateway_timeout`。
+  - 第二輪（09:45:06 UTC 重傳內容不同的 `spike/a.md` 並觸發 job）：item 先 `queued` 約 5 分 30 秒、再 `running` 約 4 分鐘，`completed`（1 chunk）後才查得到 → **上傳後 +573 s 才可搜尋**。排隊期間沒有其他 job 在跑（前一個 job 09:43:32 已結束），所以 queued 時間是服務端排程造成，不是我們能控制的。
+  - 檔案狀態可查 `GET /ai-search/instances/cf-demo-kb/items`（`status: queued | completed | error`、`error`、`metadata.folder`），KB UI 應輪詢它顯示「索引中 / 完成 / 失敗（重試）」。
+- **資料夾過濾格式（Task 7 `kbSearchBody()`）→ 決定：新版 AI Search 用 Vectorize 風格，不是 AutoRAG 的 `{ type, key, value }`。**
+  - `{ type: "eq", key: "folder", value: "spike/" }` → `7105 metadata_filter_unknown_field`；`{ type: "and", filters: [...] }` → `7001 Invalid input`。
+  - 可用（已實測排除其他資料夾）：
+    ```json
+    { "ai_search_options": { "retrieval": { "max_num_results": 5,
+      "filters": { "folder": { "$gte": "ws-a1b2c3d4/", "$lt": "ws-a1b2c3d40" } } } } }
+    ```
+    前綴寫法同時涵蓋子資料夾；若工作區不會有子資料夾，也可用隱含相等 `{ "folder": "ws-a1b2c3d4/" }`（等同 `{ "$eq": … }`）。`folder` 值帶結尾 `/`；只比對前 64 bytes。
+  - 驗證：`folder = "spike-other/"` 與前綴 `spike-other/…spike-other0` 都只回 `spike-other/b.md`；`folder = "spike/"`、`$eq "spike/"`、前綴 `spike/…spike0` 都**不會**回 `spike-other/b.md`（`-` 0x2D < `/` 0x2F，所以前綴範圍不會誤含 `spike-other/`）。`spike/a.md` 索引完成後再驗一次正向：`{ "folder": "spike/" }` 與前綴 `spike/…spike0` 都只回 `spike/a.md`；無過濾時兩份都回；不存在的 `ws-zzz/` 前綴回 0 筆。
+- **MCP SDK 1.32.1 smoke test → 通過。** 透過 app 自己的 `parseMcpServerUrls(env.MCP_SERVER_URLS)` 的 `cf-docs` + `callMcpTool(server, "search_cloudflare_documentation", { query: "Workers vs Pages" })`：`next dev` 6.1 s、workerd preview 5.5 s，`isError: false`，1 個 `text` content（25,869 字元、16 個 `<result>`）。原文存為 `src/lib/agents/tools/__fixtures__/cf-docs-search.txt`。
+- **Radar fixtures**：`src/lib/agents/tools/__fixtures__/radar/*.json` 共 14 份（原始回應、pretty-print），全部 `success: true`。`traffic_anomalies` 為空陣列；`outages` 2 筆、`bgp_hijacks` 2 筆；`domain_rank` cloudflare.com 第 4 名。多抓了 `attack_targets_from`（`attacks/layer7/top/locations/target`）給 Task 6。耗時：多數 0.6–1.5 s，`bgp_hijacks` 4.6 s、`internet_quality` 7.3 s、`bot_vs_human` 5.9 s、`ai_crawlers` 2.6 s（後三者比 3.4 實測慢，工具逾時 20 s 仍足夠）。
+
 ## 8. 測試
 
 - 單元測試（vitest）：事件序列化、TTFT 計算、subagent 組裝、URL 白名單（`read_doc_page` 只允許 `developers.cloudflare.com`）、Radar 工具參數驗證與回傳格式（帶 `unit` / `period`）。

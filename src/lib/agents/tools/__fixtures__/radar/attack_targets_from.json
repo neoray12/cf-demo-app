@@ -1,0 +1,85 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "top_0": [
+      {
+        "targetCountryAlpha2": "US",
+        "targetCountryName": "United States",
+        "value": "52.443532",
+        "rank": 1
+      },
+      {
+        "targetCountryAlpha2": "CA",
+        "targetCountryName": "Canada",
+        "value": "7.920981",
+        "rank": 2
+      },
+      {
+        "targetCountryAlpha2": "IL",
+        "targetCountryName": "Israel",
+        "value": "4.197393",
+        "rank": 3
+      },
+      {
+        "targetCountryAlpha2": "GB",
+        "targetCountryName": "United Kingdom",
+        "value": "3.067400",
+        "rank": 4
+      },
+      {
+        "targetCountryAlpha2": "MY",
+        "targetCountryName": "Malaysia",
+        "value": "2.960346",
+        "rank": 5
+      },
+      {
+        "targetCountryAlpha2": "CN",
+        "targetCountryName": "China",
+        "value": "2.933756",
+        "rank": 6
+      },
+      {
+        "targetCountryAlpha2": "CY",
+        "targetCountryName": "Cyprus",
+        "value": "2.361356",
+        "rank": 7
+      },
+      {
+        "targetCountryAlpha2": "DE",
+        "targetCountryName": "Germany",
+        "value": "2.333625",
+        "rank": 8
+      },
+      {
+        "targetCountryAlpha2": "FR",
+        "targetCountryName": "France",
+        "value": "1.805584",
+        "rank": 9
+      },
+      {
+        "targetCountryAlpha2": "HK",
+        "targetCountryName": "Hong Kong",
+        "value": "1.382830",
+        "rank": 10
+      }
+    ],
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-10-16T09:00:00Z",
+          "endTime": "2026-10-23T09:00:00Z"
+        }
+      ],
+      "confidenceInfo": null,
+      "normalization": "PERCENTAGE",
+      "lastUpdated": "2026-10-23T07:30:00Z",
+      "units": [
+        {
+          "name": "*",
+          "value": "requests"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "top_0": [
+      {
+        "originCountryAlpha2": "US",
+        "originCountryName": "United States",
+        "value": "22.605155",
+        "rank": 1
+      },
+      {
+        "originCountryAlpha2": "CN",
+        "originCountryName": "China",
+        "value": "5.821922",
+        "rank": 2
+      },
+      {
+        "originCountryAlpha2": "SG",
+        "originCountryName": "Singapore",
+        "value": "5.798821",
+        "rank": 3
+      },
+      {
+        "originCountryAlpha2": "NL",
+        "originCountryName": "Netherlands",
+        "value": "5.084853",
+        "rank": 4
+      },
+      {
+        "originCountryAlpha2": "DE",
+        "originCountryName": "Germany",
+        "value": "4.878386",
+        "rank": 5
+      },
+      {
+        "originCountryAlpha2": "ID",
+        "originCountryName": "Indonesia",
+        "value": "4.265125",
+        "rank": 6
+      },
+      {
+        "originCountryAlpha2": "BR",
+        "originCountryName": "Brazil",
+        "value": "3.321734",
+        "rank": 7
+      },
+      {
+        "originCountryAlpha2": "FR",
+        "originCountryName": "France",
+        "value": "3.26209",
+        "rank": 8
+      },
+      {
+        "originCountryAlpha2": "IN",
+        "originCountryName": "India",
+        "value": "2.688111",
+        "rank": 9
+      },
+      {
+        "originCountryAlpha2": "KR",
+        "originCountryName": "Korea, South",
+        "value": "2.152708",
+        "rank": 10
+      }
+    ],
+    "top_1": [
+      {
+        "originCountryAlpha2": "US",
+        "originCountryName": "United States",
+        "value": "22.985498",
+        "rank": 1
+      },
+      {
+        "originCountryAlpha2": "CN",
+        "originCountryName": "China",
+        "value": "7.770979",
+        "rank": 2
+      },
+      {
+        "originCountryAlpha2": "SG",
+        "originCountryName": "Singapore",
+        "value": "5.435419",
+        "rank": 3
+      },
+      {
+        "originCountryAlpha2": "DE",
+        "originCountryName": "Germany",
+        "value": "4.702331",
+        "rank": 4
+      },
+      {
+        "originCountryAlpha2": "ID",
+        "originCountryName": "Indonesia",
+        "value": "4.190605",
+        "rank": 5
+      },
+      {
+        "originCountryAlpha2": "NL",
+        "originCountryName": "Netherlands",
+        "value": "4.026378",
+        "rank": 6
+      },
+      {
+        "originCountryAlpha2": "IN",
+        "originCountryName": "India",
+        "value": "3.818039",
+        "rank": 7
+      },
+      {
+        "originCountryAlpha2": "BR",
+        "originCountryName": "Brazil",
+        "value": "3.105056",
+        "rank": 8
+      },
+      {
+        "originCountryAlpha2": "FR",
+        "originCountryName": "France",
+        "value": "2.802858",
+        "rank": 9
+      },
+      {
+        "originCountryAlpha2": "KR",
+        "originCountryName": "Korea, South",
+        "value": "2.802072",
+        "rank": 10
+      }
+    ],
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-10-16T09:00:00Z",
+          "endTime": "2026-10-23T09:00:00Z"
+        },
+        {
+          "startTime": "2026-10-09T09:00:00Z",
+          "endTime": "2026-10-16T09:00:00Z"
+        }
+      ],
+      "confidenceInfo": null,
+      "normalization": "PERCENTAGE",
+      "lastUpdated": "2026-10-23T07:30:00Z",
+      "units": [
+        {
+          "name": "*",
+          "value": "requests"
+        }
+      ]
+    }
+  }
+}

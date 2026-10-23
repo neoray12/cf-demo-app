@@ -1,0 +1,517 @@
+<result>
+<url>https://developers.cloudflare.com/pages/functions/wrangler-configuration/</url>
+<title>Wrangler Configuration</title>
+<text>
+## Differences using a Wrangler configuration file for Pages Functions and Workers
+
+If you have used [Workers](/workers), you may already be familiar with the [Wrangler configuration file](/workers/wrangler/configuration/). There are a few key differences to be aware of when using this file with your Pages Functions project:
+
+* The configuration fields **do not match exactly** between Pages Functions Wrangler file and the Workers equivalent. For example, configuration keys like `main`, which are Workers specific, do not apply to a Pages Function's Wrangler configuration file. Some functionality supported by Workers, such as [module aliasing](/workers/wrangler/configuration/#module-aliasing) cannot yet be used by Cloudflare Pages projects.
+* The Pages' Wrangler configuration file introduces a new key, `pages_build_output_dir`, which is only used for Pages projects.
+* The concept of [environments](/pages/functions/wrangler-configuration/#configure-environments) and configuration inheritance in this file **is not** the same as Workers.
+* This file becomes the [source of truth](/pages/functions/wrangler-configuration/#source-of-truth) when used, meaning that you **can not edit the same fields in the dashboard** once you are using this file.
+
+## Configure environments
+
+With a Wrangler configuration file, you can quickly set configuration across your local environment, preview deployments, and production.
+
+### Local development
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/</url>
+<title>Migrate From Pages</title>
+<text>
+## Footnotes
+
+1. Workers can use Early Hints when the zone setting is turned on. Your Worker must send the appropriate `Link` headers. For more information, refer to the [103 Early Hints](/workers/examples/103-early-hints/) example. [↩](#user-content-fnref-1)
+2. Middleware can be configured via the [run\_worker\_first](/workers/static-assets/binding/#run%5Fworker%5Ffirst) option, but is charged as a normal Worker invocation. We plan to explore additional related options in the future. [↩](#user-content-fnref-2)
+3. To [use Durable Objects with your Cloudflare Pages project](/pages/functions/bindings/#durable-objects), you must create a separate Worker with a Durable Object and then declare a binding to it in both your Production and Preview environments. Using Durable Objects with Workers is simpler and recommended. [↩](#user-content-fnref-3)
+4. Workers Builds supports enabling [preview builds](/workers/ci-cd/builds/build-branches/#configure-preview-builds), though does not yet have the same level of configurability as Pages does. [↩](#user-content-fnref-4)
+5. Use [custom domain Preview URLs](/workers/previews/custom-domains/) to serve branch Previews on your own domain. Unlike Pages, where you can point any hostname at a branch, Workers serves each Preview at `<preview-name>.<your-domain>`, and the Preview name defaults to the branch name. Cloudflare creates a wildcard DNS record and certificate for the domain you choose. [↩](#user-content-fnref-5)
+6. Workers [supports popular frameworks](/workers/framework-guides/), many of which implement file-based routing. Additionally, you can use Wrangler to [compile your folder of functions/](#pages-functions-with-a-functions-folder) into a Worker to help ease the migration from Pages to Workers. [↩](#user-content-fnref-6)
+7.
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/</url>
+<title>Migrate From Pages</title>
+<text>
+# Migrate from Pages to Workers
+
+Last updated Oct 12, 2026|Copy as Markdown|[View as Markdown](index.md)|[Agent setup](/agent-setup/)
+
+You can deploy full-stack applications, including front-end static assets and back-end APIs, as well as server-side rendered pages (SSR), with [Cloudflare Workers](/workers/static-assets/).
+
+Like Pages, requests for static assets on Workers are free, and [Pages Functions](#pages-functions) invocations are charged at the same rate as Workers, so you can expect [a similar cost structure](/workers/platform/pricing/#workers).
+
+Unlike Pages, Workers has a distinctly broader set of features available to it, (including Durable Objects, Cron Triggers, and more comprehensive Observability). A complete list can be found at [the bottom of this page](#compatibility-matrix).
+
+## Migration
+
+Migrating from Cloudflare Pages to Cloudflare Workers is often a straightforward process. The following are some of the most common steps you will need to take to migrate your project.
+
+### Frameworks
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/changelog/post/2026-08-20-durable-objects-deployments-tab/</url>
+<title>2026 08 20 Durable Objects Deployments Tab</title>
+<text>
+#### Actual vs. configured traffic split
+
+The **Traffic %** column, for both Workers and Durable Objects, now shows the actual, observed traffic share for each version next to the percentage you configured. Previously, this column only showed the configured percentage. If you moved a deployment from 50/50 to 100% on a new version, the configured number updated immediately, but requests take time to catch up, and there was no way to tell how far along that shift was without checking metrics elsewhere.
+
+The configured split assigns Worker versions to individual Durable Objects, not to individual requests. Because [each Durable Object is pinned to the version it started on until you create a new deployment](/workers/versions-and-deployments/gradual-deployments/with-durable-objects/) and some objects naturally receive more traffic than others, the observed split can differ from the configured one for as long as multiple versions are active.
+
+Actual traffic share is calculated from the same [GraphQL Analytics API](/analytics/graphql-api/) data that powers other Workers and Durable Objects metrics, so standard ingestion delay and [sampling](/analytics/faq/graphql-api-inconsistent-results/) apply. Durable Objects analytics can lag Workers analytics by several minutes, so a version's actual share may take a little longer to catch up after a change.
+
+To view this, go to **Workers & Pages** \> **Durable Objects**, select a namespace, then select the **Deployments** tab. For more on how gradual deployments work, refer to [Gradual deployments](/workers/versions-and-deployments/gradual-deployments/).
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/changelog/product/durable-objects/</url>
+<title>Durable Objects</title>
+<text>
+#### Actual vs. configured traffic split
+
+The **Traffic %** column, for both Workers and Durable Objects, now shows the actual, observed traffic share for each version next to the percentage you configured. Previously, this column only showed the configured percentage. If you moved a deployment from 50/50 to 100% on a new version, the configured number updated immediately, but requests take time to catch up, and there was no way to tell how far along that shift was without checking metrics elsewhere.
+
+The configured split assigns Worker versions to individual Durable Objects, not to individual requests. Because [each Durable Object is pinned to the version it started on until you create a new deployment](/workers/versions-and-deployments/gradual-deployments/with-durable-objects/) and some objects naturally receive more traffic than others, the observed split can differ from the configured one for as long as multiple versions are active.
+
+Actual traffic share is calculated from the same [GraphQL Analytics API](/analytics/graphql-api/) data that powers other Workers and Durable Objects metrics, so standard ingestion delay and [sampling](/analytics/faq/graphql-api-inconsistent-results/) apply. Durable Objects analytics can lag Workers analytics by several minutes, so a version's actual share may take a little longer to catch up after a change.
+
+To view this, go to **Workers & Pages** \> **Durable Objects**, select a namespace, then select the **Deployments** tab. For more on how gradual deployments work, refer to [Gradual deployments](/workers/versions-and-deployments/gradual-deployments/).
+
+Jul 31, 2026
+
+[Inspect Worker startup performance with Wrangler](/changelog/post/2026-07-31-wrangler-startup-profile-summary/)
+
+[Workers](/workers/)[Durable Objects](/durable-objects/)
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/pages/</url>
+<title>Pages</title>
+<text>
+## Related products
+
+[Workers](/workers/)
+
+Cloudflare Workers provides a serverless execution environment that allows you to create new applications or augment existing ones without configuring or maintaining infrastructure.
+
+[R2](/r2/)
+
+Cloudflare R2 Storage allows developers to store large amounts of unstructured data without the costly egress bandwidth fees associated with typical cloud storage services.
+
+[D1](/d1/)
+
+D1 is Cloudflare’s native serverless database. Create a database by importing data or defining your tables and writing your queries within a Worker or through the API.
+
+[Zaraz](/zaraz/)
+
+Offload third-party tools and services to the cloud and improve the speed and security of your website.
+
+---
+
+## More resources
+
+### [Limits](/pages/platform/limits/)
+
+Learn about limits that apply to your Pages project (500 deploys per month on the Free plan).
+
+### [Framework guides](/pages/framework-guides/)
+
+Deploy popular frameworks such as React, Hugo, and static Next.js exports on Pages.
+
+### [Developer Discord](https://discord.cloudflare.com)
+
+Connect with the Workers community on Discord to ask questions, show what you are building, and discuss the platform with other developers.
+
+### [@CloudflareDev](https://x.com/cloudflaredev)
+
+Follow @CloudflareDev on Twitter to learn about product announcements, and what is new in Cloudflare Workers.
+
+Was this helpful?
+
+YesNo
+
+## On this page
+
+[![](/_astro/logo.te5VL_aD.svg)Docs](/)
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/</url>
+<title>Migrate From Pages</title>
+<text>
+## Compatibility matrix
+
+This compatibility matrix compares the features of Workers and Pages. Unless otherwise stated below, what works in Pages works in Workers, and what works in Workers works in Pages. Think something is missing from this list? [Open a pull request ↗︎](https://github.com/cloudflare/cloudflare-docs/edit/production/src/content/docs/workers/static-assets/compatibility-matrix.mdx) or [create a GitHub issue ↗︎](https://github.com/cloudflare/cloudflare-docs/issues/new).
+
+**Legend**   
+✅: Supported   
+⏳: Coming soon   
+🟡: Unsupported, workaround available   
+❌: Unsupported
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/</url>
+<title>Migrate From Pages</title>
+<text>
+# Set this to today's date
+compatibility_date = "2026-10-13"
+main = "./worker/index.ts"
+upload_source_maps = true
+workers_dev = true
+```
+
+### Custom domains
+
+If your domain's nameservers are managed by Cloudflare, you can, like Pages, configure a [custom domain](/workers/configuration/routing/custom-domains/) for your Worker. Additionally, you can also configure a [route](/workers/configuration/routing/routes/) if you only wish to some subset of paths to be served by your Worker.
+
+Note
+
+Unlike Pages, Workers does not support any domain whose nameservers are not managed by Cloudflare.
+
+### Rollout
+
+Once you have validated the behavior of Worker, and are satisfied with the development workflows, and have migrated all of your production traffic, you can delete your Pages project in the Cloudflare dashboard or with Wrangler:
+
+npmyarnpnpm
+
+```
+npx wrangler pages project delete
+```
+
+```
+yarn wrangler pages project delete
+```
+
+```
+pnpm wrangler pages project delete
+```
+
+## Migrate your project using an AI coding assistant
+
+You can add the following [experimental prompt ↗︎](https://developers.cloudflare.com/workers/prompts/pages-to-workers.txt) in your preferred coding assistant (e.g. Claude Code, Cursor) to make your project compatible with Workers:
+
+```plaintext
+https://developers.cloudflare.com/workers/prompts/pages-to-workers.txt
+```
+
+You can also use the Cloudflare Documentation [MCP server ↗︎](https://github.com/cloudflare/mcp-server-cloudflare/tree/main/apps/docs-ai-search) in your coding assistant to provide better context to your LLM when building with Workers, which includes this prompt when you ask to migrate from Pages to Workers.
+
+## Compatibility matrix
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/workers/platform/pricing/</url>
+<title>Pricing</title>
+<text>
+---
+description: Workers plans and pricing information.
+title: Pricing
+image: https://developers.cloudflare.com/workers/platform/pricing/og.png?v=6c82602c81fb72bf
+---
+
+[Skip to content](#main-content)
+
+> Documentation Index  
+> Fetch the complete documentation index at: https://developers.cloudflare.com/workers/llms.txt  
+> Use this file to discover all available pages before exploring further.
+
+# Pricing
+
+Last updated Oct 2, 2026|Copy as Markdown|[View as Markdown](index.md)|[Agent setup](/agent-setup/)
+
+By default, users have access to the Workers Free plan. The Workers Free plan includes limited usage of Workers, Pages Functions, Workers KV and Hyperdrive. Read more about the [Free plan limits](/workers/platform/limits/#account-plan-limits).
+
+The Workers Paid plan includes Workers, Pages Functions, Workers KV, Hyperdrive, and Durable Objects usage for a minimum charge of $5 USD per month for an account. The plan includes increased initial usage allotments, with clear charges for usage that exceeds the base plan. There are no additional charges for data transfer (egress) or throughput (bandwidth).
+
+All included usage is on a monthly basis.
+
+Pages Functions billing
+
+All [Pages Functions](/pages/functions/) are billed as Workers. All pricing and inclusions in this document apply to Pages Functions. Refer to [Functions Pricing](/pages/functions/pricing/) for more information on Pages Functions pricing.
+
+## Workers
+
+Users on the Workers Paid plan have access to the Standard usage model. Workers Enterprise accounts are billed based on the usage model specified in their contract. To switch to the Standard usage model, contact your Account Manager.
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/</url>
+<title>Migrate From Pages</title>
+<text>
+|                                                                                                             | Workers                    | Pages                      |
+| ----------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------- |
+| **Writing, Testing, and Deploying Code**                                                                    |                            |                            |
+| [Cloudflare Vite plugin](/workers/vite-plugin/)                                                             | ✅                          | ❌                          |
+| [Rollbacks](/workers/versions-and-deployments/rollbacks/)                                                   | ✅                          | ✅                          |
+| [Gradual Deployments](/workers/versions-and-deployments/)                                                   | ✅                          | ❌                          |
+| [Preview URLs](/workers/previews/)                                                                          | ✅                          | ✅                          |
+| [Testing tools](/workers/testing)                                                                           | ✅                          | ✅                          |
+| [Local Development](/workers/local-development/)                                                            | ✅                          | ✅                          |
+| [Remote Development (\--remote)](/workers/wrangler/commands/)                                               | ✅                          | ❌                          |
+| [Quick Editor in Dashboard ↗︎](https://blog.cloudflare.com/improved-quick-edit)                             | ✅                          | ❌                          |
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/pages/functions/pricing/</url>
+<title>Pricing</title>
+<text>
+# Pricing
+
+Last updated Sep 8, 2026|Copy as Markdown|[View as Markdown](index.md)|[Agent setup](/agent-setup/)
+
+Requests to your Functions are billed as Cloudflare Workers requests. Workers plans and pricing can be found [in the Workers documentation](/workers/platform/pricing/).
+
+## Paid Plans
+
+Requests to your Pages functions count towards your quota for Workers Paid plans, including requests from your Function to KV or Durable Object bindings.
+
+Pages supports the [Standard usage model](/workers/platform/pricing/#example-pricing-standard-usage-model).
+
+Note
+
+Workers Enterprise accounts are billed based on the usage model specified in their contract. To switch to the Standard usage model, reach out to your account team. Some Workers Enterprise customers maintain the ability to [change usage models](/workers/platform/pricing/#how-to-switch-usage-models).
+
+### Static asset requests
+
+On both free and paid plans, requests to static assets are free and unlimited. A request is considered static when it does not invoke Functions. Refer to [Functions invocation routes](/pages/functions/routing/#functions-invocation-routes) to learn more about when Functions are invoked.
+
+## Free Plan
+
+Requests to your Pages Functions count towards your quota for the Workers Free plan. For example, you could use 50,000 Functions requests and 50,000 Workers requests to use your full 100,000 daily request usage. The free plan daily request limit resets at midnight UTC.
+
+Was this helpful?
+
+YesNo
+
+## On this page
+
+[![](/_astro/logo.te5VL_aD.svg)Docs](/)
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/</url>
+<title>Migrate From Pages</title>
+<text>
+---
+description: A guide for migrating from Cloudflare Pages to Cloudflare Workers. Includes a compatibility matrix for comparing the features of Cloudflare Workers and Pages.
+title: Migrate from Pages to Workers
+image: https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/og.png?v=edab3eb43a5d9092
+---
+
+[Skip to content](#main-content)
+
+> Documentation Index  
+> Fetch the complete documentation index at: https://developers.cloudflare.com/workers/llms.txt  
+> Use this file to discover all available pages before exploring further.
+
+# Migrate from Pages to Workers
+
+Last updated Oct 12, 2026|Copy as Markdown|[View as Markdown](index.md)|[Agent setup](/agent-setup/)
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/</url>
+<title>Migrate From Pages</title>
+<text>
+### Wrangler commands
+
+Where previously you used [wrangler pages dev](/workers/wrangler/commands/pages/#pages-dev) and [wrangler pages deploy](/workers/wrangler/commands/general/#deploy), now instead use [wrangler dev](/workers/wrangler/commands/general/#dev) and [wrangler deploy](/workers/wrangler/commands/general/#deploy). Additionally, if you are using a Vite-powered framework, [our new Vite plugin](/workers/vite-plugin/) may be able offer you an even simpler development experience.
+
+Wrangler uses a different default port for the local development
+
+`wrangler pages dev` will, by default, expose the local development server at `http://localhost:8788`, whereas `wrangler dev` will expose it at `http://localhost:8787/`.
+
+You can customize the port using `--port`.
+
+### Builds
+
+If you are using Pages' built-in CI/CD system, you can swap this for Workers Builds by first [connecting your repository to Workers Builds](/workers/ci-cd/builds/#get-started) and then [disabling automatic deployments on your Pages project](/pages/configuration/git-integration/#disable-automatic-deployments).
+
+### Preview environment
+
+Pages automatically creates a preview environment for each project, and can be independently configured.
+
+To get a similar experience in Workers:
+
+1. Add a `previews` block and enable `workers.dev` Preview URLs in your Wrangler configuration file.  
+```jsonc  
+{  
+    "name": "my-worker",  
+    // Set this to today's date  
+    "compatibility_date": "2026-10-13",  
+    "main": "./worker/index.ts",  
+    "upload_source_maps": true,  
+    "assets": {  
+        "directory": "./dist/client/"  
+    },  
+    "preview_urls": true,  
+    "previews": {}  
+}  
+```  
+```toml  
+name = "my-worker"  
+# Set this to today's date  
+compatibility_date = "2026-10-13"  
+main = "./worker/index.ts"  
+upload_source_maps = true  
+preview_urls = true  
+previews = { }  
+[assets]  
+directory = "./dist/client/"  
+```
+2.
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/pages/framework-guides/</url>
+<title>Framework Guides</title>
+<text>
+---
+description: Deploy popular web frameworks to Cloudflare Pages with step-by-step guides.
+title: Framework guides
+image: https://developers.cloudflare.com/og-docs.png
+---
+
+[Skip to content](#main-content)
+
+> Documentation Index  
+> Fetch the complete documentation index at: https://developers.cloudflare.com/pages/llms.txt  
+> Use this file to discover all available pages before exploring further.
+
+# Framework guides
+
+Last updated Aug 21, 2026|Copy as Markdown|[View as Markdown](index.md)|[Agent setup](/agent-setup/)
+
+Are you sure you want to use Pages?
+
+[Workers supports most Pages use cases and offers a broader feature set](/workers/static-assets/migration-guides/migrate-from-pages/). It is Cloudflare's primary platform for building applications. Start new projects with Workers.
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/pages/</url>
+<title>Pages</title>
+<text>
+---
+description: Deploy full-stack applications instantly to the Cloudflare global network with Pages.
+title: Cloudflare Pages
+image: https://developers.cloudflare.com/og-docs.png
+---
+
+[Skip to content](#main-content)
+
+> Documentation Index  
+> Fetch the complete documentation index at: https://developers.cloudflare.com/pages/llms.txt  
+> Use this file to discover all available pages before exploring further.
+
+# Cloudflare Pages
+
+Last updated Aug 25, 2026|Copy as Markdown|[View as Markdown](index.md)|[Agent setup](/agent-setup/)
+
+Are you sure you want to use Pages?
+
+[Workers supports most Pages use cases and offers a broader feature set](/workers/static-assets/migration-guides/migrate-from-pages/). It is Cloudflare's primary platform for building applications. Start new projects with Workers.
+
+Create full-stack applications that are instantly deployed to the Cloudflare global network.
+
+Available on all plans
+
+Deploy your Pages project by connecting to [your Git provider](/pages/get-started/git-integration/), uploading prebuilt assets directly to Pages with [Direct Upload](/pages/get-started/direct-upload/) or using [C3](/pages/get-started/c3/) from the command line.
+
+---
+
+## Features
+
+[Pages Functions](/pages/functions/)
+
+Use Pages Functions to deploy server-side code to enable dynamic functionality without running a dedicated server.
+
+Use Pages Functions
+
+[Rollbacks](/pages/configuration/rollbacks/)
+
+Rollbacks allow you to instantly revert your project to a previous production deployment.
+
+Use Rollbacks
+
+[Redirects](/pages/configuration/redirects/)
+
+Set up redirects for your Cloudflare Pages project.
+
+Use Redirects
+
+---
+
+## Related products
+
+[Workers](/workers/)
+
+Cloudflare Workers provides a serverless execution environment that allows you to create new applications or augment existing ones without configuring or maintaining infrastructure.
+
+[R2](/r2/)
+
+
+</text>
+</result>
+<result>
+<url>https://developers.cloudflare.com/pages/functions/wrangler-configuration/</url>
+<title>Wrangler Configuration</title>
+<text>
+### Analytics Engine Datasets
+
+[Workers Analytics Engine](/analytics/analytics-engine/) provides analytics, observability and data logging from Pages Functions. Write data points within your Pages Function binding then query the data using the [SQL API](/analytics/analytics-engine/sql-api/).
+
+* Configure Analytics Engine Dataset bindings via your [Wrangler file](/workers/wrangler/configuration/#analytics-engine-datasets) the same way they are configured with Cloudflare Workers.
+* Interact with your [Analytics Engine Dataset](/pages/functions/bindings/#analytics-engine).
+
+### Workers AI
+
+[Workers AI](/workers-ai/) allows you to run machine learning models, on the Cloudflare network, from your own code – whether that be from Workers, Pages, or anywhere via REST API.
+
+Workers AI local development usage charges
+
+Using Workers AI always accesses your Cloudflare account in order to run AI models and will incur usage charges even in local development.
+
+Unlike other bindings, this binding is limited to one AI binding per Pages Function project.
+
+* Configure Workers AI bindings via your [Wrangler file](/workers/wrangler/configuration/#workers-ai) the same way they are configured with Cloudflare Workers.
+* Interact with your [Workers AI binding](/pages/functions/bindings/#workers-ai).
+
+## Local development settings
+
+The local development settings that you can configure are the same for Pages Functions and Cloudflare Workers. Read [this guide](/workers/wrangler/configuration/#local-development-settings) for more details.
+
+## Source of truth
+
+
+</text>
+</result>

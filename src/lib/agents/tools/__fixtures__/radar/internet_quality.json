@@ -1,0 +1,62 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "summary_0": {
+      "bandwidthDownload": "111.705342",
+      "bandwidthUpload": "35.585147",
+      "latencyIdle": "33.652607",
+      "latencyLoaded": "161.229302",
+      "jitterIdle": "13.644983",
+      "jitterLoaded": "42.729092",
+      "packetLoss": "0.105662"
+    },
+    "meta": {
+      "dateRange": [
+        {
+          "startTime": "2026-07-25T00:00:00Z",
+          "endTime": "2026-10-23T00:00:00Z"
+        }
+      ],
+      "confidenceInfo": {
+        "level": null,
+        "annotations": []
+      },
+      "normalization": "RAW_VALUES",
+      "lastUpdated": "2026-10-23T07:59:59Z",
+      "totalTests": [
+        59546
+      ],
+      "units": [
+        {
+          "name": "bandwidthDownload",
+          "value": "Mbps"
+        },
+        {
+          "name": "bandwidthUpload",
+          "value": "Mbps"
+        },
+        {
+          "name": "latencyIdle",
+          "value": "ms"
+        },
+        {
+          "name": "latencyLoaded",
+          "value": "ms"
+        },
+        {
+          "name": "jitterIdle",
+          "value": "ms"
+        },
+        {
+          "name": "jitterLoaded",
+          "value": "ms"
+        },
+        {
+          "name": "packetLoss",
+          "value": "pct"
+        }
+      ]
+    }
+  }
+}
