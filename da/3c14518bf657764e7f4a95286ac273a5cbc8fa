@@ -1,0 +1,33 @@
+src/app/components/agents/use-agent-run.test.ts
+  s_3a8326f10dc640::t_b2b3d79f405913 5-13,70-114
+src/app/components/agents/use-agent-run.ts
+  s_3a8326f10dc640::t_b146d13a006d81 6,71-72,81-122,178
+src/app/components/agents/kb-workspace.tsx
+  s_05995e094b757c::t_2c1c65873e7271 205-206,245
+src/app/pages/agent-chat.tsx
+  s_05995e094b757c::t_46756baed4119e 16,243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "da3c14518bf657764e7f4a95286ac273a5cbc8fa",
+  "prompts": {},
+  "sessions": {
+    "s_05995e094b757c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a82492eb704dabaa5",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
