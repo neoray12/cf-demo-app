@@ -1,0 +1,21 @@
+src/lib/agents/runtime.test.ts
+  s_3a8326f10dc640::t_b1ab7b25e3138c 6-7,28,38-41,244-326,415-418,627-828
+src/lib/agents/runtime.ts
+  s_3a8326f10dc640::t_6d12c76f077046 14-23,25,248,251-254,269-272,311-319,323-325,335-336,344,347,350,361,364-365,401-411,415-419,426-483,510,525-526,530-531
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "69eeefff8d25b0767c04daae87b3a681124fed36",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
