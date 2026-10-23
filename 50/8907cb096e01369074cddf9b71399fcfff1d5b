@@ -1,0 +1,21 @@
+src/lib/agents/gateway.hedge.test.ts
+  s_2a3616594ca156::t_b3e84e274b8ee1 1-250
+src/lib/agents/gateway.ts
+  s_2a3616594ca156::t_80aac8afed4ece 5,27-234,249,255,260-278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "508907cb096e01369074cddf9b71399fcfff1d5b",
+  "prompts": {},
+  "sessions": {
+    "s_2a3616594ca156": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a42de3beac9b69f9d",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
