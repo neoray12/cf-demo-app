@@ -10,7 +10,7 @@ vi.mock("./runtime", async (orig) => ({
   }),
 }));
 
-import { isValidWorkspace, kbFileStatuses, kbSearch, kbSearchBody, newWorkspaceId, safeUploadName, slugFromUrl, validateUpload } from "./kb";
+import { isValidWorkspace, kbFileStatuses, kbSearch, kbSearchBody, newWorkspaceId, safeUploadName, slugFromUrl, hostSlugFromUrl, countUploadedDocs, validateUpload } from "./kb";
 import { buildKbTools } from "./tools/kb";
 import { groundingChecker, kbAgent } from "./defs/knowledge-base";
 import { AGENTS } from "./registry";
@@ -103,6 +103,26 @@ describe("safeUploadName / slugFromUrl", () => {
     expect(slugFromUrl("https://example.com/Docs/Get_Started/?x=1")).toBe("docs-get-started");
     expect(slugFromUrl(`https://example.com/${"a".repeat(200)}`)).toHaveLength(80);
     expect(slugFromUrl("not a url")).toBe("index");
+  });
+  it("slugs hostnames (dots become dashes)", () => {
+    expect(hostSlugFromUrl("https://Example.com/a")).toBe("example-com");
+    expect(hostSlugFromUrl("https://docs.my-site.co.uk:8080/")).toBe("docs-my-site-co-uk");
+    expect(hostSlugFromUrl("https://127.0.0.1/")).toBe("127-0-0-1");
+    expect(hostSlugFromUrl("not a url")).toBe("site");
+  });
+});
+
+describe("countUploadedDocs", () => {
+  it("counts only top-level uploads, ignoring everything under site/", () => {
+    const docs = [
+      { key: "ws-a1b2c3d4/a.md" },
+      { key: "ws-a1b2c3d4/b.pdf" },
+      { key: "ws-a1b2c3d4/site/example-com/index.md" },
+      { key: "ws-a1b2c3d4/site/example-com/about.md" },
+      { key: "ws-a1b2c3d4/sitemap.md" },
+    ];
+    expect(countUploadedDocs("ws-a1b2c3d4", docs)).toBe(3);
+    expect(countUploadedDocs("ws-a1b2c3d4", [])).toBe(0);
   });
 });
 

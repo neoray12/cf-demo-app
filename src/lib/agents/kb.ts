@@ -65,6 +65,27 @@ export function slugFromUrl(url: string): string {
   return slug || "index";
 }
 
+/** `[a-z0-9-]` slug of a URL's hostname (dots become `-`, max 80); `site` when it cannot be parsed. */
+export function hostSlugFromUrl(url: string): string {
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // fall through to "site"
+  }
+  const slug = host.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80).replace(/-+$/, "");
+  return slug || "site";
+}
+
+/**
+ * Number of files that count against MAX_FILES_PER_WORKSPACE: only top-level uploads. Everything under `site/`
+ * (imported pages, which have their own 30-page-per-job cap) is excluded.
+ */
+export function countUploadedDocs(workspace: string, docs: Array<{ key: string }>): number {
+  const sitePrefix = `${workspace}/site/`;
+  return docs.filter((d) => !d.key.startsWith(sitePrefix)).length;
+}
+
 /**
  * Request body for AI Search. The folder filter uses the Vectorize-style format (verified in Task 1; the legacy
  * `{type,key,value}` filter is rejected with 7105): `$gte "<ws>/"` and `$lt "<ws>0"` ("0" is the character after "/")
