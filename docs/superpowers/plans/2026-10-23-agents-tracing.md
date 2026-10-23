@@ -313,6 +313,37 @@ curl -sN -X POST localhost:3000/api/agents/cloudflare-docs -H 'content-type: app
 
 ---
 
+### Task 12: 即時過程串流（執行順序：Task 5 之後、Task 6 之前）
+
+> 新增於 2026-10-23（使用者回饋：要像 Open WebUI 一樣，請求一出去就看到 thinking / 工具 / subagent 一步步在跑；重點是過程出現得快，不是答案多快）。Ruling R19/R20。
+
+**Files:**
+- Modify: `src/lib/agents/trace-events.ts`、`src/lib/agents/trace-tree.ts`、`src/lib/agents/runtime.ts`、`src/lib/agents/models.ts`
+- Test: `src/lib/agents/trace-tree.test.ts`、`src/lib/agents/runtime.test.ts`、`src/lib/agents/runtime.order.test.ts`
+
+**Interfaces:**
+- Consumes: Task 4/5 runtime（namespaced tool span ids、`RunContext.modelKey`、run scope）。
+- Produces:
+  - 新事件 `{ type: "span-input"; id: string; input: unknown }`（`TraceEvent` 成員；`input` 為 JSON-safe、字串截斷 ≤ 500 字）
+  - `SpanNode` 新增 `text: string`、`reasoning: string`、`input?: unknown`
+  - `reduceTrace`：`text-delta` / `reasoning-delta` 一律累加到 `spans[spanId].text/.reasoning`；**只有**當該 chat span 的 `parentId` 是根 agent span（`rootIds[0]`）時，才同時累加到 `RunTrace.text` / `RunTrace.reasoning`
+  - `runSubagent` 改為 `forwardText: true`（subagent 的思考與文字以自己的 chat spanId 串流給前端，作為「過程」）
+  - `pipeStepStream` 收到 v6 `tool-input-start`（`{ id, toolName }`，id = toolCallId）時立即 `ensureToolStarted`（namespaced id）→ 工具卡片在模型還在寫參數時就出現；收到 `tool-call` 時發 `span-input`（參數完整）；execute wrapper 若先到，也發 `span-input`，同一 id 只發一次
+  - `models.ts`：`kimi-k2.6-thinking` 的 `labelKey` 對應文案「Kimi K2.6（顯示思考過程）」；預設模型維持 `kimi-k2.6`（no-think，R20）
+
+- [ ] **Step 1: 寫失敗測試**
+  - reducer：根 agent chat span 的 text-delta 進 `RunTrace.text` 與該 span `.text`；subagent chat span（parent 為 subagent span）的 text-delta/reasoning-delta **只**進該 span，不進 `RunTrace.text`；`emptyAnswer` 只看根文字。
+  - reducer：`span-input` 設定 `node.input`；未知 id 時忽略（回傳同一 state）。
+  - runtime（fake stream）：`tool-input-start` → 立即 `span-start execute_tool`，早於 `tool-call`；隨後只有一次 `span-input`、一次 span-start。
+  - runtime.order（真 `streamText` + `MockLanguageModelV3`）：subagent 的 text-delta 事件帶 subagent chat spanId；reduce 後 `RunTrace.text` 只含主 agent 文字。
+- [ ] **Step 2: 確認失敗** → `npx vitest run src/lib/agents` FAIL。
+- [ ] **Step 3: 實作**（上述 Interfaces）。
+- [ ] **Step 4: 確認通過**；全套 `npm test`；`npx tsc --noEmit`（src/lib/agents、src/app/api/agents 無錯）。
+- [ ] **Step 5: 端到端**：`npm run dev`，curl 問 docs agent 複雜題，記錄：第一個事件、第一個 `span-start execute_tool`、第一個 subagent `text-delta` 的相對時間（目標：首個事件 < 0.5 s、首個工具卡片 < 6 s、之後每 2 s 內都有新事件）。
+- [ ] **Step 6: Commit**：`git commit -m "feat(agents): stream live progress (subagent deltas, early tool spans, span input)"`
+
+---
+
 ### Task 6: Radar 工具與資安情資 agent
 
 **Files:**
@@ -477,6 +508,13 @@ curl -sN -X POST localhost:3000/api/agents/cloudflare-docs -H 'content-type: app
   - `agent-message.tsx`：`MarkdownRenderer`（沿用）、來源清單、`Collapsible` 顯示工具 / subagent 呼叫（名稱、耗時、`detail`）、思考內容；`trace.emptyAnswer` 時顯示 `agents.trace.emptyAnswer`；`status "aborted"` 顯示已中止。
   - `trace-panel.tsx`：指標 `Badge` 列（client TTFT、server TTFT、總耗時、tokens in→out、工具數、subagent 數、模型）；輪次切換（`Tabs`）；`waterfallRows` 每列 = 縮排名稱 + 以 `totalMs` 為 100% 的絕對定位時間條（`invoke_agent` / `chat` / `execute_tool` 三色，error 紅色，chat 條上以 ▲ 標 `ttftMs`）；點列開 `SpanDetail`（`Tabs`：概要 / detail JSON / tokens）。
   - 對話 ID：`crypto.randomUUID()`，「新對話」按鈕重置。
+  - **即時活動時間軸（R19，仿 Open WebUI）**：新增 `src/app/components/agents/activity-timeline.tsx`，放在每輪使用者訊息與答案之間，送出瞬間就出現：
+    - 狀態列：旋轉圖示 +「進行中 12.3s」（每 100 ms 更新，從送出計時），結束後「完成 · 48.2s」/「失敗」/「已中止」。
+    - 根 agent 思考：`Collapsible`「思考中 Ns」（串流時自動展開、結束後收合為「思考了 Ns」），內容為 `RunTrace.reasoning`。
+    - 依 start 順序列出每個 `execute_tool` span：工具名稱（i18n 友善名稱）+ 參數預覽（`input` 中的 query/question/url，或 JSON 前 80 字）+ 執行中旋轉圖示與即時秒數 / 完成 ✓ + 耗時 / 失敗 ✗（紅）。
+    - 工具底下的 subagent（`invoke_agent` 子節點）卡片：名稱 + 序號、狀態、即時秒數、串流中的 `node.text`/`node.reasoning` 最後 2 行（muted、截斷），可展開看全文。
+    - 只用 shadcn（`Collapsible`、`Badge`、`Card`）+ lucide 圖示。
+  - `useAgentRun` 另記錄 `clientFirstEventMs`（送出 → 第一個 NDJSON 事件）、`clientFirstReasoningMs`（→ 第一個任何 span 的 reasoning-delta）、`clientTtftMs`（→ 第一個根 agent text-delta）；Trace 面板指標列顯示「首個事件 / 首個思考 token / 首字」。
 
 - [ ] **Step 6: 驗證**：`npm test` PASS；`npx tsc --noEmit` 無新錯誤；`npm run dev` 用瀏覽器開 `/agents/cloudflare-docs`、`/agents/threat-intel`：送建議提示詞 → 文字串流、waterfall 即時長出並行 subagent 列、指標顯示 TTFT；中途按停止 → 所有 span 收尾、顯示已中止；切到 375 px 寬 → Trace 在 Sheet 內；深色模式可讀。
 
