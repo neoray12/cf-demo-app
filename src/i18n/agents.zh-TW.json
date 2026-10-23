@@ -211,7 +211,9 @@
         "unknown": "狀態未知（{{n}}）",
         "instance": "AI Search 狀態：{{status}}"
       },
-      "retentionOff": "已開啟「不記錄內容」：提問與文件內容不會寫入 trace。"
+      "retentionOff": "已開啟「不記錄內容」：提問與文件內容不會寫入 trace。",
+      "loadFailedStatic": "無法載入文件清單，請重新整理頁面。",
+      "importStayHint": "匯入進行中，請留在此頁直到完成"
     },
     "chart": {
       "thisPeriod": "本期",

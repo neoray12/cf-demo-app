@@ -211,7 +211,9 @@
         "unknown": "Status unknown ({{n}})",
         "instance": "AI Search status: {{status}}"
       },
-      "retentionOff": "\"Don't record content\" is on: questions and document content are not written to the trace."
+      "retentionOff": "\"Don't record content\" is on: questions and document content are not written to the trace.",
+      "loadFailedStatic": "Could not load the document list. Reload the page to try again.",
+      "importStayHint": "Import in progress: please stay on this page until it finishes"
     },
     "chart": {
       "thisPeriod": "This period",

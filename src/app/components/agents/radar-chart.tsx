@@ -43,7 +43,8 @@ function useUnitLabel(unit: string): string {
 export const RadarChart = memo(function RadarChart({ chart }: { chart: RadarChartData }) {
   const { t } = useTranslation();
   const rows = useMemo(() => chartRows(chart), [chart]);
-  const compared = chartHasPrevious(rows);
+  // Only the bar chart draws `previous`; the line chart never does, so it gets no 「上週」 header or legend.
+  const compared = chart.kind === "bar" && chartHasPrevious(rows);
   const unitLabel = useUnitLabel(chart.unit);
   const fmt = (v: unknown) => (typeof v === "number" ? formatChartValue(chart.unit, v) : String(v ?? ""));
   const thisPeriod = t("agents.chart.thisPeriod");

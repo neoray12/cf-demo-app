@@ -143,6 +143,9 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
   const valueRef = useRef(value);
   valueRef.current = value;
   const uploadSeq = useRef(0);
+  const mountedRef = useRef(false);
+  /** Id of the latest status request: a response older than the latest is ignored. */
+  const statusSeq = useRef(0);
 
   // The stored workspace id is only readable in the browser (SSR renders without it).
   useEffect(() => {
@@ -158,7 +161,13 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
       importTimerRef.current = null;
     }
   }, []);
-  useEffect(() => stopImport, [stopImport]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      stopImport();
+    };
+  }, [stopImport]);
 
   // Switching workspace resets everything that belongs to the previous one.
   useEffect(() => {
@@ -185,30 +194,39 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
       timer = undefined;
     };
 
+    // One request round at a time: interval, visibility and epoch triggers must not race each other.
+    let inFlight = false;
     const tick = async () => {
-      if (settled || document.visibilityState !== "visible") return;
+      if (settled || inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      const seq = ++statusSeq.current;
       try {
-        const [d, s] = await Promise.all([
+        // allSettled: a good /docs result is kept even when /status fails (and vice versa).
+        const [dr, sr] = await Promise.allSettled([
           getJson(`/api/agents/kb/docs?${qs}`),
           writable ? getJson(`/api/agents/kb/status?${qs}`) : Promise.resolve(null),
         ]);
-        if (cancelled) return;
-        const list = d.ok ? ((d.body as { docs?: DocItem[] } | null)?.docs ?? []) : null;
+        if (cancelled || !mountedRef.current || seq !== statusSeq.current) return;
+        const d = dr.status === "fulfilled" ? dr.value : null;
+        const s = sr.status === "fulfilled" ? sr.value : null;
+        const list = d?.ok ? ((d.body as { docs?: DocItem[] } | null)?.docs ?? []) : null;
         if (list) setDocs(list);
         setLoadError(!list);
         let fileList: KbStatusFile[] = [];
+        const statusOk = !!s?.ok;
         if (s?.ok) {
           const body = s.body as { status?: string; files?: KbStatusFile[] } | null;
           fileList = Array.isArray(body?.files) ? body.files : [];
           setFiles(fileList);
           setInstanceStatus(typeof body?.status === "string" ? body.status : null);
         }
-        // The read-only sample workspace has no status to follow; a writable one is polled until every document
-        // is completed / error (or the cap). Never block the user on this: it is purely informational.
-        if (!writable || (list && summarizeIndex(list.map((x) => x.key), fileList).settled)) stop();
+        // The read-only sample workspace has no status to follow (one fetch, no retry). A writable one is polled
+        // until every document is completed / error (or the cap); a failed round never settles it.
+        if (!writable) stop();
+        else if (list && statusOk && summarizeIndex(list.map((x) => x.key), fileList).settled) stop();
         else if (Date.now() - startedAt > STATUS_POLL_MAX_MS) stop();
-      } catch {
-        if (!cancelled) setLoadError(true);
+      } finally {
+        inFlight = false;
       }
     };
 
@@ -315,17 +333,19 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
         body: JSON.stringify({ url, workspace: target }),
       });
       const id = (res.body as { jobId?: unknown } | null)?.jobId;
-      if (valueRef.current !== target) return;
+      // Navigated away (or switched workspace) during the POST: do not start polling for a dead component.
+      if (!mountedRef.current || valueRef.current !== target) return;
       if (!res.ok || typeof id !== "string") {
         setImp({ phase: "error", errorKey: kbErrorKey(res.body) });
         return;
       }
       jobId = id;
     } catch {
-      if (valueRef.current === target) setImp({ phase: "error", errorKey: "agents.kb.errors.server" });
+      if (mountedRef.current && valueRef.current === target) setImp({ phase: "error", errorKey: "agents.kb.errors.server" });
       return;
     }
 
+    if (!mountedRef.current) return;
     setImp({ phase: "running", finished: 0, total: 0 });
     const startedAt = Date.now();
     let failures = 0;
@@ -338,7 +358,7 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
         const res = await getJson(
           `/api/agents/kb/import-site?jobId=${encodeURIComponent(jobId)}&workspace=${encodeURIComponent(target)}`,
         );
-        if (valueRef.current !== target || importTimerRef.current === null) return;
+        if (!mountedRef.current || valueRef.current !== target || importTimerRef.current === null) return;
         if (!res.ok) {
           // A foreign / malformed job is final; anything else (incl. a 404 from KV not having caught up yet) gets a few retries.
           if (res.status === 400 || res.status === 403 || ++failures >= IMPORT_MAX_POLL_FAILURES) {
@@ -369,7 +389,7 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
       } catch {
         if (++failures >= IMPORT_MAX_POLL_FAILURES) {
           stopImport();
-          if (valueRef.current === target) setImp({ phase: "error", errorKey: "agents.kb.errors.server" });
+          if (mountedRef.current && valueRef.current === target) setImp({ phase: "error", errorKey: "agents.kb.errors.server" });
         }
       } finally {
         inFlight = false;
@@ -557,6 +577,11 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
                   </Button>
                 </form>
                 <p className="text-[11px] text-muted-foreground">{t("agents.kb.importHint")}</p>
+                {importing && (
+                  <p className="rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-800 dark:text-amber-200">
+                    {t("agents.kb.importStayHint")}
+                  </p>
+                )}
                 {imp.phase === "starting" && <p className="text-xs text-muted-foreground">{t("agents.kb.importStarting")}</p>}
                 {imp.phase === "running" && (
                   <div className="flex flex-col gap-1">
@@ -595,7 +620,9 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
                 <span className="text-[11px] font-normal text-muted-foreground">{t("agents.kb.statusColumn")}</span>
               )}
             </div>
-            {loadError && <p className="text-xs text-destructive">{t("agents.kb.loadFailed")}</p>}
+            {loadError && (
+              <p className="text-xs text-destructive">{t(writable ? "agents.kb.loadFailed" : "agents.kb.loadFailedStatic")}</p>
+            )}
             {docs === null && !loadError && <p className="text-xs text-muted-foreground">{t("agents.kb.docsLoading")}</p>}
             {docs && docs.length === 0 && <p className="text-xs text-muted-foreground">{t("agents.kb.docsEmpty")}</p>}
             {docs && docs.length > 0 && (
