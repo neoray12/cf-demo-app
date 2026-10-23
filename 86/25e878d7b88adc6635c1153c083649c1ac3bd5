@@ -1,0 +1,27 @@
+src/lib/agents/defs/threat-intel.test.ts
+  s_3a8326f10dc640::t_729444ea74ed3b 1-104
+src/lib/agents/defs/threat-intel.ts
+  s_3a8326f10dc640::t_37baac814346c7 1-118
+src/lib/agents/registry.ts
+  s_3a8326f10dc640::t_f373804111bc0a 2,9
+src/lib/agents/tools/radar.test.ts
+  s_3a8326f10dc640::t_da658b3de7df0d 1-398
+src/lib/agents/tools/radar.ts
+  s_3a8326f10dc640::t_9d19306b0d39d2 1-699
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8625e878d7b88adc6635c1153c083649c1ac3bd5",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
