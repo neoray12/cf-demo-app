@@ -364,6 +364,77 @@ describe("tool span ordering with real streamText", () => {
     ]);
   });
 
+  it("the last allowed step (main and subagent) is called with no tools and toolChoice none; chat spans open per request", async () => {
+    const models: Record<string, MockLanguageModelV3> = {};
+    const ai = {
+      ...aiNs,
+      streamText: (args: Parameters<typeof aiNs.streamText>[0]) => {
+        const fid = args.experimental_telemetry!.functionId!;
+        const model =
+          fid === "main"
+            ? mockModel(toolCallChunks("call-1", "fan"), textChunks("done"))
+            : mockModel(toolCallChunks("s-1", "lookup"), textChunks("finding"));
+        models[fid] = model;
+        return aiNs.streamText({ ...args, model });
+      },
+    } as unknown as typeof import("ai");
+    const events: TraceEvent[] = [];
+    const ctx: RunContext = {
+      env: {} as AgentEnv,
+      ai,
+      emit: (e) => events.push(e),
+      now: () => events.length,
+      conversationId: "c",
+      storeContent: false,
+      signal: new AbortController().signal,
+    };
+    const sub: SubagentDef<number> = {
+      functionId: "sub",
+      model: "glm-5.3-flash",
+      system: "",
+      maxSteps: 2,
+      tools: () => ({
+        lookup: aiNs.tool({
+          inputSchema: aiNs.jsonSchema<Record<string, never>>({ type: "object", properties: {} }),
+          execute: async () => "hit",
+        }),
+      }),
+      prompt: () => "x",
+    };
+    await runAgent(
+      {
+        id: "cloudflare-docs",
+        functionId: "main",
+        defaultModel: "glm-5.3-flash",
+        maxSteps: 2,
+        system: () => "",
+        tools: (c) => ({
+          fan: aiNs.tool({
+            inputSchema: aiNs.jsonSchema<Record<string, never>>({ type: "object", properties: {} }),
+            execute: async (_input, options) => (await runSubagent(sub, 0, c, options.toolCallId, 0)).text,
+          }),
+        }),
+      },
+      [{ role: "user", content: "hi" }],
+      "glm-5.3-flash",
+      ctx,
+    );
+    for (const fid of ["main", "sub"]) {
+      const calls = models[fid]!.doStreamCalls;
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.tools?.length).toBe(1);
+      expect(calls[0]!.toolChoice).not.toEqual({ type: "none" });
+      expect(calls[1]!.tools ?? []).toEqual([]);
+      expect(calls[1]!.toolChoice).toEqual({ type: "none" });
+    }
+    const runId = (events[0] as Extract<TraceEvent, { type: "run-start" }>).runId;
+    const chatIds = events.filter((e) => e.type === "span-start" && e.kind === "chat").map((e) => (e as { id: string }).id);
+    const fan = `${runId}/call-1`;
+    expect([...chatIds].sort()).toEqual([`${runId}:chat:0`, `${runId}:chat:1`, `${fan}:sub:0:chat:0`, `${fan}:sub:0:chat:1`].sort());
+    for (const id of chatIds) expect(events.filter((e) => e.type === "span-end" && e.id === id)).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: "run-end", status: "ok" });
+  });
+
   it("run scope: shared once() resources are disposed when the run ends (ok, error and abort)", async () => {
     const run = async (mode: "ok" | "error" | "abort") => {
       const ac = new AbortController();

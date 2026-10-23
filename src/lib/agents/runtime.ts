@@ -25,6 +25,8 @@ export const STREAM_IDLE_MS = 60_000;
 export const FIRST_PART_IDLE_MS = 150_000;
 const DETAIL_MAX_CHARS = 2000;
 const SPAN_INPUT_MAX_CHARS = 500;
+/** runAgent batches text/reasoning deltas per (span, type) and flushes them at this interval. */
+export const DELTA_FLUSH_MS = 75;
 
 export interface RunContext {
   env: AgentEnv;
@@ -255,15 +257,91 @@ function traceToolExecutions(
   return wrapped;
 }
 
+interface ChatSpan {
+  id: string;
+  start: number;
+  firstAt?: number;
+  ended: boolean;
+}
+
+/**
+ * The chat spans (one per step, id `${parentSpanId}:chat:${n}`) of one agent stream.
+ * `request(n)` is called from streamText's `prepareStep`, i.e. right before step n's
+ * HTTP request goes out, so the span (and its timer in the UI) covers upstream
+ * queueing / time-to-first-byte; pipeStepStream adopts it on that step's `start-step`
+ * (or opens it there when nothing requested it, e.g. fake streams). Step n+1 may be
+ * requested before the consumer has read step n's `finish-step`, so spans are kept
+ * per step rather than as a single "current" one.
+ */
+export interface ChatSpans {
+  request(stepNumber: number): void;
+}
+
+interface ChatSpanTracker extends ChatSpans {
+  open(stepNumber: number): ChatSpan;
+  end(span: ChatSpan, status: "ok" | "error", extra?: { usage?: { input: number; output: number }; detail?: unknown }): void;
+  openSpans(): ChatSpan[];
+  /** Called after a span is opened by `request` (pipeStepStream re-arms its first-part idle window). */
+  onRequest?: () => void;
+  /** After the stream is done, late requests are ignored. */
+  close(): void;
+}
+
+function createChatSpans(ctx: RunContext, parentSpanId: string, modelLabel: string): ChatSpanTracker {
+  const spans = new Map<number, ChatSpan>();
+  let closed = false;
+  const tracker: ChatSpanTracker = {
+    open(n) {
+      const hit = spans.get(n);
+      if (hit) return hit;
+      const span: ChatSpan = { id: `${parentSpanId}:chat:${n}`, start: ctx.now(), ended: false };
+      spans.set(n, span);
+      ctx.emit({ type: "span-start", id: span.id, parentId: parentSpanId, kind: "chat", name: modelLabel, t: span.start });
+      return span;
+    },
+    request(n) {
+      if (closed || spans.has(n)) return;
+      tracker.open(n);
+      tracker.onRequest?.();
+    },
+    end(span, status, extra) {
+      if (span.ended) return;
+      span.ended = true;
+      ctx.emit({
+        type: "span-end",
+        id: span.id,
+        t: ctx.now(),
+        status,
+        ...(extra?.usage ? { usage: extra.usage } : {}),
+        ...(span.firstAt !== undefined ? { ttftMs: span.firstAt - span.start } : {}),
+        ...(extra?.detail !== undefined ? { detail: extra.detail } : {}),
+      });
+    },
+    openSpans: () => [...spans.values()].filter((sp) => !sp.ended),
+    close() {
+      closed = true;
+      tracker.onRequest = undefined;
+    },
+  };
+  return tracker;
+}
+
 /**
  * Consume an AI SDK v6 `fullStream`, emitting one `chat` span per step and one
  * `execute_tool` span per tool call (both children of `parentSpanId`).
- * A tool span starts as soon as the model begins writing its arguments
- * (`tool-input-start`, whose `id` is the toolCallId), so the tool shows up live;
- * its `span-input` follows on `tool-call` (arguments complete). Tool spans / inputs
- * already emitted by `traceToolExecutions` (ids in `opts.startedToolSpans` /
- * `opts.inputToolSpans`) are not emitted again. A started tool counts as open
- * (idle timer suspended) until its span-end.
+ * - Chat spans come from `opts.chatSpans` when the caller wires its `request` into
+ *   `prepareStep` (opened at request time; `ttftMs` = first delta − request time);
+ *   otherwise they open on `start-step`.
+ * - A tool span starts as soon as the model begins writing its arguments
+ *   (`tool-input-start`, whose `id` is the toolCallId), so the tool shows up live;
+ *   its `span-input` follows on `tool-call` (arguments complete) or from the execute
+ *   wrapper, whichever is first. Tool spans / inputs already emitted by
+ *   `traceToolExecutions` (ids in `opts.startedToolSpans` / `opts.inputToolSpans`)
+ *   are not emitted again.
+ * - A tool is "running" (idle timer suspended) once its arguments are complete
+ *   (span-input sent) until its span-end. While its arguments are still streaming
+ *   ("input phase") the normal idle window applies, and a tool still in input phase
+ *   at its step's `finish-step` is closed with "incomplete tool arguments".
  * On abort / idle timeout / stream error, every span still open is closed with
  * `status: "error"` and `detail: { error }`, then the error is rethrown
  * (abort → an `AbortError`).
@@ -277,6 +355,7 @@ export async function pipeStepStream(
     forwardText: boolean;
     startedToolSpans?: Set<string>;
     inputToolSpans?: Set<string>;
+    chatSpans?: ChatSpans;
   },
 ): Promise<{ text: string; firstTokenAt?: number; toolResults: ToolResultRecord[] }> {
   const { parentSpanId, modelLabel, forwardText } = opts;
@@ -285,15 +364,18 @@ export async function pipeStepStream(
   let text = "";
   let firstTokenAt: number | undefined;
   const toolResults: ToolResultRecord[] = [];
+  const chats = (opts.chatSpans as ChatSpanTracker | undefined) ?? createChatSpans(ctx, parentSpanId, modelLabel);
   let stepIndex = 0;
-  let chat: { id: string; start: number; firstAt?: number } | null = null;
-  // Tool spans: started = span-start emitted (here or by traceToolExecutions);
-  // a tool is open (running) while started but not yet ended.
+  let chat: ChatSpan | null = null; // the step whose parts are being consumed
+  // Tool spans: started = span-start emitted (here or by traceToolExecutions); ended = span-end emitted;
+  // inputSent = arguments complete (span-input emitted). Running = started, input sent, not ended.
   const startedTools = opts.startedToolSpans ?? new Set<string>();
   const endedTools = new Set<string>();
   const inputSent = opts.inputToolSpans ?? new Set<string>();
   const toolInputs = new Map<string, unknown>();
   const openToolIds = () => [...startedTools].filter((id) => !endedTools.has(id));
+  const runningToolIds = () => openToolIds().filter((id) => inputSent.has(id));
+  const inputPhaseToolIds = () => openToolIds().filter((id) => !inputSent.has(id));
 
   const ensureToolStarted = (rawToolCallId: string, toolName: string) => {
     const toolCallId = toolSpanId(parentSpanId, rawToolCallId);
@@ -315,18 +397,15 @@ export async function pipeStepStream(
 
   const closeOpenSpans = (detail: { error: string }) => {
     for (const id of openToolIds()) endTool(id, "error", detail);
-    if (chat) ctx.emit({ type: "span-end", id: chat.id, t: ctx.now(), status: "error", detail });
+    for (const span of chats.openSpans()) chats.end(span, "error", { detail });
     chat = null;
   };
 
   const handle = (part: StreamPart) => {
     switch (part.type) {
       case "start-step": {
-        if (chat) ctx.emit({ type: "span-end", id: chat.id, t: ctx.now(), status: "ok" });
-        const id = `${parentSpanId}:chat:${stepIndex++}`;
-        const t = ctx.now();
-        chat = { id, start: t };
-        ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "chat", name: modelLabel, t });
+        if (chat) chats.end(chat, "ok");
+        chat = chats.open(stepIndex++);
         return;
       }
       case "reasoning-delta":
@@ -371,15 +450,11 @@ export async function pipeStepStream(
         return;
       }
       case "finish-step": {
+        // the provider only emits tool-call once the arguments parse; anything still streaming is dead
+        for (const id of inputPhaseToolIds()) endTool(id, "error", { error: "incomplete tool arguments" });
         if (!chat) return;
-        const current: { id: string; start: number; firstAt?: number } = chat;
-        ctx.emit({
-          type: "span-end",
-          id: current.id,
-          t: ctx.now(),
-          status: "ok",
+        chats.end(chat, "ok", {
           usage: { input: part.usage?.inputTokens ?? 0, output: part.usage?.outputTokens ?? 0 },
-          ...(current.firstAt !== undefined ? { ttftMs: current.firstAt - current.start } : {}),
           ...(part.finishReason ? { detail: { finishReason: part.finishReason } } : {}),
         });
         chat = null;
@@ -404,9 +479,13 @@ export async function pipeStepStream(
   const armIdle = () => {
     if (idleTimer !== undefined) clearTimeout(idleTimer);
     idleTimer = undefined;
-    if (openToolIds().length > 0) return; // tools are running: suspended until tool-result / tool-error
+    if (runningToolIds().length > 0) return; // tools are executing: suspended until tool-result / tool-error
     const ms = awaitingFirstPart ? FIRST_PART_IDLE_MS : STREAM_IDLE_MS;
     idleTimer = setTimeout(() => stop(idleTimeoutError()), ms);
+  };
+  // A step's first-part window starts when its request goes out (chat span start).
+  chats.onRequest = () => {
+    if (awaitingFirstPart) armIdle();
   };
 
   if (ctx.signal.aborted) onAbort();
@@ -438,22 +517,25 @@ export async function pipeStepStream(
   } finally {
     if (idleTimer !== undefined) clearTimeout(idleTimer);
     ctx.signal.removeEventListener("abort", onAbort);
+    chats.close();
   }
 
   // Stream ended normally: close anything the model never finished.
   for (const id of openToolIds()) endTool(id, "error", { error: "no tool result" });
-  if (chat) {
-    const current: { id: string; start: number; firstAt?: number } = chat;
-    ctx.emit({
-      type: "span-end",
-      id: current.id,
-      t: ctx.now(),
-      status: "ok",
-      ...(current.firstAt !== undefined ? { ttftMs: current.firstAt - current.start } : {}),
-    });
-  }
+  for (const span of chats.openSpans()) chats.end(span, "ok");
 
   return { text, firstTokenAt, toolResults };
+}
+
+/**
+ * prepareStep for an agent stream: opens step n's chat span when its request goes out (R22) and, on the last
+ * allowed step, disables tools so the model has to write its answer / finding (R23).
+ */
+function stepPreparer(chatSpans: ChatSpans, maxSteps: number) {
+  return ({ stepNumber }: { stepNumber: number }) => {
+    chatSpans.request(stepNumber);
+    return stepNumber >= maxSteps - 1 ? { toolChoice: "none" as const, activeTools: [] as never[] } : {};
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -491,11 +573,13 @@ export async function runSubagent<I>(
   ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "invoke_agent", name: def.functionId, t: ctx.now() });
   try {
     const model = AGENT_MODELS[ctx.modelKey ?? def.model];
+    const chatSpans = createChatSpans(subCtx, id, model.key);
     const result = ctx.ai.streamText({
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
       system: def.system,
       prompt: def.prompt(input),
       tools: traceToolExecutions(def.tools(subCtx), subCtx, id, startedToolSpans, inputToolSpans),
+      prepareStep: stepPreparer(chatSpans, def.maxSteps),
       stopWhen: stepCountIs(def.maxSteps),
       maxOutputTokens: model.maxTokens,
       abortSignal: subCtx.signal,
@@ -507,6 +591,7 @@ export async function runSubagent<I>(
       forwardText: true,
       startedToolSpans,
       inputToolSpans,
+      chatSpans,
     });
     const detail = def.toDetail ? smallDetail(def.toDetail(text)) : { output: text.slice(0, DETAIL_MAX_CHARS) };
     ctx.emit({ type: "span-end", id, t: ctx.now(), status: "ok", detail });
@@ -564,7 +649,11 @@ export async function runAgent(
   //   when the first delta of the answer (a root-agent chat span) reached the client;
   // - keeps the span tree well-formed: a span-end first closes any still-open
   //   descendants (innermost first), duplicate/late span events are dropped, and
-  //   nothing is emitted after run-end.
+  //   nothing is emitted after run-end;
+  // - coalesces text/reasoning deltas: one pending delta per (spanId, type), flushed
+  //   every DELTA_FLUSH_MS and synchronously before any other event (so deltas never
+  //   move across a span-start / span-end / span-input / run-end); deltas for spans
+  //   that aren't open are dropped.
   const chatSpans = new Set<string>();
   const usage = { input: 0, output: 0 };
   let firstVisibleAt: number | undefined;
@@ -603,8 +692,34 @@ export async function runAgent(
     }
   };
 
+  type Delta = Extract<TraceEvent, { type: "text-delta" | "reasoning-delta" }>;
+  const pendingDeltas = new Map<string, Delta>();
+  let flushTimer: ReturnType<typeof setTimeout> | undefined;
+  const flushDeltas = () => {
+    if (flushTimer !== undefined) clearTimeout(flushTimer);
+    flushTimer = undefined;
+    if (pendingDeltas.size === 0) return;
+    const batch = [...pendingDeltas.values()];
+    pendingDeltas.clear();
+    for (const d of batch) forward(d);
+  };
+
   const emit = (e: TraceEvent) => {
     if (ended) return;
+    if (e.type === "text-delta" || e.type === "reasoning-delta") {
+      if (!open.has(e.spanId)) return;
+      // the answer = chat spans of the root agent (same rule as reduceTrace); measured on the raw delta
+      if (firstVisibleAt === undefined && chatSpans.has(e.spanId) && parents.get(e.spanId) === runId) {
+        firstVisibleAt = ctx.now();
+      }
+      const key = `${e.type}\u0000${e.spanId}`;
+      const pending = pendingDeltas.get(key);
+      if (pending) pending.text += e.text;
+      else pendingDeltas.set(key, { ...e });
+      flushTimer ??= setTimeout(flushDeltas, DELTA_FLUSH_MS);
+      return;
+    }
+    flushDeltas();
     switch (e.type) {
       case "span-start":
         // drop duplicates and late starts under an already-closed parent
@@ -628,13 +743,6 @@ export async function runAgent(
       }
       case "span-input":
         if (!open.has(e.id)) return;
-        break;
-      case "text-delta":
-      case "reasoning-delta":
-        // subagent deltas are progress, not the answer's first token
-        if (firstVisibleAt === undefined && (e.spanId === runId || parents.get(e.spanId) === runId)) {
-          firstVisibleAt = ctx.now();
-        }
         break;
       case "run-end":
         ended = true;
@@ -665,11 +773,13 @@ export async function runAgent(
   };
 
   try {
+    const chatSpans = createChatSpans(runCtx, runId, model.key);
     const result = ctx.ai.streamText({
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
       system: def.system(runCtx),
       messages,
       tools: traceToolExecutions(def.tools(runCtx), runCtx, runId, startedToolSpans, inputToolSpans),
+      prepareStep: stepPreparer(chatSpans, def.maxSteps),
       stopWhen: stepCountIs(def.maxSteps),
       maxOutputTokens: model.maxTokens,
       abortSignal: runCtx.signal,
@@ -681,6 +791,7 @@ export async function runAgent(
       forwardText: true,
       startedToolSpans,
       inputToolSpans,
+      chatSpans,
     });
     await def.after?.(runCtx, { text, rootSpanId: runId, toolResults });
     emit({ type: "span-end", id: runId, t: ctx.now(), status: "ok", detail: { output: text.slice(0, DETAIL_MAX_CHARS) } });

@@ -208,6 +208,35 @@ describe("reduceTrace", () => {
     expect(s.emptyAnswer).toBe(true);
   });
 
+  it("answer = chat spans whose parent is the runId: an orphan subagent chat (adopted later) never enters RunTrace.text", () => {
+    const s = run([
+      runStart,
+      ...rootChat,
+      // subagent chat span arrives before its invoke_agent parent (and before the tool span)
+      { type: "span-start", id: "r1/c1:sub:0:chat:0", parentId: "r1/c1:sub:0", kind: "chat", name: "m", t: 4 },
+      { type: "text-delta", spanId: "r1/c1:sub:0:chat:0", text: "orphan-text" },
+      { type: "span-start", id: "r1/c1:sub:0", parentId: "r1/c1", kind: "invoke_agent", name: "sub", t: 3 },
+      { type: "text-delta", spanId: "r1/c1:sub:0:chat:0", text: "-more" },
+      { type: "span-start", id: "r1/c1", parentId: "r1", kind: "execute_tool", name: "research", t: 2 },
+      { type: "text-delta", spanId: "r1:chat:0", text: "root" },
+    ]);
+    expect(s.text).toBe("root");
+    expect(s.spans["r1/c1:sub:0:chat:0"]!.text).toBe("orphan-text-more");
+    expect(s.rootIds).toEqual(["r1"]);
+  });
+
+  it("the answer rule uses runId even when an orphan is the first root", () => {
+    const s = run([
+      runStart,
+      { type: "span-start", id: "x:chat:0", parentId: "x", kind: "chat", name: "m", t: 0 },
+      ...rootChat,
+      { type: "text-delta", spanId: "x:chat:0", text: "nope" },
+      { type: "text-delta", spanId: "r1:chat:0", text: "yes" },
+    ]);
+    expect(s.rootIds[0]).toBe("x:chat:0");
+    expect(s.text).toBe("yes");
+  });
+
   it("text-delta / reasoning-delta for an unknown span id are ignored (same state)", () => {
     const s1 = run([runStart, ...rootChat]);
     expect(reduceTrace(s1, { type: "text-delta", spanId: "ghost", text: "x" })).toBe(s1);

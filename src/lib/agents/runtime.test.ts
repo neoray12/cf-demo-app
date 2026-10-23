@@ -393,13 +393,12 @@ describe("pipeStepStream early tool spans (tool-input-start) and span-input", ()
     expect(events.filter((e) => e.type === "span-input")).toHaveLength(0);
   });
 
-  it("a tool started by tool-input-start is closed once if the stream ends without a tool-call", async () => {
+  it("a tool started by tool-input-start is closed once if the stream ends (without finish-step) before its tool-call", async () => {
     const { ctx, events, clock } = makeCtx();
     await pipeStepStream(
       fakeStream(clock, [
         startStep(0),
         { at: 5, part: p({ type: "tool-input-start", id: "c1", toolName: "research" }) },
-        finishStep(9),
       ]),
       ctx,
       { parentSpanId: "P", modelLabel: "m", forwardText: true },
@@ -409,7 +408,7 @@ describe("pipeStepStream early tool spans (tool-input-start) and span-input", ()
     ]);
   });
 
-  it("idle stays suspended while a tool's arguments are streaming (tool-input-start → 70 s → tool-call)", async () => {
+  it("idle is NOT suspended while a tool's arguments are still streaming (input phase): 60 s of silence times out", async () => {
     vi.useFakeTimers();
     const { ctx, events, clock } = makeCtx();
     const settled = pipeStepStream(
@@ -425,12 +424,49 @@ describe("pipeStepStream early tool spans (tool-input-start) and span-input", ()
       ctx,
       { parentSpanId: "P", modelLabel: "m", forwardText: true },
     ).then(
-      () => true,
-      () => false,
+      () => "ok",
+      (e: Error) => e.message,
     );
     await vi.advanceTimersByTimeAsync(70_000);
-    expect(await settled).toBe(true);
-    expect(events.filter((e) => e.type === "span-end" && e.id === "P/c1")).toEqual([expect.objectContaining({ status: "ok" })]);
+    expect(await settled).toBe("idle timeout");
+    expect(events.filter((e) => e.type === "span-end" && e.id === "P/c1")).toEqual([
+      expect.objectContaining({ status: "error", detail: { error: "idle timeout" } }),
+    ]);
+  });
+
+  it("a tool whose arguments never completed is closed at its step's finish-step, and idle runs in the next step", async () => {
+    vi.useFakeTimers();
+    const { ctx, events, clock } = makeCtx();
+    const settled = pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 10, part: p({ type: "tool-input-start", id: "c1", toolName: "search_docs" }) },
+        { at: 11, part: p({ type: "tool-input-delta", id: "c1", delta: '{"query":"k' }) },
+        { at: 12, part: p({ type: "tool-input-start", id: "c2", toolName: "search_docs" }) },
+        { at: 13, part: p({ type: "tool-call", toolCallId: "c2", toolName: "search_docs", input: { query: "d1" } }) },
+        { at: 20, part: p({ type: "tool-result", toolCallId: "c2", toolName: "search_docs", input: {}, output: "ok" }) },
+        finishStep(30),
+        startStep(40),
+        { at: 50, part: p({ type: "text-delta", id: "t", text: "answer" }) },
+        { sleep: 61_000 },
+        finishStep(70_000),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    ).then(
+      () => "ok",
+      (e: Error) => e.message,
+    );
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(await settled).toBe("idle timeout");
+    expect(events.filter((e) => e.type === "span-end" && e.id === "P/c1")).toEqual([
+      { type: "span-end", id: "P/c1", t: 30, status: "error", detail: { error: "incomplete tool arguments" } },
+    ]);
+    // closed before its step's chat span
+    const idx = (pred: (e: TraceEvent) => boolean) => events.findIndex(pred);
+    expect(idx((e) => e.type === "span-end" && e.id === "P/c1")).toBeLessThan(idx((e) => e.type === "span-end" && e.id === "P:chat:0"));
+    expect(events.filter((e) => e.type === "span-end" && e.id === "P/c2")).toEqual([expect.objectContaining({ status: "ok" })]);
+    expect(events.find((e) => e.type === "span-end" && e.id === "P:chat:1")).toMatchObject({ status: "error", detail: { error: "idle timeout" } });
   });
 });
 
@@ -1021,6 +1057,192 @@ describe("run cancellation and span ordering", () => {
     expect(((await res) as Error).message).toBe("idle timeout");
     expect(subSignal?.aborted).toBe(true);
     expect(ctx.signal.aborted).toBe(false);
+  });
+});
+
+describe("chat spans open when the model request is sent (prepareStep)", () => {
+  const def: AgentDef = {
+    id: "cloudflare-docs",
+    functionId: "docs-agent",
+    defaultModel: "glm-5.3-flash",
+    maxSteps: 3,
+    system: () => "sys",
+    tools: () => ({}),
+  };
+  type PrepareStep = (o: { stepNumber: number }) => unknown;
+
+  it("opens chat:N from prepareStep, reuses it on start-step, and measures ttft from the request", async () => {
+    const { ctx, events, clock } = makeCtx();
+    let prepare: PrepareStep | undefined;
+    const ai = {
+      ...aiNs,
+      streamText: (args: { prepareStep?: PrepareStep }) => {
+        prepare = args.prepareStep;
+        clock.t = 5;
+        prepare!({ stepNumber: 0 }); // the step-0 request goes out
+        return {
+          fullStream: fakeStream(clock, [
+            { at: 50, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 60, part: p({ type: "text-delta", id: "t", text: "Hi" }) },
+            // step 1's request can go out before the consumer has read step 0's finish-step
+            { at: 70, run: () => void prepare!({ stepNumber: 1 }) },
+            { at: 80, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "tool-calls" }) },
+            { at: 200, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 260, part: p({ type: "text-delta", id: "t", text: "!" }) },
+            { at: 300, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+          ]),
+        };
+      },
+    } as unknown as typeof import("ai");
+    await runAgent(def, [{ role: "user", content: "hi" }], "glm-5.3-flash", { ...ctx, ai });
+    const runId = (events[0] as Extract<TraceEvent, { type: "run-start" }>).runId;
+    const chatStarts = events.filter((e) => e.type === "span-start" && e.kind === "chat");
+    expect(chatStarts).toEqual([
+      { type: "span-start", id: `${runId}:chat:0`, parentId: runId, kind: "chat", name: "glm-5.3-flash", t: 5 },
+      { type: "span-start", id: `${runId}:chat:1`, parentId: runId, kind: "chat", name: "glm-5.3-flash", t: 70 },
+    ]);
+    expect(events.find((e) => e.type === "span-end" && e.id === `${runId}:chat:0`)).toMatchObject({
+      t: 80,
+      status: "ok",
+      ttftMs: 55,
+      usage: { input: 1, output: 1 },
+    });
+    expect(events.find((e) => e.type === "span-end" && e.id === `${runId}:chat:1`)).toMatchObject({ t: 300, status: "ok", ttftMs: 190 });
+    expect(events.filter((e) => e.type === "text-delta").map((e) => (e as { spanId: string }).spanId)).toEqual([
+      `${runId}:chat:0`,
+      `${runId}:chat:1`,
+    ]);
+  });
+
+  it("the last allowed step disables tools (toolChoice none, no active tools); earlier steps don't", async () => {
+    const { ctx, clock } = makeCtx();
+    const { ai, calls } = fakeAI([(c) => fakeStream(c, [{ at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) }])], clock);
+    await runAgent(def, [{ role: "user", content: "hi" }], "glm-5.3-flash", { ...ctx, ai });
+    const prepare = calls[0]!.prepareStep as PrepareStep;
+    expect(prepare({ stepNumber: 0 })).not.toMatchObject({ toolChoice: "none" });
+    expect(prepare({ stepNumber: 1 })).not.toMatchObject({ toolChoice: "none" });
+    expect(prepare({ stepNumber: 2 })).toEqual({ toolChoice: "none", activeTools: [] });
+  });
+
+  it("closes a chat span that was requested but never started when the stream fails", async () => {
+    const { ctx, events, clock } = makeCtx();
+    const ai = {
+      ...aiNs,
+      streamText: (args: { prepareStep?: PrepareStep }) => {
+        clock.t = 3;
+        args.prepareStep!({ stepNumber: 0 });
+        return { fullStream: fakeStream(clock, [{ at: 9, part: p({ type: "error", error: "upstream 502" }) }]) };
+      },
+    } as unknown as typeof import("ai");
+    await runAgent(def, [{ role: "user", content: "hi" }], "glm-5.3-flash", { ...ctx, ai });
+    const runId = (events[0] as Extract<TraceEvent, { type: "run-start" }>).runId;
+    expect(events.filter((e) => e.type === "span-end" && e.id === `${runId}:chat:0`)).toEqual([
+      expect.objectContaining({ status: "error", detail: { error: "upstream 502" } }),
+    ]);
+  });
+});
+
+describe("runAgent delta coalescing and filtering", () => {
+  const def = (tools: AgentDef["tools"] = () => ({})): AgentDef => ({
+    id: "cloudflare-docs",
+    functionId: "docs-agent",
+    defaultModel: "glm-5.3-flash",
+    maxSteps: 3,
+    system: () => "sys",
+    tools,
+  });
+
+  it("100 deltas within 10 ms become at most 2 NDJSON events with the concatenated text; ttft uses the first raw delta", async () => {
+    vi.useFakeTimers();
+    const { ctx, events, clock } = makeCtx();
+    const parts: Step[] = [{ at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) }];
+    for (let i = 0; i < 100; i++) {
+      if (i % 10 === 0) parts.push({ sleep: 1 });
+      parts.push({ at: 30 + i / 10, part: p({ type: "text-delta", id: "t", text: `w${i} ` }) });
+    }
+    parts.push({ sleep: 200 });
+    parts.push({ at: 400, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) });
+    const { ai } = fakeAI([(c) => fakeStream(c, parts)], clock);
+    const done = runAgent(def(), [{ role: "user", content: "hi" }], "glm-5.3-flash", { ...ctx, ai });
+    await vi.advanceTimersByTimeAsync(500);
+    await done;
+    const deltas = events.filter((e) => e.type === "text-delta") as Extract<TraceEvent, { type: "text-delta" }>[];
+    expect(deltas.length).toBeGreaterThanOrEqual(1);
+    expect(deltas.length).toBeLessThanOrEqual(2);
+    expect(deltas.map((d) => d.text).join("")).toBe(Array.from({ length: 100 }, (_, i) => `w${i} `).join(""));
+    // flushed by the 75 ms timer, i.e. well before the step ended
+    const runId = (events[0] as Extract<TraceEvent, { type: "run-start" }>).runId;
+    expect(events.indexOf(deltas.at(-1)!)).toBeLessThan(events.findIndex((e) => e.type === "span-end" && e.id === `${runId}:chat:0`));
+    expect(events.at(-1)).toMatchObject({ type: "run-end", ttftMs: 30 });
+  });
+
+  it("a span-end arriving mid-batch is preceded by the flushed delta (ordering kept)", async () => {
+    const { ctx, events, clock } = makeCtx();
+    const { ai } = fakeAI(
+      [
+        (c) =>
+          fakeStream(c, [
+            { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 1, part: p({ type: "reasoning-delta", id: "r", text: "th" }) },
+            { at: 2, part: p({ type: "text-delta", id: "t", text: "a" }) },
+            { at: 3, part: p({ type: "reasoning-delta", id: "r", text: "ink" }) },
+            { at: 4, part: p({ type: "text-delta", id: "t", text: "b" }) },
+            { at: 5, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+          ]),
+      ],
+      clock,
+    );
+    await runAgent(def(), [{ role: "user", content: "hi" }], "glm-5.3-flash", { ...ctx, ai });
+    const runId = (events[0] as Extract<TraceEvent, { type: "run-start" }>).runId;
+    const chatEnd = events.findIndex((e) => e.type === "span-end" && e.id === `${runId}:chat:0`);
+    expect(events.slice(chatEnd - 2, chatEnd + 1)).toEqual([
+      { type: "reasoning-delta", spanId: `${runId}:chat:0`, text: "think" },
+      { type: "text-delta", spanId: `${runId}:chat:0`, text: "ab" },
+      expect.objectContaining({ type: "span-end", id: `${runId}:chat:0` }),
+    ]);
+    expect(events.filter((e) => e.type === "text-delta" || e.type === "reasoning-delta")).toHaveLength(2);
+  });
+
+  it("drops deltas for spans that are not open, and only root-agent chat deltas set the run ttft", async () => {
+    const { ctx, events, clock } = makeCtx();
+    let toolCtx: RunContext | undefined;
+    let runId = "";
+    const { ai } = fakeAI(
+      [
+        (c) => ({
+          async *[Symbol.asyncIterator]() {
+            c.t = 10;
+            yield p({ type: "start-step", request: {}, warnings: [] });
+            c.t = 15;
+            toolCtx!.emit({ type: "text-delta", spanId: "ghost", text: "x" }); // never opened
+            toolCtx!.emit({ type: "text-delta", spanId: runId, text: "y" }); // open, but not a chat span
+            c.t = 40;
+            yield p({ type: "text-delta", id: "t", text: "done" });
+            yield p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" });
+          },
+        }),
+      ],
+      clock,
+    );
+    const origEmit = ctx.emit;
+    await runAgent(
+      def((c) => {
+        toolCtx = c;
+        return {};
+      }),
+      [{ role: "user", content: "hi" }],
+      "glm-5.3-flash",
+      {
+        ...ctx,
+        ai,
+        emit: (e) => {
+          if (e.type === "run-start") runId = e.runId;
+          origEmit(e);
+        },
+      },
+    );
+    expect(events.some((e) => e.type === "text-delta" && e.spanId === "ghost")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "run-end", status: "ok", ttftMs: 40 });
   });
 });
 

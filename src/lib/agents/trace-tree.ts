@@ -138,12 +138,12 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
     case "text-delta":
     case "reasoning-delta": {
       // Every delta belongs to the chat span that produced it. Only chat spans of the root agent
-      // (parent = rootIds[0], i.e. the runId) are the answer; subagent output is progress only.
+      // (parentId === runId; same rule as the runtime's ttft) are the answer; subagent output is progress only.
       const node = s.spans[e.spanId];
       if (!node) return s;
       const field = e.type === "text-delta" ? "text" : "reasoning";
       const spans = updateSpan(s.spans, e.spanId, (n) => ({ ...n, [field]: n[field] + e.text }));
-      const isAnswer = node.kind === "chat" && node.parentId !== undefined && node.parentId === s.rootIds[0];
+      const isAnswer = node.kind === "chat" && s.runId !== "" && node.parentId === s.runId;
       return isAnswer ? { ...s, spans, [field]: s[field] + e.text } : { ...s, spans };
     }
     case "citation":
