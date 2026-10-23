@@ -1,21 +1,24 @@
 // Cloudflare docs tools: search via the public cf-docs MCP server, read pages via
-// Browser Rendering /markdown. Span start/end for tool calls come from the runtime's
-// execute wrapper — tools only emit citations.
+// Browser Rendering /markdown. Span start/end for model tool calls come from the runtime's
+// execute wrapper (deterministic searches use runTracedTool) — tools only emit citations.
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { parseMcpServerUrls, type McpServerConfig } from "../../mcp-client";
 import type { RunContext } from "../runtime";
+import { setActiveSpanAttributes } from "../tracing";
 
 const DOCS_HOST = "developers.cloudflare.com";
 const SNIPPET_MAX = 600;
-const SEARCH_LIMIT = 5;
+export const SEARCH_LIMIT = 5;
 const PAGE_MAX_CHARS = 12_000;
-const SEARCH_TIMEOUT_MS = 20_000;
+/** Per search call (connect + call), tied to ctx.signal. The server takes 4.5–11 s per search. */
+export const SEARCH_TIMEOUT_MS = 25_000;
 const READ_TIMEOUT_MS = 30_000;
+export const DOCS_CACHE_TTL_S = 3600;
+export const DOCS_CACHE_PREFIX = "docs-search:v1:";
+const KV_KEY_MAX_BYTES = 512;
 
 export interface DocsSearchHit {
   url: string;
@@ -57,46 +60,13 @@ function cfDocsServer(ctx: RunContext): McpServerConfig {
 }
 
 // ---------------------------------------------------------------------------
-// One cf-docs MCP connection per run.
+// One independent request per search.
 //
-// Opening a connection (initialize handshake) costs 1-3 s, and parallel researchers each issue several
-// searches, so the connection is created lazily on first use and shared through `ctx.scope` (a run-scoped
-// registry that runAgent disposes in its `finally` => closed on success, error and abort alike; subagents
-// get a spread copy of the RunContext, so the scope is the one object they all share — a WeakMap keyed by
-// RunContext would not be). On a connection error the call retries once on a fresh connection.
-// mcp-client.ts is deliberately left untouched; this mirrors its connect logic (Streamable HTTP, SSE fallback).
-
-const DOCS_CLIENT_KEY = Symbol("cf-docs-mcp-client");
-
-interface ClientHolder {
-  current?: Promise<Client>;
-  /** Set by the scope's dispose. A holder disposed before use (scope.once after the run ended) is not reused. */
-  disposed?: boolean;
-}
-
-async function connectDocsClient(server: McpServerConfig): Promise<Client> {
-  const make = () => new Client({ name: "cf-demo-agent", version: "1.0.0" }, { capabilities: {} });
-  const options = { timeout: SEARCH_TIMEOUT_MS };
-  const http = make();
-  try {
-    await http.connect(new StreamableHTTPClientTransport(new URL(server.url)), options);
-    return http;
-  } catch {
-    await http.close().catch(() => {});
-  }
-  const sse = make();
-  try {
-    await sse.connect(new SSEClientTransport(new URL(server.url)), options);
-    return sse;
-  } catch (err) {
-    await sse.close().catch(() => {});
-    throw err;
-  }
-}
-
-function closeLater(p: Promise<Client> | undefined): void {
-  void p?.then((c) => c.close()).catch(() => {});
-}
+// R15 (one shared MCP session per run) is reversed: the docs server handles concurrent independent requests in
+// parallel (8 at once each took 4.5–11 s), but calls multiplexed on one session queued behind each other and the
+// later ones hit the timeout. Each search is therefore a single stateless JSON-RPC `tools/call` POST (no
+// initialize handshake, no session); if the server ever refuses that (4xx), the call falls back to its own
+// short-lived MCP client (connect → call → close). Nothing is shared between calls, so there is nothing to dispose.
 
 function abortError(): Error {
   const e = new Error("aborted");
@@ -104,92 +74,223 @@ function abortError(): Error {
   return e;
 }
 
-/** Wait for `p`, but reject as soon as `signal` aborts (the connect itself keeps going and is closed later). */
-function abortable<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(abortError());
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(abortError());
-    signal.addEventListener("abort", onAbort, { once: true });
-    p.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+class StatelessRejected extends Error {}
+/** A JSON-RPC error from the server: an answer, not a connection problem, so it is not retried. */
+class RpcError extends Error {}
+
+interface ToolCallResult {
+  content?: Array<{ type: string; text?: string }>;
+  isError?: boolean;
+}
+
+function toResult(res: ToolCallResult): { text: string; isError: boolean } {
+  return { text: (res.content ?? []).map((c) => c.text ?? "").join("\n"), isError: res.isError === true };
+}
+
+/** Pick the JSON-RPC response with `id` out of a message (or batch); undefined when it isn't there. */
+function pickResponse(msg: unknown, id: number): { result?: ToolCallResult; error?: { message?: string } } | undefined {
+  const list = Array.isArray(msg) ? msg : [msg];
+  for (const m of list) {
+    if (m && typeof m === "object" && (m as { id?: unknown }).id === id) return m as never;
+  }
+  return undefined;
+}
+
+/** Read an SSE body until the response with `id` arrives (then stop reading). */
+async function readSseResponse(body: ReadableStream<Uint8Array>, id: number) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (value) buf += decoder.decode(value, { stream: true });
+      // events are separated by a blank line; `data:` lines of one event are joined with \n
+      let sep: number;
+      while ((sep = buf.search(/\r?\n\r?\n/)) !== -1) {
+        const event = buf.slice(0, sep);
+        buf = buf.slice(sep).replace(/^\r?\n\r?\n/, "");
+        const data = event
+          .split(/\r?\n/)
+          .filter((l) => l.startsWith("data:"))
+          .map((l) => l.slice(5).replace(/^ /, ""))
+          .join("\n");
+        if (!data) continue;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          continue;
+        }
+        const hit = pickResponse(parsed, id);
+        if (hit) return hit;
+      }
+      if (done) break;
+    }
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+  throw new Error("docs search: stream ended without a response");
+}
+
+async function statelessCall(url: string, query: string, signal: AbortSignal): Promise<{ text: string; isError: boolean }> {
+  const id = 1;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name: "search_cloudflare_documentation", arguments: { query } },
+    }),
+    signal,
   });
+  if (res.status >= 400 && res.status < 500) {
+    void res.body?.cancel().catch(() => {});
+    throw new StatelessRejected(`stateless call rejected (${res.status})`);
+  }
+  if (!res.ok || !res.body) {
+    void res.body?.cancel().catch(() => {});
+    throw new Error(`docs search failed (HTTP ${res.status})`);
+  }
+  const type = res.headers.get("content-type") ?? "";
+  const msg = type.includes("text/event-stream") ? await readSseResponse(res.body, id) : pickResponse(await res.json(), id);
+  if (!msg) throw new Error("docs search: no JSON-RPC response");
+  if (msg.error) throw new RpcError(`docs search error: ${msg.error.message ?? "unknown"}`);
+  return toResult(msg.result ?? {});
 }
 
-/** Connection-level failures are worth one retry; JSON-RPC errors (incl. our own timeout) are not. */
-function isRetryable(err: unknown, signal: AbortSignal): boolean {
-  if (signal.aborted) return false;
-  if (err instanceof McpError) return err.code === ErrorCode.ConnectionClosed;
-  return true;
+/** Fallback: a short-lived MCP client of its own (never shared), closed after the call. */
+async function clientCall(url: string, query: string, signal: AbortSignal): Promise<{ text: string; isError: boolean }> {
+  const client = new Client({ name: "cf-demo-agent", version: "1.0.0" }, { capabilities: {} });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(url)), { signal, timeout: SEARCH_TIMEOUT_MS });
+    const res = (await client.callTool(
+      { name: "search_cloudflare_documentation", arguments: { query } },
+      undefined,
+      { signal, timeout: SEARCH_TIMEOUT_MS },
+    )) as ToolCallResult;
+    return toResult(res);
+  } finally {
+    void client.close().catch(() => {});
+  }
 }
 
+/**
+ * One docs search on its own request, aborted by ctx.signal and timed out after SEARCH_TIMEOUT_MS. A
+ * connection-level failure (network error, 5xx) is retried once within the same time budget.
+ */
 export async function searchDocs(ctx: RunContext, query: string): Promise<{ text: string; isError: boolean }> {
   const server = cfDocsServer(ctx);
-  // An aborted run must not take (or re-create, after the scope was disposed) the shared holder, nor connect.
   if (ctx.signal.aborted) throw abortError();
-  const scoped = ctx.scope?.once<ClientHolder>(DOCS_CLIENT_KEY, () => ({}), (h) => {
-    h.disposed = true;
-    closeLater(h.current);
-  });
-
+  const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
+  const signal = AbortSignal.any([ctx.signal, timeout]);
   for (let attempt = 0; ; attempt++) {
-    // A disposed holder (scope.once after the run ended, or disposeAll while this call was retrying) is not
-    // reused: the call then owns its connection and closes it itself, like without a scope.
-    const holder = scoped && !scoped.disposed ? scoped : undefined;
-    const connecting = holder ? (holder.current ??= connectDocsClient(server)) : connectDocsClient(server);
-    const evict = () => {
-      if (holder && holder.current === connecting) holder.current = undefined;
-      closeLater(connecting);
-    };
-    let client: Client;
     try {
-      client = await abortable(connecting, ctx.signal);
-    } catch (err) {
-      if (!ctx.signal.aborted) evict();
-      else if (!holder) closeLater(connecting);
-      if (attempt >= 1 || !isRetryable(err, ctx.signal)) throw err;
-      continue;
-    }
-    try {
-      const res = (await client.callTool(
-        { name: "search_cloudflare_documentation", arguments: { query } },
-        undefined,
-        { signal: ctx.signal, timeout: SEARCH_TIMEOUT_MS },
-      )) as { content?: Array<{ type: string; text?: string }>; isError?: boolean };
-      if (!holder) closeLater(connecting);
-      return { text: (res.content ?? []).map((c) => c.text ?? "").join("\n"), isError: res.isError === true };
-    } catch (err) {
-      if (attempt >= 1 || !isRetryable(err, ctx.signal)) {
-        if (!holder) closeLater(connecting);
-        throw err;
+      try {
+        return await statelessCall(server.url, query, signal);
+      } catch (err) {
+        if (!(err instanceof StatelessRejected)) throw err;
+        return await clientCall(server.url, query, signal);
       }
-      evict();
+    } catch (err) {
+      if (ctx.signal.aborted) throw abortError();
+      if (timeout.aborted) throw new Error(`docs search timed out after ${SEARCH_TIMEOUT_MS / 1000} s`);
+      if (attempt >= 1 || err instanceof RpcError) throw err;
     }
   }
 }
 
-export function buildDocsTools(ctx: RunContext, opts: { withRead: boolean }): ToolSet {
-  const tools: ToolSet = {
-    search_docs: tool({
+// ---------------------------------------------------------------------------
+// KV cache (best effort)
+
+export function normalizeDocsQuery(query: string): string {
+  return query.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** `docs-search:v1:{normalized query}`; queries too long for a KV key (512 bytes) use a SHA-256 of it instead. */
+export async function docsCacheKey(query: string): Promise<string> {
+  const normalized = normalizeDocsQuery(query);
+  const key = `${DOCS_CACHE_PREFIX}${normalized}`;
+  if (new TextEncoder().encode(key).length <= KV_KEY_MAX_BYTES) return key;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${DOCS_CACHE_PREFIX}sha256:${hex}`;
+}
+
+/**
+ * Deduplicated hits for `query`: from KV when cached (TTL 1 h), otherwise one live search whose non-empty result
+ * is written back. KV failures fall through to the live call. Sets the active span's `cache.hit`.
+ * A server-side tool error comes back as `error` (not cached); timeouts / network errors throw.
+ */
+export async function searchDocsHits(
+  ctx: RunContext,
+  query: string,
+): Promise<{ hits: DocsSearchHit[]; cacheHit: boolean; error?: string }> {
+  let key: string | undefined;
+  try {
+    key = await docsCacheKey(query);
+    const cached = (await ctx.env.KV?.get(key, "json")) as DocsSearchHit[] | null | undefined;
+    if (Array.isArray(cached) && cached.length > 0) {
+      setActiveSpanAttributes({ "cache.hit": true });
+      return { hits: cached, cacheHit: true };
+    }
+  } catch {
+    // a cache failure must never fail the search
+  }
+  setActiveSpanAttributes({ "cache.hit": false });
+  const { text, isError } = await searchDocs(ctx, query);
+  if (isError) return { hits: [], cacheHit: false, error: text.slice(0, 500) || "docs search failed" };
+  const seen = new Set<string>();
+  const hits = parseDocsSearchResult(text).filter((h) => (seen.has(h.url) ? false : (seen.add(h.url), true)));
+  if (key && hits.length > 0) {
+    try {
+      await ctx.env.KV?.put(key, JSON.stringify(hits), { expirationTtl: DOCS_CACHE_TTL_S });
+    } catch {
+      // best effort
+    }
+  }
+  return { hits, cacheHit: false };
+}
+
+/**
+ * Search + citations: the top `limit` hits are emitted as citations of span `spanId` (a tool span) and returned.
+ * Shared by the model-callable `search_docs` tool, the run's prefetch and the researchers' deterministic search.
+ */
+export async function searchDocsWithCitations(
+  ctx: RunContext,
+  query: string,
+  spanId: string,
+  limit = SEARCH_LIMIT,
+): Promise<{ results: DocsSearchHit[]; error?: string; cacheHit: boolean }> {
+  const { hits, cacheHit, error } = await searchDocsHits(ctx, query);
+  if (error) return { results: [], error, cacheHit };
+  const results = hits.slice(0, limit);
+  for (const r of results) {
+    ctx.emit({ type: "citation", spanId, source: { title: r.title, url: r.url, snippet: r.snippet } });
+  }
+  return { results, cacheHit };
+}
+
+/** Search results as prompt text: numbered title, URL and snippet per hit. */
+export function formatDocsHits(hits: DocsSearchHit[]): string {
+  return hits.map((h, i) => `[${i + 1}] ${h.title}\nURL: ${h.url}\n${h.snippet}`).join("\n\n");
+}
+
+export function buildDocsTools(ctx: RunContext, opts: { withRead: boolean; withSearch?: boolean }): ToolSet {
+  const tools: ToolSet = {};
+  if (opts.withSearch !== false) {
+    tools.search_docs = tool({
       description:
         "Search the official Cloudflare documentation. Returns up to 5 hits with url, title and a snippet.",
       inputSchema: z.object({ query: z.string().min(1).describe("Search query (English works best)") }),
       execute: async ({ query }, options) => {
-        const { text, isError } = await searchDocs(ctx, query);
-        if (isError) return { error: text.slice(0, 500) || "docs search failed", results: [] };
-        const seen = new Set<string>();
-        const results = parseDocsSearchResult(text)
-          .filter((h) => (seen.has(h.url) ? false : (seen.add(h.url), true)))
-          .slice(0, SEARCH_LIMIT);
-        for (const r of results) {
-          ctx.emit({
-            type: "citation",
-            spanId: options.toolCallId,
-            source: { title: r.title, url: r.url, snippet: r.snippet },
-          });
-        }
-        return { results };
+        const { results, error } = await searchDocsWithCitations(ctx, query, options.toolCallId);
+        return error ? { error, results: [] } : { results };
       },
-    }),
-  };
+    });
+  }
 
   if (opts.withRead) {
     tools.read_doc_page = tool({
