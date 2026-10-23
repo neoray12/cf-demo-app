@@ -1,0 +1,21 @@
+wrangler.dev.toml
+  s_3a8326f10dc640::t_72d95efc6b863e 5
+wrangler.toml
+  s_3a8326f10dc640::t_9ca5d5bcf8d1ea 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d2ebf2aa5314a047d0fe940b08ee4a29ce6c3f5d",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
