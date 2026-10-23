@@ -1,0 +1,207 @@
+agents.md
+  s_3a8326f10dc640::t_a3d3812f32ec11 148-211,217
+docs/superpowers/plans/2026-10-23-agents-tracing.md
+  s_3a8326f10dc640::t_6c8d81a5db240a 1-558
+docs/superpowers/specs/2026-10-23-agents-tracing-demo-design.md
+  s_3a8326f10dc640::t_856264792f46cd 1-368
+next.config.mjs
+  s_3a8326f10dc640::t_6eff5f70493993 15-28
+package-lock.json
+  s_3a8326f10dc640::t_10b1db2b7b77df 25,76-87,104,133-144,1481-1783,1793-1855,3041-3043,3056-3087,3089-3091,3094,3128-3141,3966-3975,7511-7514,7522-7526,7528-7531,7539-7543,7545-7548,7556-7560,7562-7830,9281-9287,9297-9302,9540-10140,10143,10164-10175,10298-10310,10359-10392,10448-10450,10467-10476,10730-10736,10759-10772,10790-10798,11117-11123,11130-11139,11369-11374,11403-11405,11615-11624,11756-11765,12264-12274,12416,12431-12436,12444-12455,12474-12486,12500,13701-13737,13965-13974,14023-14035,14124-14140,14219-14221,14239-14244,14249,14851-14884,14889,15488,15740-15770,15838-15849,15918,16432,17211-17213
+package.json
+  s_3a8326f10dc640::t_249e937e7f6b8f 32
+scripts/seed-kb/customer-service-sop.md
+  s_3a8326f10dc640::t_4bcddfe92b2c36 1-31
+scripts/seed-kb/employee-handbook.md
+  s_3a8326f10dc640::t_4a9b9a9ba84094 1-42
+scripts/seed-kb/it-support-faq.md
+  s_3a8326f10dc640::t_4311216f69ef76 1-31
+scripts/seed-kb/office-guide.md
+  s_3a8326f10dc640::t_fc6a287357f7a8 1-33
+scripts/seed-kb/onboarding-checklist.md
+  s_3a8326f10dc640::t_5e7ba5bda1705d 1-33
+scripts/seed-kb/product-spec-cloudbox.md
+  s_3a8326f10dc640::t_ad0d166e81ff53 1-31
+scripts/seed-kb/security-policy.md
+  s_3a8326f10dc640::t_a172a1cc739557 1-29
+scripts/seed-kb/travel-expense.md
+  s_3a8326f10dc640::t_1efa81fd319d73 1-33
+scripts/seed-kb/upload.sh
+  s_3a8326f10dc640::t_345da24f816493 1-49
+src/app/(dashboard)/agents/[agentId]/page.tsx
+  s_3a8326f10dc640::t_1e4d564a5e4c55 1-14
+src/app/api/agents/[agentId]/route.ts
+  s_3a8326f10dc640::t_4619bac3582d91 1-114
+src/app/api/agents/kb/docs/route.ts
+  s_3a8326f10dc640::t_46a4c1766d45fe 1-17
+src/app/api/agents/kb/import-site/route.ts
+  s_3a8326f10dc640::t_dd7ba61aa5c182 1-228
+src/app/api/agents/kb/status/route.ts
+  s_3a8326f10dc640::t_f866a93bfbd224 1-32
+src/app/api/agents/kb/upload/route.ts
+  s_3a8326f10dc640::t_99663e6c49e1d6 1-93
+src/app/api/crawler/save-to-r2/route.ts
+  s_3a8326f10dc640::t_016984b7282082 3,79,94
+src/app/components/agents/activity-timeline.tsx
+  s_3a8326f10dc640::t_8e6ea5b65b7478 1-325
+src/app/components/agents/agent-message.tsx
+  s_3a8326f10dc640::t_cbb61c218bbef8 1-284
+src/app/components/agents/kb-workspace.tsx
+  s_3a8326f10dc640::t_d0abcf534726b5 1-663
+src/app/components/agents/radar-chart.tsx
+  s_3a8326f10dc640::t_ea731799614d28 1-163
+src/app/components/agents/span-detail.tsx
+  s_3a8326f10dc640::t_269553f50a537f 1-136
+src/app/components/agents/trace-panel.tsx
+  s_3a8326f10dc640::t_4bd6de3f75b9f3 1-265
+src/app/components/agents/trace-utils.ts
+  s_3a8326f10dc640::t_d23fca1e8c0018 1-143
+src/app/components/agents/use-agent-run.test.ts
+  s_3a8326f10dc640::t_01694ba35a52b9 1-135
+src/app/components/agents/use-agent-run.ts
+  s_3a8326f10dc640::t_7f192efd929aac 1-340
+src/app/components/app-sidebar.tsx
+  s_3a8326f10dc640::t_4eaf835c367c3d 36,68,93,405-432
+src/app/components/chat/markdown-renderer.test.ts
+  s_3a8326f10dc640::t_ecc9587e2a6143 1-51
+src/app/components/chat/markdown-renderer.tsx
+  s_3a8326f10dc640::t_3e1a1114c0e9d8 109-132,136-141,147,160-161
+src/app/pages/agent-chat.tsx
+  s_3a8326f10dc640::t_c6da2f84a3d93b 1-286
+src/components/ui/select.tsx
+  s_3a8326f10dc640::t_d364bed69f0c74 1-187
+src/i18n/agents.en.json
+  s_3a8326f10dc640::t_ef1074e13f3076 1-249
+src/i18n/agents.zh-TW.json
+  s_3a8326f10dc640::t_e94801b2dafe32 1-249
+src/i18n/index.ts
+  s_3a8326f10dc640::t_4e65f7b8dfd5e7 6-9,16-17
+src/lib/agents/agent-route.test.ts
+  s_3a8326f10dc640::t_c5a96d96394e30 1-123
+src/lib/agents/catalog.test.ts
+  s_3a8326f10dc640::t_57bc1ca2c2fee1 1-97
+src/lib/agents/catalog.ts
+  s_3a8326f10dc640::t_63ca7a86d42aad 1-100
+src/lib/agents/defs/docs.ts
+  s_3a8326f10dc640::t_2ac80bcf80a3c6 1-77
+src/lib/agents/defs/knowledge-base.ts
+  s_3a8326f10dc640::t_78775c5da12113 1-72
+src/lib/agents/defs/threat-intel.test.ts
+  s_3a8326f10dc640::t_97906e67e80c9a 1-112
+src/lib/agents/defs/threat-intel.ts
+  s_3a8326f10dc640::t_1709171fb2ec48 1-122
+src/lib/agents/env.ts
+  s_3a8326f10dc640::t_122304af0e6673 1-12
+src/lib/agents/gateway.test.ts
+  s_3a8326f10dc640::t_47a22aa482dae9 1-28
+src/lib/agents/gateway.ts
+  s_3a8326f10dc640::t_1da71ecfd140d4 1-50
+src/lib/agents/ids.ts
+  s_3a8326f10dc640::t_788c0967b6f2b9 1-2
+src/lib/agents/json.test.ts
+  s_3a8326f10dc640::t_0276bf646dafd6 1-20
+src/lib/agents/json.ts
+  s_3a8326f10dc640::t_8baf0f366a1d23 1-16
+src/lib/agents/kb-route.ts
+  s_3a8326f10dc640::t_f9d3fb6de71a9c 1-43
+src/lib/agents/kb-routes.test.ts
+  s_3a8326f10dc640::t_7fc2faebc75ff5 1-162
+src/lib/agents/kb.test.ts
+  s_3a8326f10dc640::t_0ccea43d5abb10 1-347
+src/lib/agents/kb.ts
+  s_3a8326f10dc640::t_9335a47904c6f1 1-265
+src/lib/agents/models.ts
+  s_3a8326f10dc640::t_44ffe99167fc06 1-55
+src/lib/agents/registry.ts
+  s_3a8326f10dc640::t_589e90aeb4f2d2 1-11
+src/lib/agents/request.ts
+  s_3a8326f10dc640::t_114463b363c7a2 1-51
+src/lib/agents/runtime.order.test.ts
+  s_3a8326f10dc640::t_48690d7fd44a4e 1-534
+src/lib/agents/runtime.test.ts
+  s_3a8326f10dc640::t_9b0bb382113289 1-1537
+src/lib/agents/runtime.ts
+  s_3a8326f10dc640::t_3aad5fe6fb2dc5 1-872
+src/lib/agents/tools/__fixtures__/cf-docs-search.txt
+  s_3a8326f10dc640::t_67b6458a76aa89 1-517
+src/lib/agents/tools/__fixtures__/radar/ai_crawlers.json
+  s_3a8326f10dc640::t_88f68709c9231d 1-38
+src/lib/agents/tools/__fixtures__/radar/attack_targets_from.json
+  s_3a8326f10dc640::t_9a92f52a91c97f 1-85
+src/lib/agents/tools/__fixtures__/radar/attackers_of.json
+  s_3a8326f10dc640::t_8b89eb6a9c14d7 1-151
+src/lib/agents/tools/__fixtures__/radar/bgp_hijacks.json
+  s_3a8326f10dc640::t_80bee5e8bc8977 1-148
+src/lib/agents/tools/__fixtures__/radar/bot_vs_human.json
+  s_3a8326f10dc640::t_dde313932b11c4 1-30
+src/lib/agents/tools/__fixtures__/radar/domain_rank.json
+  s_3a8326f10dc640::t_6908de673399a4 1-25
+src/lib/agents/tools/__fixtures__/radar/email_threats.json
+  s_3a8326f10dc640::t_2c285931ecf1d2 1-30
+src/lib/agents/tools/__fixtures__/radar/internet_quality.json
+  s_3a8326f10dc640::t_43445dbc93d5a0 1-62
+src/lib/agents/tools/__fixtures__/radar/l3_attacks_mitigated_in.json
+  s_3a8326f10dc640::t_834629ebcd39a9 1-54
+src/lib/agents/tools/__fixtures__/radar/l7_attack_trend_from.json
+  s_3a8326f10dc640::t_7f1eb3ef964e10 1-47
+src/lib/agents/tools/__fixtures__/radar/l7_attacks_from.json
+  s_3a8326f10dc640::t_b1c7140e1152eb 1-48
+src/lib/agents/tools/__fixtures__/radar/outages.json
+  s_3a8326f10dc640::t_744f18fbb7d04d 1-110
+src/lib/agents/tools/__fixtures__/radar/top_attacked_industries.json
+  s_3a8326f10dc640::t_352b10bc540296 1-65
+src/lib/agents/tools/__fixtures__/radar/traffic_anomalies.json
+  s_3a8326f10dc640::t_05b1b300db0e6e 1-7
+src/lib/agents/tools/cf-docs.test.ts
+  s_3a8326f10dc640::t_94a1db4e090e34 1-194
+src/lib/agents/tools/cf-docs.ts
+  s_3a8326f10dc640::t_5818924662cb21 1-220
+src/lib/agents/tools/kb.ts
+  s_3a8326f10dc640::t_f41da6595cc452 1-46
+src/lib/agents/tools/radar.test.ts
+  s_3a8326f10dc640::t_543b6846a92dd4 1-424
+src/lib/agents/tools/radar.ts
+  s_3a8326f10dc640::t_ae4220c9821d7e 1-701
+src/lib/agents/trace-events.test.ts
+  s_3a8326f10dc640::t_6eb018b0920c23 1-51
+src/lib/agents/trace-events.ts
+  s_3a8326f10dc640::t_627904c9cd7a1f 1-101
+src/lib/agents/trace-tree.test.ts
+  s_3a8326f10dc640::t_7103c1f313eab3 1-342
+src/lib/agents/trace-tree.ts
+  s_3a8326f10dc640::t_13a4a238090486 1-198
+src/lib/agents/tracing.test.ts
+  s_3a8326f10dc640::t_40406e4ae2b86b 1-23
+src/lib/agents/tracing.ts
+  s_3a8326f10dc640::t_01309f7dd63cd5 1-119
+src/lib/agents/ui-helpers.test.ts
+  s_3a8326f10dc640::t_5b18e22a1e077d 1-183
+src/lib/agents/ui-helpers.ts
+  s_3a8326f10dc640::t_0ae25607661f71 1-207
+src/lib/r2-s3.test.ts
+  s_3a8326f10dc640::t_f6fa3bc061acb7 1-45
+src/lib/r2-s3.ts
+  s_3a8326f10dc640::t_35568c5eb766e3 1-87
+vitest.config.ts
+  s_3a8326f10dc640::t_b5a74a45a0547e 5-6
+wrangler.dev.toml
+  s_3a8326f10dc640::t_4d5f2beb56dbf8 5,22-25,34-35
+wrangler.toml
+  s_3a8326f10dc640::t_9a081968cd8b17 4,14-17,63-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e57d228739646f12f1a397154c2ddd4bd90c95b6",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
