@@ -130,8 +130,43 @@ function telemetry(functionId: string, conversationId: string) {
 type StreamPart = TextStreamPart<ToolSet>;
 
 /**
+ * Wrap every tool's `execute` so its `execute_tool` span-start (id = toolCallId,
+ * parent = `parentSpanId`, i.e. the calling agent's span — the same parent
+ * pipeStepStream uses) is emitted *before* the tool runs. In ai@6 the tool
+ * starts executing before its `tool-call` part reaches the fullStream consumer,
+ * so without this, subagents started inside `execute` would be emitted before
+ * their parent tool span. `started` is shared with pipeStepStream (opts
+ * `startedToolSpans`), which then skips its own span-start and still emits the
+ * single span-end on tool-result / tool-error.
+ */
+function traceToolExecutions(tools: ToolSet, ctx: RunContext, parentSpanId: string, started: Set<string>): ToolSet {
+  const wrapped: ToolSet = {};
+  for (const [name, t] of Object.entries(tools)) {
+    const execute = t.execute as ((input: unknown, options: { toolCallId: string }) => unknown) | undefined;
+    if (typeof execute !== "function") {
+      wrapped[name] = t;
+      continue;
+    }
+    wrapped[name] = {
+      ...t,
+      execute: (input: unknown, options: { toolCallId: string }) => {
+        const id = options?.toolCallId;
+        if (id && !started.has(id)) {
+          started.add(id);
+          ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "execute_tool", name, t: ctx.now() });
+        }
+        return execute.call(t, input, options);
+      },
+    } as typeof t;
+  }
+  return wrapped;
+}
+
+/**
  * Consume an AI SDK v6 `fullStream`, emitting one `chat` span per step and one
- * `execute_tool` span per tool call (both children of `parentSpanId`).
+ * `execute_tool` span per tool call (both children of `parentSpanId`). Tool spans
+ * already started by `traceToolExecutions` (ids in `opts.startedToolSpans`) are
+ * not started again.
  * On abort / idle timeout / stream error, every span still open is closed with
  * `status: "error"` and `detail: { error }`, then the error is rethrown
  * (abort → an `AbortError`).
@@ -139,7 +174,7 @@ type StreamPart = TextStreamPart<ToolSet>;
 export async function pipeStepStream(
   stream: AsyncIterable<StreamPart>,
   ctx: RunContext,
-  opts: { parentSpanId: string; modelLabel: string; forwardText: boolean },
+  opts: { parentSpanId: string; modelLabel: string; forwardText: boolean; startedToolSpans?: Set<string> },
 ): Promise<{ text: string; firstTokenAt?: number; toolResults: ToolResultRecord[] }> {
   const { parentSpanId, modelLabel, forwardText } = opts;
   const iterator = stream[Symbol.asyncIterator]();
@@ -149,18 +184,27 @@ export async function pipeStepStream(
   const toolResults: ToolResultRecord[] = [];
   let stepIndex = 0;
   let chat: { id: string; start: number; firstAt?: number } | null = null;
-  const openTools = new Map<string, { input: unknown }>();
+  // Tool spans: started = span-start emitted (here or by traceToolExecutions);
+  // a tool is open (running) while started but not yet ended.
+  const startedTools = opts.startedToolSpans ?? new Set<string>();
+  const endedTools = new Set<string>();
+  const toolInputs = new Map<string, unknown>();
+  const openToolIds = () => [...startedTools].filter((id) => !endedTools.has(id));
 
-  const startTool = (toolCallId: string, toolName: string, input: unknown) => {
-    openTools.set(toolCallId, { input });
+  const ensureToolStarted = (toolCallId: string, toolName: string) => {
+    if (startedTools.has(toolCallId)) return;
+    startedTools.add(toolCallId);
     ctx.emit({ type: "span-start", id: toolCallId, parentId: parentSpanId, kind: "execute_tool", name: toolName, t: ctx.now() });
+  };
+  const endTool = (toolCallId: string, status: "ok" | "error", detail: unknown) => {
+    if (endedTools.has(toolCallId)) return;
+    endedTools.add(toolCallId);
+    ctx.emit({ type: "span-end", id: toolCallId, t: ctx.now(), status, detail });
   };
 
   const closeOpenSpans = (detail: { error: string }) => {
-    const t = ctx.now();
-    for (const id of openTools.keys()) ctx.emit({ type: "span-end", id, t, status: "error", detail });
-    openTools.clear();
-    if (chat) ctx.emit({ type: "span-end", id: chat.id, t, status: "error", detail });
+    for (const id of openToolIds()) endTool(id, "error", detail);
+    if (chat) ctx.emit({ type: "span-end", id: chat.id, t: ctx.now(), status: "error", detail });
     chat = null;
   };
 
@@ -185,34 +229,26 @@ export async function pipeStepStream(
         return;
       }
       case "tool-call": {
-        startTool(part.toolCallId, part.toolName, part.input);
+        toolInputs.set(part.toolCallId, part.input);
+        ensureToolStarted(part.toolCallId, part.toolName);
         return;
       }
       case "tool-result": {
         if (part.preliminary) return;
-        if (!openTools.has(part.toolCallId)) startTool(part.toolCallId, part.toolName, part.input);
-        const input = openTools.get(part.toolCallId)?.input;
-        openTools.delete(part.toolCallId);
+        ensureToolStarted(part.toolCallId, part.toolName);
+        const input = toolInputs.has(part.toolCallId) ? toolInputs.get(part.toolCallId) : part.input;
         toolResults.push({ toolName: part.toolName, output: part.output });
-        ctx.emit({
-          type: "span-end",
-          id: part.toolCallId,
-          t: ctx.now(),
-          status: "ok",
-          detail: { input: smallDetail(input, 500), output: smallDetail(part.output) },
-        });
+        endTool(part.toolCallId, "ok", { input: smallDetail(input, 500), output: smallDetail(part.output) });
         return;
       }
       case "tool-error": {
-        if (!openTools.has(part.toolCallId)) startTool(part.toolCallId, part.toolName, part.input);
-        openTools.delete(part.toolCallId);
-        ctx.emit({ type: "span-end", id: part.toolCallId, t: ctx.now(), status: "error", detail: { error: errorMessage(part.error) } });
+        ensureToolStarted(part.toolCallId, part.toolName);
+        endTool(part.toolCallId, "error", { error: errorMessage(part.error) });
         return;
       }
       case "tool-output-denied": {
-        if (!openTools.has(part.toolCallId)) return;
-        openTools.delete(part.toolCallId);
-        ctx.emit({ type: "span-end", id: part.toolCallId, t: ctx.now(), status: "error", detail: { error: "denied" } });
+        if (!startedTools.has(part.toolCallId)) return;
+        endTool(part.toolCallId, "error", { error: "denied" });
         return;
       }
       case "finish-step": {
@@ -249,7 +285,7 @@ export async function pipeStepStream(
   const armIdle = () => {
     if (idleTimer !== undefined) clearTimeout(idleTimer);
     idleTimer = undefined;
-    if (openTools.size > 0) return; // tools are running: suspended until tool-result / tool-error
+    if (openToolIds().length > 0) return; // tools are running: suspended until tool-result / tool-error
     const ms = awaitingFirstPart ? FIRST_PART_IDLE_MS : STREAM_IDLE_MS;
     idleTimer = setTimeout(() => stop(idleTimeoutError()), ms);
   };
@@ -286,11 +322,7 @@ export async function pipeStepStream(
   }
 
   // Stream ended normally: close anything the model never finished.
-  if (openTools.size > 0) {
-    const t = ctx.now();
-    for (const id of openTools.keys()) ctx.emit({ type: "span-end", id, t, status: "error", detail: { error: "no tool result" } });
-    openTools.clear();
-  }
+  for (const id of openToolIds()) endTool(id, "error", { error: "no tool result" });
   if (chat) {
     const current: { id: string; start: number; firstAt?: number } = chat;
     ctx.emit({
@@ -334,6 +366,7 @@ export async function runSubagent<I>(
   const id = `${parentSpanId}:${def.functionId}:${index}`;
   const link = linkedAbortController(ctx.signal);
   const subCtx: RunContext = { ...ctx, signal: link.controller.signal };
+  const startedToolSpans = new Set<string>();
   ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "invoke_agent", name: def.functionId, t: ctx.now() });
   try {
     const model = AGENT_MODELS[def.model];
@@ -341,7 +374,7 @@ export async function runSubagent<I>(
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
       system: def.system,
       prompt: def.prompt(input),
-      tools: def.tools(subCtx),
+      tools: traceToolExecutions(def.tools(subCtx), subCtx, id, startedToolSpans),
       stopWhen: stepCountIs(def.maxSteps),
       maxOutputTokens: model.maxTokens,
       abortSignal: subCtx.signal,
@@ -351,6 +384,7 @@ export async function runSubagent<I>(
       parentSpanId: id,
       modelLabel: model.key,
       forwardText: false,
+      startedToolSpans,
     });
     const detail = def.toDetail ? smallDetail(def.toDetail(text)) : { output: text.slice(0, DETAIL_MAX_CHARS) };
     ctx.emit({ type: "span-end", id, t: ctx.now(), status: "ok", detail });
@@ -481,6 +515,7 @@ export async function runAgent(
     forward(e);
   };
   const runCtx: RunContext = { ...ctx, emit, signal: link.controller.signal };
+  const startedToolSpans = new Set<string>();
 
   const t0 = ctx.now();
   emit({ type: "run-start", runId, agent: def.id, model: modelKey, t: t0 });
@@ -504,7 +539,7 @@ export async function runAgent(
       model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
       system: def.system(runCtx),
       messages,
-      tools: def.tools(runCtx),
+      tools: traceToolExecutions(def.tools(runCtx), runCtx, runId, startedToolSpans),
       stopWhen: stepCountIs(def.maxSteps),
       maxOutputTokens: model.maxTokens,
       abortSignal: runCtx.signal,
@@ -514,6 +549,7 @@ export async function runAgent(
       parentSpanId: runId,
       modelLabel: model.key,
       forwardText: true,
+      startedToolSpans,
     });
     await def.after?.(runCtx, { text, rootSpanId: runId, toolResults });
     emit({ type: "span-end", id: runId, t: ctx.now(), status: "ok", detail: { output: text.slice(0, DETAIL_MAX_CHARS) } });

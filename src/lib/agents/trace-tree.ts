@@ -86,24 +86,31 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
     case "span-start": {
       if (s.spans[e.id]) return s;
       const parentKnown = e.parentId !== undefined && s.spans[e.parentId] !== undefined;
+      // Orphans keep their parentId; if this span is the parent they were waiting
+      // for (events can arrive child-first), adopt them, ordered by start.
+      const adopted = s.rootIds
+        .map((id) => s.spans[id])
+        .filter((n): n is SpanNode => n !== undefined && n.parentId === e.id)
+        .sort((a, b) => a.start - b.start);
+      const rootIds = adopted.length > 0 ? s.rootIds.filter((id) => !adopted.some((n) => n.id === id)) : s.rootIds;
       const node: SpanNode = {
         id: e.id,
-        ...(parentKnown ? { parentId: e.parentId } : {}),
+        ...(e.parentId !== undefined ? { parentId: e.parentId } : {}),
         kind: e.kind,
         name: e.name,
         start: e.t,
         end: null,
-        children: [],
+        children: adopted,
       };
       if (!parentKnown) {
-        return { ...s, spans: { ...s.spans, [e.id]: node }, rootIds: [...s.rootIds, e.id] };
+        return { ...s, spans: { ...s.spans, [e.id]: node }, rootIds: [...rootIds, e.id] };
       }
       const spans = updateSpan(s.spans, e.parentId as string, (p) => ({
         ...p,
         children: [...p.children, node],
       }));
       spans[e.id] = node;
-      return { ...s, spans };
+      return { ...s, spans, rootIds };
     }
     case "span-end": {
       if (!s.spans[e.id]) return s;

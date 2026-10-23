@@ -72,6 +72,33 @@ describe("reduceTrace", () => {
       { type: "span-start", id: "x", parentId: "ghost", kind: "chat", name: "c", t: 0 },
     ]);
     expect(s.rootIds).toEqual(["x"]);
+    expect(s.spans.x?.parentId).toBe("ghost");
+  });
+
+  it("adopts orphans when their parent span-start arrives later (child before parent)", () => {
+    const s = run([
+      runStart,
+      { type: "span-start", id: "a", kind: "invoke_agent", name: "main", t: 0 },
+      { type: "span-start", id: "t1:sub:1", parentId: "t1", kind: "invoke_agent", name: "sub", t: 12 },
+      { type: "span-start", id: "t1:sub:0", parentId: "t1", kind: "invoke_agent", name: "sub", t: 10 },
+      { type: "span-start", id: "t1:sub:0:chat:0", parentId: "t1:sub:0", kind: "chat", name: "m", t: 11 },
+      { type: "span-start", id: "t1", parentId: "a", kind: "execute_tool", name: "fan", t: 5 },
+      { type: "span-end", id: "t1:sub:0:chat:0", t: 20, status: "ok" },
+    ]);
+    expect(s.rootIds).toEqual(["a"]);
+    const tool = s.spans.t1!;
+    expect(tool.parentId).toBe("a");
+    expect(tool.children.map((c) => c.id)).toEqual(["t1:sub:0", "t1:sub:1"]);
+    expect(s.spans.a!.children.map((c) => c.id)).toEqual(["t1"]);
+    // nested updates after adoption propagate up through the adopted chain
+    expect(s.spans.a!.children[0]!.children[0]!.children[0]).toMatchObject({ id: "t1:sub:0:chat:0", end: 20 });
+    expect(waterfallRows(s).map((r) => `${r.depth}:${r.node.id}`)).toEqual([
+      "0:a",
+      "1:t1",
+      "2:t1:sub:0",
+      "3:t1:sub:0:chat:0",
+      "2:t1:sub:1",
+    ]);
   });
 
   it("orders parallel subagents under a tool span by start then insertion", () => {

@@ -241,6 +241,51 @@ describe("pipeStepStream", () => {
   });
 });
 
+describe("pipeStepStream with execute-started tool spans", () => {
+  it("does not re-emit span-start for a tool span already started by the execute wrapper", async () => {
+    const { ctx, events, clock } = makeCtx();
+    const started = new Set<string>(["c1"]);
+    await pipeStepStream(
+      fakeStream(clock, [
+        { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+        { at: 10, part: p({ type: "tool-call", toolCallId: "c1", toolName: "fan", input: { a: 1 } }) },
+        { at: 20, part: p({ type: "tool-result", toolCallId: "c1", toolName: "fan", input: { a: 1 }, output: 2 }) },
+        { at: 30, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true, startedToolSpans: started },
+    );
+    expect(events.filter((e) => e.type === "span-start" && e.id === "c1")).toHaveLength(0);
+    expect(events.filter((e) => e.type === "span-end" && e.id === "c1")).toEqual([
+      expect.objectContaining({ status: "ok", detail: { input: { a: 1 }, output: 2 } }),
+    ]);
+  });
+
+  it("closes an execute-started tool span on abort even if its tool-call part never arrived", async () => {
+    const { ctx, events, clock, ac } = makeCtx();
+    const started = new Set<string>();
+    const promise = pipeStepStream(
+      fakeStream(clock, [
+        { at: 0, part: p({ type: "start-step", request: {}, warnings: [] }) },
+        {
+          at: 5,
+          run: () => {
+            started.add("c7"); // what the execute wrapper does before the part is consumed
+            ac.abort();
+          },
+        },
+        { hang: true },
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true, startedToolSpans: started },
+    );
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(events.filter((e) => e.type === "span-end" && e.id === "c7")).toEqual([
+      expect.objectContaining({ status: "error", detail: { error: "aborted" } }),
+    ]);
+  });
+});
+
 describe("pipeStepStream idle windows", () => {
   const run = (steps: Step[]) => {
     const { ctx, events, clock } = makeCtx();
