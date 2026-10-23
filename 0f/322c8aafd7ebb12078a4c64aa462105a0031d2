@@ -1,0 +1,47 @@
+src/lib/agents/ui-helpers.test.ts
+  s_3a8326f10dc640::t_a1043e9fdd0284 15-16,35-52
+src/app/components/agents/activity-timeline.tsx
+  s_879fd140c4db7c::t_64493918aea1f2 19,130-132
+src/app/components/agents/agent-message.tsx
+  s_879fd140c4db7c::t_0d91052e211a63 5-16,18,28,148-158,214-227
+src/app/components/agents/kb-workspace.tsx
+  s_879fd140c4db7c::t_a96778d946441e 30-31,40,184-186,191-192,197,200-207,227,234-237,244
+src/app/components/agents/trace-utils.ts
+  s_879fd140c4db7c::t_e2778053b0c1d0 48,50,54-66
+src/app/components/agents/use-agent-run.test.ts
+  s_879fd140c4db7c::t_2844e54d0067dd 1-82
+src/app/components/agents/use-agent-run.ts
+  s_879fd140c4db7c::t_a49c954d52d04f 8,14-15,58-79,135,140-141,277-286,297
+src/app/components/chat/markdown-renderer.test.ts
+  s_879fd140c4db7c::t_71d943ed6b4208 23-51
+src/app/components/chat/markdown-renderer.tsx
+  s_879fd140c4db7c::t_ab8aece50c1d6c 108-131,160
+src/app/pages/agent-chat.tsx
+  s_879fd140c4db7c::t_cca94a8a93f725 3,42,88-97,225
+src/lib/agents/ui-helpers.ts
+  s_879fd140c4db7c::t_44f8012d6f3376 54-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0f322c8aafd7ebb12078a4c64aa462105a0031d2",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_879fd140c4db7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad674571da1f307fe",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
