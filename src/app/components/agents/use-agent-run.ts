@@ -5,6 +5,7 @@ import type { AgentId } from "@/lib/agents/ids";
 import type { ModelKey } from "@/lib/agents/models";
 import { createNdjsonParser, type TraceEvent } from "@/lib/agents/trace-events";
 import { reduceTrace, type RunTrace } from "@/lib/agents/trace-tree";
+import { historyAnswer } from "./trace-utils";
 
 export interface AgentTurn {
   id: string;
@@ -111,9 +112,10 @@ export function useAgentRun(agentId: AgentId) {
       // their partial text (often just the plan sentence) makes the model merge the old question into the new one.
       const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
       for (const t of turnsRef.current) {
-        const answer = t.trace?.status === "ok" ? t.trace.text.trim() : "";
+        // Same step separation as the chat view; only the final step (not the plan sentence) is sent back.
+        const answer = t.trace?.status === "ok" ? historyAnswer(t.trace) : "";
         if (!answer) continue;
-        messages.push({ role: "user", content: t.user }, { role: "assistant", content: t.trace!.text });
+        messages.push({ role: "user", content: t.user }, { role: "assistant", content: answer });
       }
       messages.push({ role: "user", content: question });
 

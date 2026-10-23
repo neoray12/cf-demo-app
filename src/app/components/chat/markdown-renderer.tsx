@@ -108,11 +108,18 @@ const mdComponents = {
 interface MarkdownRendererProps {
   content: string;
   isStreaming?: boolean;
+  /**
+   * Render raw HTML embedded in the markdown (rehype-raw). Defaults to true for the existing chat page;
+   * pass false for output shaped by untrusted content (tool results, uploaded files, imported sites),
+   * so injected tags such as <iframe srcdoc> or <script> are not rendered.
+   */
+  allowHtml?: boolean;
 }
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   content,
   isStreaming,
+  allowHtml = true,
 }: MarkdownRendererProps) {
   if (isStreaming) {
     return (
@@ -125,7 +132,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     <div className="text-sm">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
+        rehypePlugins={allowHtml ? [rehypeRaw] : []}
         components={mdComponents as never}
       >
         {content}

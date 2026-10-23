@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { AGENTS_DASHBOARD_URL, type AgentCatalogEntry } from "@/lib/agents/catalog";
 import { AGENT_MODELS, type ModelKey } from "@/lib/agents/models";
@@ -129,13 +129,19 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
               </SelectContent>
             </Select>
             {turns.length > 0 && (
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={reset} title={t("agents.chat.newChat")}>
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={reset} title={t("agents.chat.newChat")} aria-label={t("agents.chat.newChat")}>
                 <SquarePen className="size-4" />
                 <span className="hidden lg:inline">{t("agents.chat.newChat")}</span>
               </Button>
             )}
             <Button variant="outline" size="sm" className="h-8 px-2" asChild>
-              <a href={AGENTS_DASHBOARD_URL} target="_blank" rel="noopener noreferrer" title={t("agents.chat.viewTrace")}>
+              <a
+                href={AGENTS_DASHBOARD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={t("agents.chat.viewTrace")}
+                aria-label={t("agents.chat.viewTrace")}
+              >
                 <ExternalLink className="size-3.5" />
                 <span className="hidden xl:inline">{t("agents.chat.viewTrace")}</span>
               </a>
@@ -242,6 +248,7 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
           <SheetContent side="right" className="w-[92%] p-0 sm:max-w-md">
             <VisuallyHidden>
               <SheetTitle>{t("agents.trace.title")}</SheetTitle>
+              <SheetDescription>{t("agents.trace.empty")}</SheetDescription>
             </VisuallyHidden>
             {tracePanel}
           </SheetContent>

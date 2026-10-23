@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Bot, Brain, Check, ChevronRight, CircleSlash, Loader2, Sparkles, Wrench, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -145,6 +145,8 @@ function SubagentCard({ node, now }: { node: SpanNode; now: number }) {
                 type="button"
                 className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                 title={expanded ? t("agents.activity.hideFull") : t("agents.activity.showFull")}
+                aria-label={expanded ? t("agents.activity.hideFull") : t("agents.activity.showFull")}
+                aria-expanded={expanded}
               >
                 <ChevronRight className={cn("size-3.5 transition-transform", expanded && "rotate-90")} />
               </button>
@@ -229,7 +231,7 @@ function RootReasoning({ trace, turn, live, now }: { trace: RunTrace; turn: Agen
  * Open WebUI-style live process view between the user's message and the answer. Visible from the
  * moment of sending; open spans tick every 100 ms until run-end, then the step list collapses to a summary.
  */
-export function ActivityTimeline({ turn }: { turn: AgentTurn }) {
+export const ActivityTimeline = memo(function ActivityTimeline({ turn }: { turn: AgentTurn }) {
   const { t } = useTranslation();
   const status = turnStatus(turn);
   const live = status === "running";
@@ -316,4 +318,4 @@ export function ActivityTimeline({ turn }: { turn: AgentTurn }) {
       </Collapsible>
     </div>
   );
-}
+});

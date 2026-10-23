@@ -104,3 +104,27 @@ export function turnElapsed(turn: AgentTurn, now: number): number {
   if (turn.endedAt !== undefined) return turn.endedAt - turn.sentAt;
   return now - turn.sentAt;
 }
+
+/**
+ * The root agent's answer, one entry per root model step that wrote text, in order. `RunTrace.text`
+ * glues the steps together, so a plan sentence written before a tool call would run into the answer.
+ */
+export function rootAnswerSteps(trace: RunTrace | null | undefined): string[] {
+  if (!trace?.text) return [];
+  const root = trace.spans[trace.runId];
+  const parts = (root?.children ?? [])
+    .filter((c) => c.kind === "chat" && c.text.trim() !== "")
+    .sort((a, b) => a.start - b.start)
+    .map((c) => c.text.trim());
+  return parts.length > 0 ? parts : [trace.text.trim()];
+}
+
+/** What the chat shows: every root step's text, separated by blank lines. */
+export function displayAnswer(trace: RunTrace | null | undefined): string {
+  return rootAnswerSteps(trace).join("\n\n");
+}
+
+/** What goes back to the model as conversation history: the final answer step, without the plan sentence. */
+export function historyAnswer(trace: RunTrace | null | undefined): string {
+  return rootAnswerSteps(trace).at(-1) ?? "";
+}

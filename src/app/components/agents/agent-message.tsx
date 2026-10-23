@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Bot, ChevronRight, ExternalLink, FileText, Wrench } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -9,7 +9,7 @@ import { waterfallRows, type SpanNode } from "@/lib/agents/trace-tree";
 import { cn } from "@/lib/utils";
 import { ActivityTimeline } from "./activity-timeline";
 import { TurnMetrics } from "./trace-panel";
-import { secs, spanLabel, truncate, useNow } from "./trace-utils";
+import { displayAnswer, secs, spanLabel, truncate, useNow } from "./trace-utils";
 import { turnStatus, type AgentTurn } from "./use-agent-run";
 
 function detailText(detail: unknown): string | undefined {
@@ -69,8 +69,13 @@ function CallRow({ node, depth }: { node: SpanNode; depth: number }) {
   );
 }
 
-/** One agent turn: live activity timeline, streamed answer, sources, tool/subagent calls, mobile metrics. */
-export function AgentMessage({ turn }: { turn: AgentTurn }) {
+const isHttpUrl = (u: string | undefined): u is string => !!u && /^https?:\/\//i.test(u);
+
+/**
+ * One agent turn: live activity timeline, streamed answer, sources, tool/subagent calls, mobile metrics.
+ * Memoized: patchTurn keeps the object identity of turns it doesn't touch, so finished turns skip re-rendering.
+ */
+export const AgentMessage = memo(function AgentMessage({ turn }: { turn: AgentTurn }) {
   const { t } = useTranslation();
   const status = turnStatus(turn);
   const live = status === "running";
@@ -85,15 +90,7 @@ export function AgentMessage({ turn }: { turn: AgentTurn }) {
 
   // trace.text concatenates every root model step; separate the steps so the plan sentence written
   // before a tool call doesn't run into the final answer.
-  const answer = useMemo(() => {
-    if (!trace?.text) return "";
-    const root = trace.spans[trace.runId];
-    const parts = (root?.children ?? [])
-      .filter((c) => c.kind === "chat" && c.text.trim() !== "")
-      .sort((a, b) => a.start - b.start)
-      .map((c) => c.text.trim());
-    return parts.length > 0 ? parts.join("\n\n") : trace.text;
-  }, [trace]);
+  const answer = useMemo(() => displayAnswer(trace), [trace]);
 
   // Citations keep their original 1-based number (answers cite [n]); repeated URLs from parallel searches collapse.
   const sources = useMemo(() => {
@@ -115,7 +112,7 @@ export function AgentMessage({ turn }: { turn: AgentTurn }) {
     <div className="flex flex-col gap-2 min-w-0">
       <ActivityTimeline turn={turn} />
 
-      {answer && <MarkdownRenderer content={answer} isStreaming={live} />}
+      {answer && <MarkdownRenderer content={answer} isStreaming={live} allowHtml={false} />}
 
       {trace?.emptyAnswer && <p className="text-sm text-muted-foreground italic">{t("agents.trace.emptyAnswer")}</p>}
       {status === "aborted" && <p className="text-xs text-muted-foreground">{t("agents.trace.aborted")}</p>}
@@ -138,7 +135,7 @@ export function AgentMessage({ turn }: { turn: AgentTurn }) {
                 <li key={n} className="flex items-start gap-1.5 text-xs min-w-0" title={c.snippet ? truncate(c.snippet, 400) : undefined}>
                   <span className="shrink-0 tabular-nums text-muted-foreground">[{n}]</span>
                   <FileText className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-                  {c.url ? (
+                  {isHttpUrl(c.url) ? (
                     <a
                       href={c.url}
                       target="_blank"
@@ -149,7 +146,7 @@ export function AgentMessage({ turn }: { turn: AgentTurn }) {
                       <ExternalLink className="size-3 shrink-0" />
                     </a>
                   ) : (
-                    <span className="truncate">{c.title}</span>
+                    <span className="truncate">{c.title || c.url}</span>
                   )}
                 </li>
               ))}
@@ -175,10 +172,10 @@ export function AgentMessage({ turn }: { turn: AgentTurn }) {
       )}
 
       {!live && (
-        <div className="md:hidden">
+        <div className="lg:hidden">
           <TurnMetrics turn={turn} now={now} compactRow />
         </div>
       )}
     </div>
   );
-}
+});
