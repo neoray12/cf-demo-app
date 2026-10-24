@@ -1,0 +1,39 @@
+src/lib/agents/trace-tree.ts
+  s_3a8326f10dc640::t_876d209d7212f2 33-34,157
+src/lib/agents/ui-helpers.test.ts
+  s_3a8326f10dc640::t_eb7161697590fa 19,185-232
+src/lib/agents/language.ts
+  s_3a8326f10dc640::t_faa4ff7056834d 1-18
+src/lib/agents/kb.test.ts
+  s_3a8326f10dc640::t_3db31803b0696c 413-448
+src/lib/agents/runtime.test.ts
+  s_3a8326f10dc640::t_a7eb0873c67ecd 796,1432,1439-1454
+src/lib/agents/defs/knowledge-base.ts
+  s_3a8326f10dc640::t_f1e63f90f08d0d 60-69,86,107-109,112
+src/lib/agents/trace-tree.test.ts
+  s_3a8326f10dc640::t_e138f5921cba01 172
+src/app/components/agents/agent-message.tsx
+  s_3a8326f10dc640::t_28be39ca297246 22,177-179,183-184,187
+src/lib/agents/language.test.ts
+  s_3a8326f10dc640::t_328a6eb70d9817 1-23
+src/lib/agents/ui-helpers.ts
+  s_3a8326f10dc640::t_634a77d3981990 208-249
+src/lib/agents/runtime.ts
+  s_3a8326f10dc640::t_6b904c07ec84c7 8,58-64,173-175,179-185,428-435,444,568,647,979,1040,1051-1057
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "26534be2ff84bf0c77edd0e8204732bd99884f90",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
