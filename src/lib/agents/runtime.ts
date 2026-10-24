@@ -52,6 +52,8 @@ export interface RunContext {
   prefetched?: Promise<PrefetchResult>;
   /** Whether Cloudflare Agents tracing wraps `ai` (reported on run-start; set by the route from isTracingActive()). */
   traced?: boolean;
+  /** The agent currently running (set by runAgent / runSubagent); deterministic tool spans are attributed to it. */
+  agent?: { name: string; id: string };
 }
 
 /**
@@ -692,7 +694,11 @@ async function runSubagentAttempt<I>(
 ): Promise<{ text: string }> {
   const id = `${parentSpanId}:${def.functionId}:${index}`;
   const link = linkedAbortController(ctx.signal);
-  const subCtx: RunContext = { ...ctx, signal: link.controller.signal };
+  const subCtx: RunContext = {
+    ...ctx,
+    signal: link.controller.signal,
+    agent: { name: def.functionId, id: `${def.functionId}-demo` },
+  };
   const startedToolSpans = new Set<string>();
   const inputToolSpans = new Set<string>();
   ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "invoke_agent", name: def.functionId, t: ctx.now() });
@@ -760,7 +766,10 @@ export async function runTracedTool<T>(
   ctx.emit({ type: "span-input", id, input: spanInputValue(input) });
   try {
     if (ctx.signal.aborted) throw abortError();
-    const result = await withToolSpan({ name, callId: id, input, storeContent: ctx.storeContent }, () => fn(id));
+    const result = await withToolSpan(
+      { name, callId: id, input, storeContent: ctx.storeContent, agent: ctx.agent, conversationId: ctx.conversationId },
+      () => fn(id),
+    );
     const error = opts.failed?.(result);
     ctx.emit({
       type: "span-end",
@@ -935,7 +944,14 @@ export async function runAgent(
     forward(e);
   };
   const runScope = createRunScope();
-  const runCtx: RunContext = { ...ctx, emit, signal: link.controller.signal, modelKey, scope: runScope.scope };
+  const runCtx: RunContext = {
+    ...ctx,
+    emit,
+    signal: link.controller.signal,
+    modelKey,
+    scope: runScope.scope,
+    agent: { name: def.functionId, id: `${def.functionId}-demo` },
+  };
   const startedToolSpans = new Set<string>();
   const inputToolSpans = new Set<string>();
 

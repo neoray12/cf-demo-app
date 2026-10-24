@@ -160,7 +160,15 @@ type SpanCallback<T> = (span: unknown) => Promise<T>;
  * so setActiveSpanAttributes() inside it (e.g. `cache.hit`) lands on it. Without a tracing runtime: just `fn()`.
  */
 export async function withToolSpan<T>(
-  info: { name: string; callId: string; input: unknown; storeContent: boolean },
+  info: {
+    name: string;
+    callId: string;
+    input: unknown;
+    storeContent: boolean;
+    /** The agent that ran the tool, so the dashboard groups the span under it (gen_ai.agent.*). */
+    agent?: { name: string; id: string };
+    conversationId?: string;
+  },
   fn: () => Promise<T>,
 ): Promise<T> {
   let tracing: TracingHandle | undefined;
@@ -181,6 +189,8 @@ export async function withToolSpan<T>(
       "gen_ai.operation.name": "execute_tool",
       "gen_ai.tool.name": info.name,
       "gen_ai.tool.call.id": info.callId,
+      ...(info.agent ? { "gen_ai.agent.name": info.agent.name, "gen_ai.agent.id": info.agent.id } : {}),
+      ...(info.conversationId ? { "gen_ai.conversation.id": info.conversationId } : {}),
       ...(info.storeContent ? { "gen_ai.tool.call.arguments": jsonAttr(info.input) } : {}),
     });
     try {
