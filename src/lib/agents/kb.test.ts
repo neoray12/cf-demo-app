@@ -10,7 +10,7 @@ vi.mock("./runtime", async (orig) => ({
   }),
 }));
 
-import { isValidWorkspace, kbFileStatuses, kbListDocs, kbSearch, kbSearchBody, newWorkspaceId, safeUploadName, slugFromUrl, hostSlugFromUrl, countUploadedDocs, validateUpload } from "./kb";
+import { hasPendingIndex, isWorkspaceUploadKey, kbContentType, kbRetrySyncIfPending, kbTriggerSync, kbUploadKey, isValidWorkspace, kbFileStatuses, kbListDocs, kbSearch, kbSearchBody, newWorkspaceId, safeUploadName, slugFromUrl, hostSlugFromUrl, countUploadedDocs, validateUpload } from "./kb";
 import { buildKbTools } from "./tools/kb";
 import { groundingChecker, kbAgent, kbPrefetchContext } from "./defs/knowledge-base";
 import { AGENTS } from "./registry";
@@ -445,5 +445,114 @@ describe("knowledge-base agent", () => {
       toolResults: [{ toolName: "search_kb", output: { results: [{ n: 1, filename: "a.md", snippet: "x" }] } }],
     });
     expect(sub.calls).toHaveLength(1);
+  });
+});
+
+describe("kbTriggerSync", () => {
+  const env = { CF_ACCOUNT_ID: "acc", CF_API_TOKEN: "tok", KB_AI_SEARCH: "inst" } as never;
+  beforeEach(() => vi.restoreAllMocks());
+
+  it("returns the job id when the sync is accepted", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ success: true, result: { id: "job-1" } }));
+    expect(await kbTriggerSync(env)).toEqual({ jobId: "job-1", cooldown: false });
+    expect(String(fetchMock.mock.calls[0]![0])).toBe("https://api.cloudflare.com/client/v4/accounts/acc/ai-search/instances/inst/jobs");
+  });
+
+  it("treats 7020 sync_in_cooldown as cooldown, not an error", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ success: false, errors: [{ code: 7020, message: "sync_in_cooldown" }] }, { status: 429 }),
+    );
+    expect(await kbTriggerSync(env)).toEqual({ jobId: null, cooldown: true });
+  });
+
+  it("still throws on other errors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ success: false, errors: [{ code: 10000, message: "Authentication error" }] }, { status: 403 }),
+    );
+    await expect(kbTriggerSync(env)).rejects.toThrow(/Authentication error \(10000\)/);
+  });
+});
+
+describe("kbRetrySyncIfPending", () => {
+  const WS = "ws-abcd1234";
+  const makeEnv = (store: Map<string, string>) =>
+    ({
+      CF_ACCOUNT_ID: "acc",
+      CF_API_TOKEN: "tok",
+      KB_AI_SEARCH: "inst",
+      KV: {
+        get: async (k: string) => store.get(k) ?? null,
+        put: async (k: string, v: string) => void store.set(k, v),
+      },
+    }) as never;
+  beforeEach(() => vi.restoreAllMocks());
+
+  it("hasPendingIndex: missing or non-completed documents are pending", () => {
+    expect(hasPendingIndex([`${WS}/a.pdf`], [{ key: `${WS}/a.pdf`, status: "completed" }])).toBe(false);
+    expect(hasPendingIndex([`${WS}/a.pdf`], [])).toBe(true);
+    expect(hasPendingIndex([`${WS}/a.pdf`], [{ key: `${WS}/a.pdf`, status: "running" }])).toBe(true);
+    expect(hasPendingIndex([], [])).toBe(false);
+  });
+
+  it("does nothing when every document is completed", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const r = await kbRetrySyncIfPending(makeEnv(new Map()), WS, [`${WS}/a.md`], [{ key: `${WS}/a.md`, status: "completed" }]);
+    expect(r).toEqual({ syncPending: false, syncTriggered: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not retry within 60 s of the last attempt", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const store = new Map([[`kb-sync-attempt:${WS}`, String(1_000_000)]]);
+    const r = await kbRetrySyncIfPending(makeEnv(store), WS, [`${WS}/a.md`], [], 1_000_000 + 59_000);
+    expect(r).toEqual({ syncPending: true, syncTriggered: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("retries after 60 s (or with no recorded attempt) and records the attempt", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ success: true, result: { id: "j" } }));
+    const store = new Map([[`kb-sync-attempt:${WS}`, String(1_000_000)]]);
+    const r = await kbRetrySyncIfPending(makeEnv(store), WS, [`${WS}/a.md`], [], 1_000_000 + 61_000);
+    expect(r).toEqual({ syncPending: true, syncTriggered: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(store.get(`kb-sync-attempt:${WS}`)).toBe(String(1_061_000));
+
+    const empty = new Map<string, string>();
+    expect(await kbRetrySyncIfPending(makeEnv(empty), WS, [`${WS}/a.md`], [], 5)).toEqual({ syncPending: true, syncTriggered: true });
+    expect(empty.get(`kb-sync-attempt:${WS}`)).toBe("5");
+  });
+
+  it("reports syncTriggered false while AI Search is still in cooldown", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ success: false, errors: [{ code: 7020, message: "sync_in_cooldown" }] }, { status: 429 }),
+    );
+    const r = await kbRetrySyncIfPending(makeEnv(new Map()), WS, [`${WS}/a.md`], [{ key: `${WS}/a.md`, status: "queued" }]);
+    expect(r).toEqual({ syncPending: true, syncTriggered: false });
+  });
+});
+
+describe("direct upload helpers", () => {
+  it("kbContentType maps the allowed extensions, case-insensitively", () => {
+    expect(kbContentType("a.PDF")).toBe("application/pdf");
+    expect(kbContentType("a.docx")).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(kbContentType("a.md")).toBe("text/markdown");
+    expect(kbContentType("a.txt")).toBe("text/plain");
+    expect(kbContentType("a.exe")).toBe("application/octet-stream");
+  });
+
+  it("kbUploadKey adds a suffix only on collision", () => {
+    expect(kbUploadKey("ws-abcd1234", "a.pdf", new Set())).toBe("ws-abcd1234/a.pdf");
+    expect(kbUploadKey("ws-abcd1234", "a.pdf", new Set(["ws-abcd1234/a.pdf"]))).toMatch(/^ws-abcd1234\/a-[0-9a-f]{4}\.pdf$/);
+  });
+
+  it("isWorkspaceUploadKey accepts only top-level keys of the workspace", () => {
+    const ws = "ws-abcd1234";
+    expect(isWorkspaceUploadKey(ws, `${ws}/季報.pdf`)).toBe(true);
+    expect(isWorkspaceUploadKey(ws, `ws-other000/a.pdf`)).toBe(false);
+    expect(isWorkspaceUploadKey(ws, `${ws}/site/x.md`)).toBe(false);
+    expect(isWorkspaceUploadKey(ws, `${ws}/../default/a.md`)).toBe(false);
+    expect(isWorkspaceUploadKey(ws, `${ws}/a..pdf`)).toBe(false);
+    expect(isWorkspaceUploadKey(ws, `${ws}/`)).toBe(false);
+    expect(isWorkspaceUploadKey(ws, 42)).toBe(false);
   });
 });

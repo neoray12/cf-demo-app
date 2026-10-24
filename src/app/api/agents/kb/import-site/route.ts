@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { hostSlugFromUrl, kbTriggerSync, slugFromUrl } from "@/lib/agents/kb";
+import { hostSlugFromUrl, kbSyncNow, slugFromUrl } from "@/lib/agents/kb";
 import { kbError, kbJson, loadKbEnv, requireWritableWorkspace, routeError } from "@/lib/agents/kb-route";
 import { s3Put } from "@/lib/r2-s3";
 
@@ -206,11 +206,8 @@ export async function GET(request: NextRequest) {
 
       let indexJobId: string | null = null;
       if (saved > 0) {
-        try {
-          indexJobId = await kbTriggerSync(env);
-        } catch {
-          // Files are stored; a later sync will index them.
-        }
+        // Never throws; a cooldown (7020) / failed trigger is retried by the status route while the UI polls.
+        indexJobId = (await kbSyncNow(env, workspace)).jobId;
       }
       const done: ImportRecord = { workspace, url: record.url, status: head.status, saved, failed, indexJobId };
       await env.KV.put(jobKey(jobId), JSON.stringify(done), { expirationTtl: JOB_TTL_S });

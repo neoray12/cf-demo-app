@@ -1,20 +1,28 @@
 import type { NextRequest } from "next/server";
-import { countUploadedDocs, kbListDocs, kbTriggerSync, MAX_UPLOAD_BYTES, safeUploadName, validateUpload } from "@/lib/agents/kb";
+import {
+  countUploadedDocs,
+  kbContentType,
+  kbListDocs,
+  kbSyncNow,
+  kbUploadKey,
+  MAX_UPLOAD_BYTES,
+  safeUploadName,
+  validateUpload,
+} from "@/lib/agents/kb";
 import { kbError, kbJson, loadKbEnv, requireWritableWorkspace, routeError } from "@/lib/agents/kb-route";
 import { s3Put } from "@/lib/r2-s3";
 
 export const dynamic = "force-dynamic";
 
-const CONTENT_TYPES: Record<string, string> = {
-  ".pdf": "application/pdf",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".md": "text/markdown",
-  ".txt": "text/plain",
-};
 // multipart framing / field overhead allowed on top of the file limit before the body is even parsed
 const MULTIPART_OVERHEAD = 64 * 1024;
 
-/** POST /api/agents/kb/upload (multipart: file, workspace) -> { key, indexJobId } | 400 { error: <i18n key> } */
+/**
+ * POST /api/agents/kb/upload (multipart: file, workspace) -> { key, indexJobId, syncPending } | 400 { error: <i18n key> }
+ *
+ * Legacy path, kept working but no longer used by the UI: in production the zone WAF challenges binary multipart
+ * bodies (403 HTML) before they reach the Worker. The UI uses /upload/presign -> PUT to R2 -> /upload/complete.
+ */
 export async function POST(request: NextRequest) {
   // Cheap early reject on the declared length; the real size is checked again on the parsed file below.
   const declared = Number(request.headers.get("content-length"));
@@ -55,17 +63,8 @@ export async function POST(request: NextRequest) {
       validateUpload({ name: safeName, size: bytes.byteLength }, uploaded);
     if (invalid) return kbJson({ error: invalid }, 400);
 
-    const taken = new Set(docs.map((d) => d.key));
-    let key = `${workspace}/${safeName}`;
-    if (taken.has(key)) {
-      const dot = safeName.lastIndexOf(".");
-      const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
-      const ext = dot > 0 ? safeName.slice(dot) : "";
-      const suffix = crypto.randomUUID().slice(0, 4);
-      key = `${workspace}/${stem}-${suffix}${ext}`;
-    }
+    const key = kbUploadKey(workspace, safeName, new Set(docs.map((d) => d.key)));
 
-    const ext = safeName.slice(safeName.lastIndexOf(".")).toLowerCase();
     const put = await s3Put({
       accountId: env.CF_ACCOUNT_ID,
       accessKeyId: env.R2_ACCESS_KEY_ID,
@@ -73,20 +72,16 @@ export async function POST(request: NextRequest) {
       bucket: env.KB_BUCKET_NAME,
       key,
       body: bytes,
-      contentType: CONTENT_TYPES[ext] ?? "application/octet-stream",
+      contentType: kbContentType(safeName),
     });
     if (!put.ok) {
       const detail = (await put.text().catch(() => "")).slice(0, 200);
       return routeError(new Error(`R2 upload failed (${put.status}): ${detail}`));
     }
 
-    let indexJobId: string | null = null;
-    try {
-      indexJobId = await kbTriggerSync(env);
-    } catch {
-      // The file is stored; the next scheduled sync (or a manual one) will still pick it up.
-    }
-    return kbJson({ key, indexJobId });
+    // Never throws: a refused (cooldown) or failed trigger is retried by the status route.
+    const sync = await kbSyncNow(env, workspace);
+    return kbJson({ key, indexJobId: sync.jobId, syncPending: sync.pending });
   } catch (err) {
     return routeError(err);
   }

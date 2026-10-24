@@ -201,8 +201,15 @@ export async function kbListDocs(
   return out;
 }
 
-/** Starts an indexing job; returns the job id (null when the API does not return one). */
-export async function kbTriggerSync(env: AgentEnv): Promise<string | null> {
+/** AI Search error code for "a sync ran too recently" (`sync_in_cooldown`). */
+export const SYNC_COOLDOWN_CODE = 7020;
+
+/**
+ * Starts an indexing job. `{ jobId, cooldown: false }` when accepted (jobId may be null when the API returns none);
+ * `{ jobId: null, cooldown: true }` when AI Search refuses with 7020 `sync_in_cooldown` (a sync ran moments ago) —
+ * not an error: the caller should simply try again later (the status route does, see kbRetrySyncIfPending).
+ */
+export async function kbTriggerSync(env: AgentEnv): Promise<{ jobId: string | null; cooldown: boolean }> {
   const res = await fetch(`${API_BASE}/${env.CF_ACCOUNT_ID}/ai-search/instances/${env.KB_AI_SEARCH}/jobs`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.CF_API_TOKEN}`, "Content-Type": "application/json" },
@@ -210,8 +217,117 @@ export async function kbTriggerSync(env: AgentEnv): Promise<string | null> {
     signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
   const data = (await res.json().catch(() => null)) as ApiEnvelope<{ id?: string }> | null;
+  if (data?.errors?.some((e) => e.code === SYNC_COOLDOWN_CODE)) return { jobId: null, cooldown: true };
   if (!res.ok || !data?.success) throw apiError(res, data);
-  return data.result?.id ?? null;
+  return { jobId: data.result?.id ?? null, cooldown: false };
+}
+
+// ---- sync retry (cooldown / not-yet-indexed uploads) ----------------------------------------------------------
+
+export const SYNC_RETRY_AFTER_MS = 60_000;
+const SYNC_ATTEMPT_TTL_S = 600;
+export const syncAttemptKey = (workspace: string) => `kb-sync-attempt:${workspace}`;
+
+/** Records "a sync was just attempted for this workspace" (KV, TTL 10 min). Best effort. */
+export async function recordSyncAttempt(env: AgentEnv, workspace: string, now = Date.now()): Promise<void> {
+  await env.KV.put(syncAttemptKey(workspace), String(now), { expirationTtl: SYNC_ATTEMPT_TTL_S }).catch(() => undefined);
+}
+
+/**
+ * kbTriggerSync + recordSyncAttempt; never throws. `pending` is true when the sync was not accepted (cooldown or
+ * error), i.e. the new file will only be indexed after a later retry.
+ */
+export async function kbSyncNow(
+  env: AgentEnv,
+  workspace: string,
+): Promise<{ jobId: string | null; cooldown: boolean; pending: boolean }> {
+  await recordSyncAttempt(env, workspace);
+  try {
+    const r = await kbTriggerSync(env);
+    return { ...r, pending: r.cooldown };
+  } catch (err) {
+    console.error("[kb] sync trigger failed:", err instanceof Error ? err.message : String(err));
+    return { jobId: null, cooldown: false, pending: true };
+  }
+}
+
+/** True when some document is not (yet) `completed` in AI Search, or missing from its items list. */
+export function hasPendingIndex(docKeys: string[], files: KbFileStatus[]): boolean {
+  const byKey = new Map(files.map((f) => [f.key, f.status]));
+  return docKeys.some((k) => byKey.get(k) !== "completed");
+}
+
+/**
+ * Status-route helper: when the workspace has unindexed documents and the last sync attempt (KV
+ * `kb-sync-attempt:{workspace}`) is older than SYNC_RETRY_AFTER_MS (or unknown), triggers a sync again. The UI polls
+ * status with backoff, so this keeps retrying until AI Search accepts a job (after the 7020 cooldown).
+ */
+export async function kbRetrySyncIfPending(
+  env: AgentEnv,
+  workspace: string,
+  docKeys: string[],
+  files: KbFileStatus[],
+  now = Date.now(),
+): Promise<{ syncPending: boolean; syncTriggered: boolean }> {
+  const syncPending = hasPendingIndex(docKeys, files);
+  if (!syncPending) return { syncPending, syncTriggered: false };
+  const last = Number(await env.KV.get(syncAttemptKey(workspace)).catch(() => null));
+  if (Number.isFinite(last) && last > 0 && now - last < SYNC_RETRY_AFTER_MS) return { syncPending, syncTriggered: false };
+  await recordSyncAttempt(env, workspace, now);
+  try {
+    const r = await kbTriggerSync(env);
+    return { syncPending, syncTriggered: !r.cooldown };
+  } catch (err) {
+    console.error("[kb/status] sync retry failed:", err instanceof Error ? err.message : String(err));
+    return { syncPending, syncTriggered: false };
+  }
+}
+
+// ---- direct-to-R2 uploads ---------------------------------------------------------------------------------------
+
+/** Server-chosen Content-Type per allowed extension (never the client's raw string). */
+export const KB_CONTENT_TYPES: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".md": "text/markdown",
+  ".txt": "text/plain",
+};
+
+export function kbContentType(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return (dot >= 0 && KB_CONTENT_TYPES[name.slice(dot).toLowerCase()]) || "application/octet-stream";
+}
+
+/** `{workspace}/{safeName}`, or `{workspace}/{stem}-{4 hex}{ext}` when that key is already taken. */
+export function kbUploadKey(workspace: string, safeName: string, taken: Set<string>): string {
+  const key = `${workspace}/${safeName}`;
+  if (!taken.has(key)) return key;
+  const dot = safeName.lastIndexOf(".");
+  const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
+  const ext = dot > 0 ? safeName.slice(dot) : "";
+  return `${workspace}/${stem}-${crypto.randomUUID().slice(0, 4)}${ext}`;
+}
+
+/** A key the upload/complete route may accept for `workspace`: a top-level upload, not under site/, no `..`. */
+export function isWorkspaceUploadKey(workspace: string, key: unknown): key is string {
+  if (typeof key !== "string" || key.length > 300) return false;
+  const prefix = `${workspace}/`;
+  if (!key.startsWith(prefix) || key.startsWith(`${prefix}site/`)) return false;
+  const rest = key.slice(prefix.length);
+  return rest.length > 0 && !rest.includes("..") && !rest.includes("/") && !rest.includes("\\");
+}
+
+/** Size of one object in the KB bucket (R2 REST list with prefix = key, exact match), or null when absent. */
+export async function kbObjectSize(env: AgentEnv, key: string): Promise<number | null> {
+  const qs = new URLSearchParams({ prefix: key, per_page: "20" });
+  const res = await fetch(`${API_BASE}/${env.CF_ACCOUNT_ID}/r2/buckets/${env.KB_BUCKET_NAME}/objects?${qs}`, {
+    headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+  });
+  const data = (await res.json().catch(() => null)) as ApiEnvelope<Array<{ key: string; size: number }>> | null;
+  if (!res.ok || !data?.success) throw apiError(res, data);
+  const hit = (data.result ?? []).find((o) => o.key === key);
+  return hit ? hit.size : null;
 }
 
 export async function kbSyncStatus(env: AgentEnv): Promise<{ status: string; lastActivity: string | null }> {

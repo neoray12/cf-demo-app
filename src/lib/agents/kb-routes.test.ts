@@ -21,6 +21,9 @@ vi.mock("@opennextjs/cloudflare", () => ({
 
 import { requireWritableWorkspace } from "./kb-route";
 import { POST as upload } from "@/app/api/agents/kb/upload/route";
+import { POST as presign } from "@/app/api/agents/kb/upload/presign/route";
+import { POST as complete } from "@/app/api/agents/kb/upload/complete/route";
+import { GET as status } from "@/app/api/agents/kb/status/route";
 import { GET as importGet, POST as importPost } from "@/app/api/agents/kb/import-site/route";
 
 const WS = "ws-test0002";
@@ -158,5 +161,126 @@ describe("import-site job binding and idempotency", () => {
     const res = await importGet(importUrl(`jobId=job-2&workspace=${WS}`));
     expect(await res.json()).toMatchObject({ status: "running" });
     expect(calls.filter((c) => c.startsWith("PUT"))).toEqual([]);
+  });
+});
+
+const jsonReq = (path: string, body: unknown) =>
+  new NextRequest(`http://localhost${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+describe("direct upload: presign", () => {
+  it("validates like the multipart route and returns a presigned R2 URL with the server-chosen type", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/r2/buckets/kb-bucket/objects")) {
+        return Response.json({ success: true, result: [{ key: `${WS}/report.pdf`, size: 1 }], result_info: null });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const res = await presign(
+      jsonReq("/api/agents/kb/upload/presign", { workspace: WS, name: "report.pdf", size: 65536, type: "text/html" }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { key: string; url: string; headers: Record<string, string> };
+    expect(body.key).toMatch(new RegExp(`^${WS}/report-[0-9a-f]{4}\\.pdf$`));
+    expect(body.headers).toEqual({ "content-type": "application/pdf" });
+    const u = new URL(body.url);
+    expect(u.origin).toBe("https://acc.r2.cloudflarestorage.com");
+    expect(u.pathname).toBe(`/kb-bucket/${body.key}`);
+    expect(u.searchParams.get("X-Amz-SignedHeaders")).toBe("content-length;content-type;host");
+  });
+
+  it("returns i18n keys for read-only workspace, bad type, too large and too many", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({ success: true, result: Array.from({ length: 20 }, (_, i) => ({ key: `${WS}/f${i}.md`, size: 1 })) }),
+    );
+    const ro = await presign(jsonReq("/x", { workspace: "default", name: "a.pdf", size: 1 }));
+    expect(await ro.json()).toEqual({ error: "agents.kb.errors.readOnlyWorkspace" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    const badType = await presign(jsonReq("/x", { workspace: WS, name: "a.exe", size: 1 }));
+    expect(await badType.json()).toEqual({ error: "agents.kb.errors.badType" });
+    const big = await presign(jsonReq("/x", { workspace: WS, name: "a.pdf", size: 10 * 1024 * 1024 + 1 }));
+    expect(await big.json()).toEqual({ error: "agents.kb.errors.tooLarge" });
+    const many = await presign(jsonReq("/x", { workspace: WS, name: "a.pdf", size: 10 }));
+    expect(await many.json()).toEqual({ error: "agents.kb.errors.tooMany" });
+    const noSize = await presign(jsonReq("/x", { workspace: WS, name: "a.pdf" }));
+    expect(await noSize.json()).toEqual({ error: "agents.kb.errors.noFile" });
+  });
+});
+
+describe("direct upload: complete", () => {
+  it("rejects keys outside the workspace, under site/ or with ..", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    for (const key of ["ws-other000/a.pdf", `${WS}/site/a.md`, `${WS}/../x.pdf`]) {
+      const res = await complete(jsonReq("/x", { workspace: WS, key }));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "agents.kb.errors.badKey" });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("404 notUploaded when the object is absent", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ success: true, result: [{ key: `${WS}/a.pdf.bak`, size: 3 }] }));
+    const res = await complete(jsonReq("/x", { workspace: WS, key: `${WS}/a.pdf` }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "agents.kb.errors.notUploaded" });
+  });
+
+  it("verifies the object, triggers a sync and reports cooldown as syncPending", async () => {
+    let cooldown = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/objects?")) return Response.json({ success: true, result: [{ key: `${WS}/a.pdf`, size: 65536 }] });
+      if (url.endsWith("/jobs")) {
+        return cooldown
+          ? Response.json({ success: false, errors: [{ code: 7020, message: "sync_in_cooldown" }] }, { status: 429 })
+          : Response.json({ success: true, result: { id: "sync-9" } });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const ok = await complete(jsonReq("/x", { workspace: WS, key: `${WS}/a.pdf` }));
+    expect(await ok.json()).toEqual({ key: `${WS}/a.pdf`, size: 65536, indexJobId: "sync-9", syncPending: false });
+    expect(kvStore.has(`kb-sync-attempt:${WS}`)).toBe(true);
+    cooldown = true;
+    const cd = await complete(jsonReq("/x", { workspace: WS, key: `${WS}/a.pdf` }));
+    expect(await cd.json()).toEqual({ key: `${WS}/a.pdf`, size: 65536, indexJobId: null, syncPending: true });
+  });
+});
+
+describe("status sync retry", () => {
+  const mockApis = (items: Array<{ key: string; status: string }>) => {
+    const jobs: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/instances/inst")) return Response.json({ success: true, result: { status: "ready", last_activity: null } });
+      if (url.includes("/items?")) return Response.json({ success: true, result: items });
+      if (url.includes("/objects?")) return Response.json({ success: true, result: [{ key: `${WS}/a.pdf`, size: 1 }], result_info: null });
+      if (url.endsWith("/jobs")) {
+        jobs.push(url);
+        return Response.json({ success: true, result: { id: "j" } });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    return jobs;
+  };
+  const get = (ws: string) => status(new NextRequest(`http://localhost/api/agents/kb/status?workspace=${ws}`));
+
+  it("re-triggers a sync for an unindexed upload, then waits 60 s before the next attempt", async () => {
+    const jobs = mockApis([]);
+    const first = await (await get(WS)).json();
+    expect(first).toMatchObject({ status: "ready", files: [], syncPending: true, syncTriggered: true });
+    const second = await (await get(WS)).json();
+    expect(second).toMatchObject({ syncPending: true, syncTriggered: false });
+    expect(jobs).toHaveLength(1);
+  });
+
+  it("does not sync when everything is completed, nor for the default workspace", async () => {
+    const jobs = mockApis([{ key: `${WS}/a.pdf`, status: "completed" }]);
+    expect(await (await get(WS)).json()).toMatchObject({ syncPending: false, syncTriggered: false });
+    expect(await (await get("default")).json()).toMatchObject({ syncPending: false, syncTriggered: false });
+    expect(jobs).toHaveLength(0);
   });
 });
