@@ -1,0 +1,23 @@
+agents.md
+  s_3a8326f10dc640::t_4ef7893afadc49 152,182
+src/lib/agents/catalog.test.ts
+  s_3a8326f10dc640::t_bcf9865c00eecb 71-72
+src/lib/agents/catalog.ts
+  s_3a8326f10dc640::t_180cc10f5e315d 62-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "240b13df33e3c8a8917989acab85c4f7943707d1",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
