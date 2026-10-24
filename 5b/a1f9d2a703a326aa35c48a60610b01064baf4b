@@ -1,0 +1,39 @@
+src/app/api/mcp/auth/callback/route.ts
+  s_c99689345dfe55::t_00b2f37e52d3ce 3,80-85
+src/app/api/mcp/disconnect/route.ts
+  s_c99689345dfe55::t_f956993223bed9 4,18,22
+src/app/api/mcp/prompts/get/route.ts
+  s_c99689345dfe55::t_056ef520d6fd04 1-52
+src/app/api/mcp/prompts/route.ts
+  s_c99689345dfe55::t_aae4012a2a78d3 1-44
+src/app/pages/chat.tsx
+  s_c99689345dfe55::t_8f7ca0e94b4d27 8-9,1174,1645,1985
+src/i18n/en.json
+  s_c99689345dfe55::t_84a92d2bd3fcc4 246-258
+src/i18n/zh-TW.json
+  s_c99689345dfe55::t_d3d6f2f1dd2dd8 246-258
+src/lib/mcp-auth.ts
+  s_c99689345dfe55::t_0ed4ef52b34397 50-73
+src/lib/mcp-client.ts
+  s_c99689345dfe55::t_cf101081f4dbd1 192-266
+src/app/components/chat/prompt-picker.tsx
+  s_c99689345dfe55::t_d078fe3e00c9a9 1-132
+src/app/components/chat/use-mcp-prompt-picker.ts
+  s_c99689345dfe55::t_ae0fb8434a5c90 1-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "5ba1f9d2a703a326aa35c48a60610b01064baf4b",
+  "prompts": {},
+  "sessions": {
+    "s_c99689345dfe55": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "edd74119-cfaa-48d0-98c5-3319a08bf286",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
