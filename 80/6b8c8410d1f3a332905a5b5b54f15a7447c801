@@ -1,0 +1,27 @@
+src/lib/agents/defs/threat-intel.test.ts
+  s_3a8326f10dc640::t_779570b030194d 1-2,18,38,76-78,94,99,119-206
+src/lib/agents/defs/threat-intel.ts
+  s_3a8326f10dc640::t_5942689dd885ec 3-15,17-18,24-33,41-42,48-49,52-64,123-131,153-154,159,162-166,170-184
+src/lib/agents/tools/radar-prefetch.test.ts
+  s_3a8326f10dc640::t_fba6bdb77286ea 1-80
+src/lib/agents/tools/radar-prefetch.ts
+  s_3a8326f10dc640::t_d5b4c1baea46e4 1-84
+src/lib/agents/tools/radar.ts
+  s_3a8326f10dc640::t_2cdaf57429c92a 664-702,710
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "806b8c8410d1f3a332905a5b5b54f15a7447c801",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
