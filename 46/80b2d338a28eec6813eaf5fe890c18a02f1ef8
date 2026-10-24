@@ -1,0 +1,19 @@
+agents.md
+  s_3a8326f10dc640::t_4dc2f64ed5ceb3 191,199-201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "4680b2d338a28eec6813eaf5fe890c18a02f1ef8",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
