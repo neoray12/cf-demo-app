@@ -1,0 +1,52 @@
+docs/superpowers/specs/2026-10-23-agents-tracing-demo-design.md
+  s_3a8326f10dc640::t_cdd8f0824a38b6 1-89,100,102,104-168,170-192,194-318,320-322,364-368
+  s_3a8326f10dc640::t_f9f04e39e665e8 90-99,101,103,169,193,319
+docs/superpowers/plans/2026-10-23-agents-tracing.md
+  s_3a8326f10dc640::t_edc543b4d9a327 1-315,347-510,518-558
+src/app/api/mcp/auth/callback/route.ts
+  s_c99689345dfe55::t_00b2f37e52d3ce 3,80-85
+src/app/api/mcp/disconnect/route.ts
+  s_c99689345dfe55::t_f956993223bed9 4,18,22
+src/app/api/mcp/prompts/get/route.ts
+  s_c99689345dfe55::t_056ef520d6fd04 1-52
+src/app/api/mcp/prompts/route.ts
+  s_c99689345dfe55::t_aae4012a2a78d3 1-44
+src/app/pages/chat.tsx
+  s_c99689345dfe55::t_8f7ca0e94b4d27 11-12,1242,1749,2009
+src/i18n/en.json
+  s_c99689345dfe55::t_84a92d2bd3fcc4 248,335-346
+src/i18n/zh-TW.json
+  s_c99689345dfe55::t_d3d6f2f1dd2dd8 248,335-346
+src/lib/mcp-auth.ts
+  s_c99689345dfe55::t_0ed4ef52b34397 50-73
+src/lib/mcp-client.ts
+  s_c99689345dfe55::t_cf101081f4dbd1 196-270
+src/app/components/chat/prompt-picker.tsx
+  s_c99689345dfe55::t_d078fe3e00c9a9 1-132
+src/app/components/chat/use-mcp-prompt-picker.ts
+  s_c99689345dfe55::t_ae0fb8434a5c90 1-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "86ef037d372dc72ebfaaa3521c1e3172222e4c84",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_c99689345dfe55": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "edd74119-cfaa-48d0-98c5-3319a08bf286",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
