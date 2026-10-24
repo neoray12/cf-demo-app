@@ -17,7 +17,7 @@ type DocsSearchOutcome = { results: DocsSearchHit[]; error?: string };
 
 export const docsResearcher: SubagentDef<{ question: string; language?: UserLanguage }> = {
   functionId: "docs-researcher",
-  model: "kimi-k2.6", // the run's model (ctx.modelKey, no-think variant) overrides this
+  model: "glm-5.3-flash", // the run's model (ctx.modelKey, no-think variant) overrides this
   maxSteps: 1,
   system: [
     "You are a Cloudflare documentation researcher.",
@@ -101,7 +101,7 @@ function docsAgentTools(ctx: RunContext): ToolSet {
 export const docsAgent: AgentDef = {
   id: "cloudflare-docs",
   functionId: "docs-agent",
-  defaultModel: "kimi-k2.6",
+  defaultModel: "glm-5.3-flash",
   // step 0: plan + research/overview; step 1: answer; one spare step (R23 forces the answer on the last one)
   maxSteps: 3,
   system: () =>

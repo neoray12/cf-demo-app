@@ -23,7 +23,7 @@ const DOT_COLORS: Record<SpanNode["kind"], string> = {
   execute_tool: "bg-amber-500 dark:bg-amber-400",
 };
 
-function Metric({ label, value, title }: { label: string; value: string; title?: string }) {
+function Metric({ label, value, title }: { label: string; value: React.ReactNode; title?: string }) {
   return (
     <Badge variant="secondary" className="gap-1 px-2 py-0.5 text-[11px] font-normal" title={title}>
       <span className="text-muted-foreground">{label}</span>
@@ -81,7 +81,19 @@ export function TurnMetrics({ turn, now, compactRow }: { turn: AgentTurn; now: n
       />
       <Metric label={t("agents.trace.tools")} value={String(counts.tools)} />
       <Metric label={t("agents.trace.subagents")} value={String(counts.subagents)} />
-      <Metric label={t("agents.trace.model")} value={model ? t(model.labelKey) : turn.model} />
+      <Metric
+        label={t("agents.trace.model")}
+        value={
+          model ? (
+            <span className="flex items-center gap-1">
+              <img src={model.iconUrl} alt="" className="size-3.5 shrink-0" style={{ objectFit: "contain" }} />
+              {t(model.labelKey)}
+            </span>
+          ) : (
+            turn.model
+          )
+        }
+      />
     </div>
   );
 }

@@ -29,12 +29,12 @@ beforeEach(() => {
 });
 
 describe("threat-intel agent definition", () => {
-  it("is registered and uses kimi-k2.6 everywhere", () => {
+  it("is registered and uses glm-5.3-flash everywhere", () => {
     expect(AGENTS["threat-intel"]).toBe(threatIntelAgent);
-    expect(threatIntelAgent.defaultModel).toBe("kimi-k2.6");
+    expect(threatIntelAgent.defaultModel).toBe("glm-5.3-flash");
     expect(threatIntelAgent.functionId).toBe("threat-intel-agent");
     for (const a of [attackAnalyst, networkAnalyst, botAnalyst]) {
-      expect(a.model).toBe("kimi-k2.6");
+      expect(a.model).toBe("glm-5.3-flash");
       expect(a.maxSteps).toBe(3);
     }
   });

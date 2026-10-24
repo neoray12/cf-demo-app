@@ -67,7 +67,7 @@ function analystPrompt({ question, location, domain, language, prefetched }: Ana
 function makeAnalyst(functionId: string, focus: string, toolNames: RadarToolName[]): SubagentDef<AnalystInput> {
   return {
     functionId,
-    model: "kimi-k2.6", // the run's model (ctx.modelKey) overrides this
+    model: "glm-5.3-flash", // the run's model (ctx.modelKey) overrides this
     maxSteps: ANALYST_MAX_STEPS,
     system: `${ANALYST_RULES}\n你的專長：${focus}`,
     tools: (ctx) => buildRadarTools(ctx, toolNames),
@@ -149,7 +149,7 @@ function threatIntelTools(ctx: RunContext) {
 export const threatIntelAgent: AgentDef = {
   id: "threat-intel",
   functionId: "threat-intel-agent",
-  defaultModel: "kimi-k2.6",
+  defaultModel: "glm-5.3-flash",
   // step 0: plan + brief; step 1: answer; one spare step (R23 forces the answer on the last one)
   maxSteps: 3,
   system: () =>

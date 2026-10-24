@@ -9,8 +9,8 @@ export interface AgentModel {
   reasoningEffort: "low" | "none" | "high";
   maxTokens: number;
   labelKey: string;
-  slow: boolean;
-  ttftHint: string;
+  /** Provider logo (same files as the main chat's model selector, src/lib/types.ts). */
+  iconUrl: string;
 }
 
 /**
@@ -30,8 +30,7 @@ export const AGENT_MODELS: Record<ModelKey, AgentModel> = {
     reasoningEffort: "low",
     maxTokens: 4000,
     labelKey: "agents.models.glm-5.3-flash",
-    slow: false,
-    ttftHint: "0.8–2.8s",
+    iconUrl: "/zai.svg",
   },
   "kimi-k2.6": {
     key: "kimi-k2.6",
@@ -39,19 +38,17 @@ export const AGENT_MODELS: Record<ModelKey, AgentModel> = {
     reasoningEffort: "none",
     maxTokens: 4000,
     labelKey: "agents.models.kimi-k2.6",
-    slow: false,
-    ttftHint: "0.7–8.8s",
+    iconUrl: "/moonshotai.svg",
   },
   // Label 「Kimi K2.6（顯示思考過程）」/ "Kimi K2.6 (show thinking)": the opt-in model that streams its reasoning.
-  // Agents keep defaulting to the no-think "kimi-k2.6" (R20).
+  // Every agent defaults to "glm-5.3-flash".
   "kimi-k2.6-thinking": {
     key: "kimi-k2.6-thinking",
     workersAiId: "@cf/moonshotai/kimi-k2.6",
     reasoningEffort: "high",
     maxTokens: 8000,
     labelKey: "agents.models.kimi-k2.6-thinking",
-    slow: true,
-    ttftHint: "思考 0.6–1s／正文 16–25s",
+    iconUrl: "/moonshotai.svg",
   },
   "glm-5.3": {
     key: "glm-5.3",
@@ -59,7 +56,6 @@ export const AGENT_MODELS: Record<ModelKey, AgentModel> = {
     reasoningEffort: "low",
     maxTokens: 4000,
     labelKey: "agents.models.glm-5.3",
-    slow: true,
-    ttftHint: "1–36s",
+    iconUrl: "/zai.svg",
   },
 };

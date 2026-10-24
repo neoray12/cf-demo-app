@@ -278,15 +278,15 @@ describe("knowledge-base agent", () => {
     sub.text = "";
   });
 
-  it("is registered, uses kimi-k2.6 everywhere", () => {
+  it("is registered, uses glm-5.3-flash everywhere", () => {
     expect(AGENTS["knowledge-base"]).toBe(kbAgent);
     expect(kbAgent.id).toBe("knowledge-base");
     expect(kbAgent.functionId).toBe("kb-agent");
-    expect(kbAgent.defaultModel).toBe("kimi-k2.6");
+    expect(kbAgent.defaultModel).toBe("glm-5.3-flash");
     expect(kbAgent.maxSteps).toBe(3);
     expect(kbAgent.prefetchMode).toBe("await");
     expect(groundingChecker.functionId).toBe("grounding-checker");
-    expect(groundingChecker.model).toBe("kimi-k2.6");
+    expect(groundingChecker.model).toBe("glm-5.3-flash");
     expect(groundingChecker.maxSteps).toBe(1);
     expect(groundingChecker.tools(ctxBase)).toEqual({});
   });

@@ -10,7 +10,7 @@ interface NumberedResult {
 
 export const groundingChecker: SubagentDef<{ answer: string; sources: string }> = {
   functionId: "grounding-checker",
-  model: "kimi-k2.6", // the run's model (ctx.modelKey) overrides this
+  model: "glm-5.3-flash", // the run's model (ctx.modelKey) overrides this
   maxSteps: 1,
   system: [
     "你是「事實查核員」，檢查一份回答中的每個論述是否都有「來源片段」支持。",
@@ -70,7 +70,7 @@ export function shouldCheckGrounding(finalText: string, finalFinishReason: strin
 export const kbAgent: AgentDef = {
   id: "knowledge-base",
   functionId: "kb-agent",
-  defaultModel: "kimi-k2.6",
+  defaultModel: "glm-5.3-flash",
   // step 0: answer from the prefetch (or one follow-up search); step 1: answer; step 2: forced answer (R23)
   maxSteps: 3,
   system: () =>

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Activity, ArrowUp, ExternalLink, Square, SquarePen } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { AGENTS_DASHBOARD_URL, type AgentCatalogEntry } from "@/lib/agents/catalog";
-import { AGENT_MODELS, noThink, type ModelKey } from "@/lib/agents/models";
+import { AGENT_MODELS, type ModelKey } from "@/lib/agents/models";
 import { MAX_MESSAGE_CHARS } from "@/lib/agents/request";
 import { AgentMessage } from "@/app/components/agents/agent-message";
 import { KbWorkspace } from "@/app/components/agents/kb-workspace";
@@ -133,16 +132,9 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
                   const m = AGENT_MODELS[k];
                   return (
                     <SelectItem key={k} value={k} className="text-xs">
+                      {/* Rendered in the trigger too (SelectValue mirrors ItemText): logo + name only. */}
+                      <img src={m.iconUrl} alt="" className="size-3.5 shrink-0" style={{ objectFit: "contain" }} />
                       <span>{t(m.labelKey)}</span>
-                      <span className="text-[10px] text-muted-foreground">{t("agents.chat.ttftHint", { hint: m.ttftHint })}</span>
-                      {noThink(k) !== k && (
-                        <span className="text-[10px] text-muted-foreground">· {t("agents.chat.thinkRootOnly")}</span>
-                      )}
-                      {m.slow && (
-                        <Badge variant="outline" className="px-1 py-0 text-[10px] font-normal text-amber-600 dark:text-amber-400">
-                          {t("agents.chat.slow")}
-                        </Badge>
-                      )}
                     </SelectItem>
                   );
                 })}

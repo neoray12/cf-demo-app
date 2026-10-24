@@ -63,7 +63,7 @@ describe("AGENT_CATALOG", () => {
   it("uses /agents/<id> paths and the spec's default model", () => {
     for (const a of AGENT_CATALOG) {
       expect(a.path).toBe(`/agents/${a.id}`);
-      expect(a.defaultModel).toBe("kimi-k2.6");
+      expect(a.defaultModel).toBe("glm-5.3-flash");
       expect(a.suggestionKeys.length).toBeGreaterThan(0);
     }
   });

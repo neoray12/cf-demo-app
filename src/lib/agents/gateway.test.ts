@@ -19,10 +19,10 @@ describe("injectBodyParams", () => {
 
 describe("AGENT_MODELS", () => {
   it("pins the measured settings", () => {
-    expect(AGENT_MODELS["glm-5.3-flash"]).toMatchObject({ workersAiId: "@cf/zai-org/glm-5.3-flash", reasoningEffort: "low", slow: false });
-    expect(AGENT_MODELS["kimi-k2.6"]).toMatchObject({ workersAiId: "@cf/moonshotai/kimi-k2.6", reasoningEffort: "none", slow: false });
-    expect(AGENT_MODELS["kimi-k2.6-thinking"]).toMatchObject({ workersAiId: "@cf/moonshotai/kimi-k2.6", reasoningEffort: "high", slow: true });
-    expect(AGENT_MODELS["glm-5.3"]).toMatchObject({ workersAiId: "@cf/zai-org/glm-5.3", reasoningEffort: "low", slow: true });
+    expect(AGENT_MODELS["glm-5.3-flash"]).toMatchObject({ workersAiId: "@cf/zai-org/glm-5.3-flash", reasoningEffort: "low", iconUrl: "/zai.svg" });
+    expect(AGENT_MODELS["kimi-k2.6"]).toMatchObject({ workersAiId: "@cf/moonshotai/kimi-k2.6", reasoningEffort: "none", iconUrl: "/moonshotai.svg" });
+    expect(AGENT_MODELS["kimi-k2.6-thinking"]).toMatchObject({ workersAiId: "@cf/moonshotai/kimi-k2.6", reasoningEffort: "high", iconUrl: "/moonshotai.svg" });
+    expect(AGENT_MODELS["glm-5.3"]).toMatchObject({ workersAiId: "@cf/zai-org/glm-5.3", reasoningEffort: "low", iconUrl: "/zai.svg" });
     for (const m of Object.values(AGENT_MODELS)) expect(m.maxTokens).toBeGreaterThanOrEqual(2000);
   });
 });

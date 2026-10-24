@@ -164,7 +164,7 @@
   - AI Search 設定：`query_rewrite` **關閉**（R24：中文查詢被改寫成英文後分數低於 0.4，0 筆）；instance 結果快取 **關閉**（R25：避免上傳未索引完時的空結果被快取兩天）。
   - 索引實測 86–573 秒、偶發 `workers_ai_timeout_error`，每檔狀態「僅供參考」（R26，item 可能卡 `running` 但已可搜尋）→ UI 文案以「會前準備工作區」為主。狀態輪詢：空工作區不輪詢；有未完成檔案時 10 → 20 → 40 → 60 秒退避；上傳 / 匯入完成後重新開始。
   - 引用驗證（R30）：`grounding-checker` 只檢查**最後一個有文字的 root 步驟**（`AgentDef.after` 的 `finalText`），不含開頭的計畫句。
-- **模型**（`src/lib/agents/models.ts`；選單選擇套用到 root，subagent 一律用 `noThink()` 版本：`kimi-k2.6-thinking` → `kimi-k2.6`、`glm-5.3` → `glm-5.3-flash`，其他不變）：預設一律 **Kimi K2.6 no-think**（`reasoning_effort: "none"`，R14/R20）——實測首字 0.7–8.8 s（多數 < 3 s），比 GLM-5.3-flash 快約 3–5 倍；主 agent 先寫一句計畫再呼叫工具（R16），約 3 秒就有第一個字。選單另有「Kimi K2.6（顯示思考過程）」（思考 token 0.6–1 s 開始串流，但正文要多等約 40 秒）、GLM-5.3-flash、GLM-5.3（推理無法關閉且不串流，首字 1–36 s）。Kimi 只能用 `reasoning_effort: "none"` 關思考（`enable_thinking=false` 無效）。
+- **模型**（`src/lib/agents/models.ts`；選單選擇套用到 root，subagent 一律用 `noThink()` 版本：`kimi-k2.6-thinking` → `kimi-k2.6`、`glm-5.3` → `glm-5.3-flash`，其他不變）：預設一律 **GLM 5.3 Flash**（`glm-5.3-flash`，三個 agent 的 `defaultModel` 與所有 subagent 的 `model` 預設；2026-10 使用者要求，取代 R14/R20 的 Kimi K2.6 no-think 預設）；主 agent 先寫一句計畫再呼叫工具（R16）。選單另有 Kimi K2.6（no-think，`reasoning_effort: "none"`）、「Kimi K2.6（顯示思考過程）」（思考 token 0.6–1 s 開始串流，但正文要多等約 40 秒）、GLM 5.3（推理無法關閉且不串流）。選單每項（與 trigger、Trace 面板的模型 badge）只顯示 provider logo + 模型名稱（`AgentModel.iconUrl`：GLM `/zai.svg`、Kimi `/moonshotai.svg`，與主聊天的模型選單相同），不顯示首字延遲提示。Kimi 只能用 `reasoning_effort: "none"` 關思考（`enable_thinking=false` 無效）。
 - **Radar `location` 語意**（工具回傳都帶 `scope`，system prompt 要求照 `scope` 描述）：
 
   | 端點 | `location=TW` 的意思 |
