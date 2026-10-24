@@ -88,6 +88,7 @@ describe("docs agent (lean flow)", () => {
   it("research: researchers in parallel, each = one traced search inside its own span + one no-think model call", async () => {
     const { ctx, events, calls } = makeCtx();
     ctx.prefetched = Promise.resolve({ data: { results: [{ url: "u", title: "overview", snippet: "s" }] } });
+    ctx.userText = "Workers 和 Pages 差在哪？";
     const out = (await exec(docsAgent.tools(ctx).research, { questions: ["What is Workers?", "What is Pages?"] })) as {
       findings: Array<{ question: string; summary: string }>;
       failed: unknown[];
@@ -110,9 +111,30 @@ describe("docs agent (lean flow)", () => {
       expect(events.find((e) => e.type === "span-end" && e.id === `${sub}/search`)).toMatchObject({ status: "ok" });
       const call = calls.find((c) => String(c.prompt).startsWith(`Sub-question: ${q}`))!;
       expect(call.prompt).toContain("Documentation search results:");
+      // researchers write in the user's language (the question is Chinese; the sub-questions are English)
+      expect(call.prompt).toContain("繁體中文");
       expect(call.prompt).toContain(`URL: https://developers.cloudflare.com/${encodeURIComponent(q)}/`);
       // the menu's thinking model applies to the root only
       expect((call.experimental_telemetry as { metadata: { model: string } }).metadata.model).toBe("kimi-k2.6");
     }
+  });
+
+  it("researcher prompt carries the user's language; the root prompt forbids pasting untranslated paragraphs", () => {
+    expect(docsResearcher.prompt({ question: "q", language: "en" })).toBe("Sub-question: q\nWrite your output in English.");
+    expect(docsResearcher.prompt({ question: "q", language: "zh-TW" })).toContain("繁體中文");
+    expect(docsResearcher.prompt({ question: "q" })).toBe("Sub-question: q");
+    expect(docsResearcher.system).not.toContain("in English");
+    const { ctx } = makeCtx();
+    const sys = docsAgent.system(ctx);
+    expect(sys).toContain("絕對不要貼上未翻譯的英文段落");
+    expect(sys).toContain("網址保持原樣");
+  });
+
+  it("an English question gets English researcher findings", async () => {
+    const { ctx, calls } = makeCtx();
+    ctx.userText = "What is the difference between Workers and Pages?";
+    ctx.prefetched = Promise.resolve({ data: { results: [] } });
+    await exec(docsAgent.tools(ctx).research, { questions: ["What is Workers?", "What is Pages?"] });
+    expect(String(calls[0]!.prompt)).toContain("Write your output in English.");
   });
 });

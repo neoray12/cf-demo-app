@@ -5,7 +5,8 @@
 //   step 1 the root writes the answer from the findings (+ the prefetched overview results)
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import { runParallel, runSubagent, runTracedTool, type AgentDef, type RunContext, type SubagentDef } from "../runtime";
+import { languageInstruction, type UserLanguage } from "../language";
+import { ctxLanguage, runParallel, runSubagent, runTracedTool, type AgentDef, type RunContext, type SubagentDef } from "../runtime";
 import { buildDocsTools, formatDocsHits, searchDocsWithCitations, type DocsSearchHit } from "../tools/cf-docs";
 
 const PREFETCH_HITS = 5;
@@ -14,19 +15,21 @@ const QUERY_MAX_CHARS = 400;
 
 type DocsSearchOutcome = { results: DocsSearchHit[]; error?: string };
 
-export const docsResearcher: SubagentDef<{ question: string }> = {
+export const docsResearcher: SubagentDef<{ question: string; language?: UserLanguage }> = {
   functionId: "docs-researcher",
   model: "kimi-k2.6", // the run's model (ctx.modelKey, no-think variant) overrides this
   maxSteps: 1,
   system: [
     "You are a Cloudflare documentation researcher.",
     "You are given the results of one search of the official Cloudflare documentation for a sub-question.",
-    "Summarize what they say about the sub-question in at most 5 one-sentence bullet points in English, and put the source URL after each bullet.",
+    "Summarize what they say about the sub-question in at most 5 one-sentence bullet points, and put the source URL after each bullet.",
+    "Write the bullets in the output language given in the prompt (translate the English documentation into it); keep product names, code, API names and URLs unchanged.",
     "Use ONLY these search results; never use outside knowledge. If they do not cover the sub-question, say so in one line.",
     "Reply with plain text only.",
   ].join(" "),
   tools: () => ({}),
-  prompt: ({ question }) => `Sub-question: ${question}`,
+  prompt: ({ question, language }) =>
+    `Sub-question: ${question}${language ? `\n${languageInstruction(language)}` : ""}`,
   // One deterministic search inside the researcher's own invoke_agent span; its results go into the prompt.
   prepare: async ({ question }, ctx, spanId) => {
     const r = await runTracedTool(
@@ -75,7 +78,7 @@ function docsAgentTools(ctx: RunContext): ToolSet {
           runParallel(
             questions.map((question, i) => ({
               name: question,
-              run: () => runSubagent(docsResearcher, { question }, ctx, options.toolCallId, i),
+              run: () => runSubagent(docsResearcher, { question, language: ctxLanguage(ctx) }, ctx, options.toolCallId, i),
             })),
           ),
           prefetchedDocs(ctx),
@@ -110,7 +113,7 @@ export const docsAgent: AgentDef = {
       "research 或 overview 回傳後，直接整合結果作答，不要再呼叫工具、不要重複計畫。research 的結果也包含 overview。",
       "read_doc_page 只在使用者明確要求某一頁的詳細內容、且摘要明顯不夠時才使用，一次最多讀一頁；一般問題不要讀頁面。",
       "只能依據工具回傳的內容作答，不要憑空補充；找不到就明說。",
-      "請用使用者提問的語言回答，並在相關段落附上英文原文文件連結。",
+      "請完全用使用者提問的語言作答（中文問題用繁體中文，英文問題用英文）：把研究員的發現與搜尋結果翻譯整合成該語言，絕對不要貼上未翻譯的英文段落（研究員或文件的原文）；產品名稱、程式碼、指令與網址保持原樣，並在相關段落附上文件連結。",
       "回答要精簡：先給一句結論，再用一個小表格或 3–6 個重點說明，全文約 300–600 字；不要重複工具結果的原文。",
       "如果 research 的 failed 不是空的，必須在回答中註明哪些子問題沒有查到結果。",
     ].join("\n"),
