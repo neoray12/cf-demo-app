@@ -661,6 +661,45 @@ const TOOL_DEFS: Record<RadarToolName, { description: string; inputSchema: z.Zod
   },
 };
 
+export type RadarToolOutput = RadarResult | { error: string };
+
+/**
+ * Run one Radar tool: query (KV-cached), set the span attributes and emit the chart under `spanId` (the tool span's
+ * id: the model's tool call, or the threat-intel prefetch). Never throws except on abort; a failure is `{ error }`.
+ */
+export async function runRadarTool(
+  ctx: RunContext,
+  name: RadarToolName,
+  input: Record<string, unknown>,
+  spanId: string,
+): Promise<RadarToolOutput> {
+  try {
+    const { path } = buildRadarRequest(name, input);
+    const { cacheHit, ...result } = await radarQuery(ctx.env, name, input, ctx.signal);
+    setActiveSpanAttributes({ "cache.hit": cacheHit, "radar.endpoint": path });
+    if (result.data.length > 0) {
+      ctx.emit({
+        type: "chart",
+        spanId,
+        chart: {
+          kind: result.unit === "normalized" ? "line" : "bar",
+          title: result.title,
+          unit: result.unit,
+          period: result.period,
+          data: result.data.map(({ label, value, previous }) =>
+            previous === undefined ? { label, value } : { label, value, previous },
+          ),
+          sourceUrl: result.sourceUrl,
+        },
+      });
+    }
+    return result;
+  } catch (err) {
+    if (ctx.signal.aborted) throw err;
+    return { error: errorMessage(err) };
+  }
+}
+
 export function buildRadarTools(ctx: RunContext, names: RadarToolName[]): ToolSet {
   const tools: ToolSet = {};
   for (const name of names) {
@@ -668,33 +707,7 @@ export function buildRadarTools(ctx: RunContext, names: RadarToolName[]): ToolSe
     tools[name] = tool({
       description: def.description,
       inputSchema: def.inputSchema,
-      execute: async (input: Record<string, unknown>, options) => {
-        try {
-          const { path } = buildRadarRequest(name, input);
-          const { cacheHit, ...result } = await radarQuery(ctx.env, name, input, ctx.signal);
-          setActiveSpanAttributes({ "cache.hit": cacheHit, "radar.endpoint": path });
-          if (result.data.length > 0) {
-            ctx.emit({
-              type: "chart",
-              spanId: options.toolCallId,
-              chart: {
-                kind: result.unit === "normalized" ? "line" : "bar",
-                title: result.title,
-                unit: result.unit,
-                period: result.period,
-                data: result.data.map(({ label, value, previous }) =>
-                  previous === undefined ? { label, value } : { label, value, previous },
-                ),
-                sourceUrl: result.sourceUrl,
-              },
-            });
-          }
-          return result;
-        } catch (err) {
-          if (ctx.signal.aborted) throw err;
-          return { error: errorMessage(err) };
-        }
-      },
+      execute: async (input: Record<string, unknown>, options) => runRadarTool(ctx, name, input, options.toolCallId),
     });
   }
   return tools;

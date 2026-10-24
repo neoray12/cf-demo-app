@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunContext } from "../runtime";
 
@@ -13,6 +15,7 @@ vi.mock("../runtime", async (orig) => ({
 }));
 
 import { attackAnalyst, botAnalyst, networkAnalyst, threatIntelAgent } from "./threat-intel";
+import type { TraceEvent } from "../trace-events";
 import { AGENTS } from "../registry";
 
 const ctx = { env: {}, signal: new AbortController().signal, emit: () => {} } as unknown as RunContext;
@@ -32,7 +35,7 @@ describe("threat-intel agent definition", () => {
     expect(threatIntelAgent.functionId).toBe("threat-intel-agent");
     for (const a of [attackAnalyst, networkAnalyst, botAnalyst]) {
       expect(a.model).toBe("kimi-k2.6");
-      expect(a.maxSteps).toBe(4);
+      expect(a.maxSteps).toBe(3);
     }
   });
 
@@ -70,6 +73,9 @@ describe("threat-intel agent definition", () => {
   it("analyst prompt includes question, location and domain", () => {
     expect(botAnalyst.prompt({ question: "q", location: "JP", domain: "a.com" })).toBe("問題：q\nlocation：JP\ndomain：a.com");
     expect(attackAnalyst.prompt({ question: "q", location: "TW" })).toBe("問題：q\nlocation：TW");
+    expect(attackAnalyst.prompt({ question: "q", location: "TW", language: "zh-TW", prefetched: "已預先取得：x" })).toBe(
+      "問題：q\nlocation：TW\n輸出語言：繁體中文\n\n已預先取得：x",
+    );
   });
 });
 
@@ -85,12 +91,12 @@ describe("brief tool", () => {
       ["attack-analyst", "root/tc-1", 0],
       ["network-analyst", "root/tc-1", 1],
     ]);
-    expect(sub.calls[0]![1]).toEqual({ question: "q", location: "TW" });
+    expect(sub.calls[0]![1]).toEqual({ question: "q", location: "TW", language: "en" });
   });
 
   it("normalises location and forwards domain", async () => {
     await run({ question: "q", analysts: ["bot"], location: "jp", domain: "example.com" });
-    expect(sub.calls[0]![1]).toEqual({ question: "q", location: "JP", domain: "example.com" });
+    expect(sub.calls[0]![1]).toEqual({ question: "q", location: "JP", domain: "example.com", language: "en" });
   });
 
   it("reports failed and empty analysts in `failed`", async () => {
@@ -110,3 +116,91 @@ describe("brief tool", () => {
     expect(sub.calls).toEqual([]);
   });
 });
+
+describe("threat-intel speed-ups", () => {
+  it("analysts: ONE parallel tool round, a short finding, in the user's language; root answer is concise", () => {
+    for (const a of [attackAnalyst, networkAnalyst, botAnalyst]) {
+      expect(a.system).toContain("並行呼叫你需要的「所有」工具");
+      expect(a.system).toContain("不超過 150 個中文字");
+      expect(a.system).toContain("不要用相同參數再呼叫同一個工具");
+      expect(a.system).toContain("輸出語言");
+    }
+    const sys = threatIntelAgent.system(ctx);
+    expect(sys).toContain("不超過 350 個中文字");
+    expect(sys).toContain("最多一個精簡表格");
+    expect(sys).toContain("不要貼上未翻譯的段落");
+    expect(sys).toContain("不是台灣被攻擊"); // scope honesty stays
+    expect(threatIntelAgent.prefetchMode).toBe("background");
+  });
+
+  const radarJson = JSON.parse(
+    readFileSync(join(__dirname, "..", "tools", "__fixtures__", "radar", "attackers_of.json"), "utf8"),
+  ) as unknown;
+
+  function prefetchCtx() {
+    const events: TraceEvent[] = [];
+    const kv = { get: vi.fn(async () => null), put: vi.fn(async () => {}) };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(radarJson));
+    const c = {
+      env: { CF_API_TOKEN: "t", CF_ACCOUNT_ID: "a", KV: kv },
+      emit: (e: TraceEvent) => events.push(e),
+      now: () => 0,
+      storeContent: false,
+      conversationId: "c",
+      signal: new AbortController().signal,
+    } as unknown as RunContext;
+    return { c, events, fetchMock };
+  }
+
+  it("prefetch: one Radar tool as span `{root}/prefetch` with its chart under that span id", async () => {
+    const { c, events, fetchMock } = prefetchCtx();
+    const pre = await threatIntelAgent.prefetch!(c, "root", "誰在攻擊日本？跟上週比有什麼變化？");
+    expect(events[0]).toEqual({ type: "span-start", id: "root/prefetch", parentId: "root", kind: "execute_tool", name: "attackers_of", t: 0 });
+    expect(events[1]).toEqual({ type: "span-input", id: "root/prefetch", input: { location: "JP", compareLastWeek: true } });
+    expect(fetchMock).toHaveBeenCalled();
+    const chart = events.find((e) => e.type === "chart");
+    expect(chart).toMatchObject({ type: "chart", spanId: "root/prefetch" });
+    expect(events.at(-1)).toMatchObject({ type: "span-end", id: "root/prefetch", status: "ok" });
+    expect((pre.data as { plan: { tool: string } }).plan.tool).toBe("attackers_of");
+    fetchMock.mockRestore();
+  });
+
+  it("prefetch failure: the span ends in error, the run goes on, and brief tells analysts to query themselves", async () => {
+    const { c, events, fetchMock } = prefetchCtx();
+    fetchMock.mockResolvedValue(Response.json({ success: false, errors: [{ message: "nope" }] }, { status: 500 }));
+    const pre = await threatIntelAgent.prefetch!(c, "root", "誰在攻擊台灣");
+    expect(events.at(-1)).toMatchObject({ type: "span-end", id: "root/prefetch", status: "error" });
+    c.prefetched = Promise.resolve(pre);
+    await run2(c, { question: "q", analysts: ["attack"] });
+    expect(String((sub.calls[0]![1] as { prefetched: string }).prefetched)).toContain("失敗");
+    fetchMock.mockRestore();
+  });
+
+  it("brief awaits the prefetch and hands a compact summary to every analyst, plus the user's language", async () => {
+    const { c, fetchMock } = prefetchCtx();
+    c.userText = "誰在攻擊台灣？跟上週比有什麼變化？";
+    const pre = await threatIntelAgent.prefetch!(c, "root", c.userText);
+    let release!: (v: typeof pre) => void;
+    c.prefetched = new Promise((r) => (release = r));
+    const pending = run2(c, { question: "q", analysts: ["attack", "network"] });
+    await Promise.resolve();
+    expect(sub.calls).toEqual([]); // still waiting for the prefetch
+    release(pre);
+    await pending;
+    expect(sub.calls).toHaveLength(2);
+    for (const call of sub.calls) {
+      const input = call[1] as { prefetched: string; language: string };
+      expect(input.language).toBe("zh-TW");
+      expect(input.prefetched).toContain('已預先取得：attackers_of({"location":"TW","compareLastWeek":true})');
+      expect(input.prefetched).toMatch(/data：.*[\u4e00-\u9fff]+ \d/);
+      expect(input.prefetched).toContain("不要再呼叫");
+    }
+    fetchMock.mockRestore();
+  });
+});
+
+const run2 = (c: RunContext, input: unknown) =>
+  (threatIntelAgent.tools(c).brief as unknown as { execute(i: unknown, o: unknown): Promise<unknown> }).execute(input, {
+    toolCallId: "root/tc-1",
+    messages: [],
+  });
