@@ -1,6 +1,18 @@
 import { parseJsonLoose } from "../json";
-import { runSubagent, runTracedTool, type AgentDef, type SubagentDef, type ToolResultRecord } from "../runtime";
+import { runSubagent, runTracedTool, type AgentDef, type RunContext, type SubagentDef, type ToolResultRecord } from "../runtime";
 import { buildKbTools, kbCounter, searchKbNumbered, type KbSearchOutput } from "../tools/kb";
+import { buildKbCalcTools } from "../tools/kb-calc";
+
+/** The rule calculators encode the 雲朵科技 sample docs, so they only exist in the read-only `default` workspace. */
+export function hasKbCalculators(ctx: Pick<RunContext, "workspace">): boolean {
+  return (ctx.workspace ?? "default") === "default";
+}
+
+const CALC_PROMPT = [
+  "【計算工具】這個工作區有依公司規定計算的工具：calc_annual_leave（依年資算特休天數）、calc_overtime_pay（依月薪、時數、平日/休息日/國定假日算加班費）、calc_travel_cost（住宿費、餐費上限與自行開車油資）。",
+  "凡是需要依這些規定計算的問題（例如「年資 3 年 6 個月特休幾天」「月薪 48,000 平日加班 3 小時加班費多少」），一定要呼叫對應的計算工具，不要自己做任何算術，也不要先寫計畫句；工具回傳後照抄它的數字（含 breakdown、assumption 與 notes 中的重要說明）作答。",
+  "作答時仍要在規則相關的句子標註【預先檢索結果】中對應片段的 [n]，計算結果的句子可註明「依計算工具」。若【預先檢索結果】沒有該規則的片段，就在呼叫計算工具的同一步並行呼叫 search_kb（用規則關鍵字，例如「加班費 倍率」「特休 年資」「住宿費上限」），以取得可引用的 [n]。",
+].join("\n");
 
 interface NumberedResult {
   n?: number;
@@ -33,6 +45,11 @@ export const groundingChecker: SubagentDef<{ answer: string; sources: string }> 
 function numberedSources(toolResults: ToolResultRecord[]): string {
   const lines: string[] = [];
   for (const tr of toolResults) {
+    if (tr.toolName.startsWith("calc_")) {
+      // calculator results are sources too (their numbers are computed from the cited rules)
+      lines.push(`【計算工具 ${tr.toolName}】${JSON.stringify(tr.output)}`);
+      continue;
+    }
     if (tr.toolName !== "search_kb") continue;
     const results = (tr.output as { results?: NumberedResult[] } | null | undefined)?.results;
     if (!Array.isArray(results)) continue;
@@ -73,19 +90,20 @@ export const kbAgent: AgentDef = {
   defaultModel: "glm-5.3-flash",
   // step 0: answer from the prefetch (or one follow-up search); step 1: answer; step 2: forced answer (R23)
   maxSteps: 3,
-  system: () =>
+  system: (ctx) =>
     [
       "你是「企業知識庫助理」，只根據使用者工作區中的文件回答問題。",
       "系統已在一開始用使用者的問題搜尋過知識庫，結果附在最後的【預先檢索結果】（[n] 是來源編號）。",
-      "【預先檢索結果】足以回答時：直接作答，不要寫計畫句，也不要呼叫工具。",
+      "【預先檢索結果】足以回答時：直接作答，不要寫計畫句，也不要呼叫 search_kb。",
       "不夠時：先用一句話（不超過 40 字）說明要改查什麼，再把問題改寫成中文或英文關鍵字呼叫 search_kb（最多再查一次），查完就作答。新結果的編號會接續在預先檢索結果之後。",
       "只能依據檢索到的片段回答，不可使用一般知識或憑空補充；片段沒有提到的細節就說資料中未提及。",
       "回答的每一句話句尾都要標註來源編號 [n]（對應片段的編號 / search_kb 結果的 n 欄位）；一句話用到多個來源就寫 [1][2]。",
       "如果沒有相關資料（search_kb 回傳 instruction），明確回覆「在知識庫中找不到相關資料」，不要用一般知識作答，也不要標註來源。",
       "如果搜尋回傳 error，如實告知搜尋失敗，不要編造答案。",
       "請完全用使用者提問的語言簡潔作答（中文問題用繁體中文，英文問題用英文）：來源片段若是其他語言，先翻譯再引用，不要貼上未翻譯的原文段落；產品名稱、程式碼與網址保持原樣。數字與條件要照抄來源內容。",
+      ...(hasKbCalculators(ctx) ? [CALC_PROMPT] : []),
     ].join("\n"),
-  tools: buildKbTools,
+  tools: (ctx) => ({ ...buildKbTools(ctx), ...(hasKbCalculators(ctx) ? buildKbCalcTools() : {}) }),
   // t=0: search_kb(user question) as a traced tool span under the root; awaited (AI Search ≈ 1–2 s) so the first
   // model call already has the passages. It takes source numbers [1..n]; a follow-up search_kb continues the counter.
   prefetch: async (ctx, rootSpanId, userText) => {

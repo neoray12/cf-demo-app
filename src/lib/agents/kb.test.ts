@@ -323,6 +323,22 @@ describe("knowledge-base agent", () => {
     expect([parent, index]).toEqual(["root", 0]);
   });
 
+  it("after() includes calculator results among the checker's sources", async () => {
+    const ctx = { ...ctxBase, emit: vi.fn() } as RunContext;
+    await kbAgent.after!(ctx, {
+      text: "加班費 870 元 [1]",
+      finalText: "加班費 870 元 [1]",
+      rootSpanId: "root",
+      toolResults: [
+        { toolName: "search_kb", output: { results: [{ n: 1, filename: "default/employee-handbook.md", snippet: "前 2 小時按 1.34 倍" }] } },
+        { toolName: "calc_overtime_pay", output: { pay: 870, source: "employee-handbook.md" } },
+      ],
+    });
+    const input = sub.calls[0]![1] as { sources: string };
+    expect(input.sources).toContain("【計算工具 calc_overtime_pay】");
+    expect(input.sources).toContain('"pay":870');
+  });
+
   it("after() skips the checker when nothing was found or search_kb was never called", async () => {
     const ctx = { ...ctxBase, emit: vi.fn() } as RunContext;
     await kbAgent.after!(ctx, {
