@@ -68,8 +68,8 @@ describe("AGENT_CATALOG", () => {
     }
   });
 
-  it("points the dashboard link at the Neo-Cloudflare account", () => {
-    expect(AGENTS_DASHBOARD_URL).toMatch(/^https:\/\/dash\.cloudflare\.com\/5efa272dc28e4e3933324c44165b6dbe\//);
+  it("points the dashboard link at the Agents tab of the Neo-Cloudflare account", () => {
+    expect(AGENTS_DASHBOARD_URL).toBe("https://dash.cloudflare.com/5efa272dc28e4e3933324c44165b6dbe/agents");
   });
 
   it("keeps every agents.* key inside a single top-level `agents` object", () => {

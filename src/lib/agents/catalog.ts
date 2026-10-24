@@ -59,9 +59,8 @@ export function findAgent(id: string): AgentCatalogEntry | undefined {
   return AGENT_CATALOG.find((a) => a.id === id);
 }
 
-/** Workers Observability (Agents tab lives here). Provisional — Task 11 confirms the final deep link. */
-export const AGENTS_DASHBOARD_URL =
-  "https://dash.cloudflare.com/5efa272dc28e4e3933324c44165b6dbe/workers-and-pages/observability";
+/** The dashboard's Agents tab (docs link: dash.cloudflare.com/?to=/:account/agents), on the Neo-Cloudflare account. */
+export const AGENTS_DASHBOARD_URL = "https://dash.cloudflare.com/5efa272dc28e4e3933324c44165b6dbe/agents";
 
 /**
  * Friendly i18n labels for span names: tools (`execute_tool`) and agents/subagents (`invoke_agent` functionId).

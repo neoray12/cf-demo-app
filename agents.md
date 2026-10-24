@@ -149,7 +149,7 @@
 
 設計：`docs/superpowers/specs/2026-10-23-agents-tracing-demo-design.md`；計畫：`docs/superpowers/plans/2026-10-23-agents-tracing.md`；裁決紀錄：`.superpowers/sdd/2026-10-23-agents-tracing/progress.md`（R1–R32）。
 
-同樣走 Vercel AI SDK v6 `streamText` + HTTP（不是 Agents SDK / Durable Objects），模型經 `nkcf-gateway-01` compat 呼叫 Workers AI（帶 `cf-aig-skip-cache: true`，延遲數字不被快取扭曲）。每次執行以 NDJSON 串流 span 事件（`src/lib/agents/trace-events.ts`），右側 Trace 面板即時畫 waterfall；同一組 span 也透過 Cloudflare Agents tracing 送到 Dashboard 的 Agents 分頁。
+同樣走 Vercel AI SDK v6 `streamText` + HTTP（不是 Agents SDK / Durable Objects），模型經 `nkcf-gateway-01` compat 呼叫 Workers AI（帶 `cf-aig-skip-cache: true`，延遲數字不被快取扭曲）。每次執行以 NDJSON 串流 span 事件（`src/lib/agents/trace-events.ts`），右側 Trace 面板即時畫 waterfall；同一組 span 也透過 Cloudflare Agents tracing 送到 Dashboard 的 Agents 分頁（`https://dash.cloudflare.com/5efa272dc28e4e3933324c44165b6dbe/agents`，官方文件連結格式為 `dash.cloudflare.com/?to=/:account/agents`；聊天頁的「在 Cloudflare 查看 Trace」按鈕即指向此處，常數 `AGENTS_DASHBOARD_URL` 在 `src/lib/agents/catalog.ts`）。
 
 - **三個 Agent**（路由 `/agents/{agentId}`，sidebar「Agents ▸」）：
 
@@ -179,7 +179,7 @@
 - **Tracing 設定**：
   - `wrangler.toml` `[observability.traces] enabled = true`、`head_sampling_rate = 1`。
   - `agents/observability/ai` 在模組頂層 import `cloudflare:workers`，`next dev` / `next build` / OpenNext esbuild 都解析不了 → `getTracedAI()`（`src/lib/agents/tracing.ts`）先用**變數路徑動態 import** `cloudflare:workers` 存到 `globalThis.__CF_WORKERS__`，再動態 import `wrapAISDK`；`next.config.mjs` 的 server webpack externals 把 `cloudflare:workers` 對應到 `var (globalThis.__CF_WORKERS__ || {})`。任何一步失敗就退回原生 `ai`，並 `console.warn("agents tracing disabled: …")`（每個 isolate 一次）。
-  - 本地沒有 tracing：`next dev` 沒有 `cloudflare:workers`，本地 workerd（1.20260317）的 `cloudflare:workers` 也沒有 `tracing` export → Dashboard Agents 分頁只能在 production 驗證。`run-start` 事件帶 `traced`，Trace 面板顯示「Cloudflare tracing：已啟用 / 未啟用（本地）」。
+  - 本地 tracing：`next dev`（Node）沒有 `cloudflare:workers`，tracing 為 noop；wrangler 升到 4.152 後，本地 workerd（`opennextjs-cloudflare preview`）已有 `tracing` export（`traced: true`），但 span 只有 production 才會送進 Dashboard Agents 分頁。`run-start` 事件帶 `traced`，Trace 面板顯示「Cloudflare tracing：已啟用 / 未啟用（本地）」。
   - `experimental_telemetry`：`functionId`（`kb-agent`、`docs-researcher`…）、`metadata.agentId = {functionId}-demo`、`conversationId`（同一對話 = 一個 session）、`model`、`workspace`（有時）。「記錄內容」開關關閉時 `storeMessages/storeTools: false`。使用者按停止不記成 span exception（idle timeout 與真正錯誤才記）。
   - Traces 保留 7 天；**2026-12-01 起計入 Cloudflare Observability 的 ingestion / storage 計費**。
 - **TTFT 定義**（不要混用）：
