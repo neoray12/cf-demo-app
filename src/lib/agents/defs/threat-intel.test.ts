@@ -14,14 +14,17 @@ vi.mock("../runtime", async (orig) => ({
   }),
 }));
 
-import { attackAnalyst, botAnalyst, networkAnalyst, threatIntelAgent } from "./threat-intel";
+import { attackAnalyst, botAnalyst, dispatchAnalysts, networkAnalyst, threatIntelAgent, type ThreatPrefetch } from "./threat-intel";
 import type { TraceEvent } from "../trace-events";
 import { AGENTS } from "../registry";
 
 const ctx = { env: {}, signal: new AbortController().signal, emit: () => {} } as unknown as RunContext;
-const brief = () =>
-  (threatIntelAgent.tools(ctx).brief as unknown as { execute(i: unknown, o: unknown): Promise<unknown> });
-const run = (input: unknown) => brief().execute(input, { toolCallId: "root/tc-1", messages: [] });
+const plan = (analysts: Array<"attack" | "network" | "bot">, extra: Record<string, unknown> = {}) => ({
+  analysts,
+  location: "TW",
+  compareLastWeek: false,
+  ...extra,
+});
 
 beforeEach(() => {
   sub.calls = [];
@@ -52,10 +55,13 @@ describe("threat-intel agent definition", () => {
     expect(Object.keys(botAnalyst.tools(ctx))).toEqual(["bot_vs_human", "ai_crawlers", "email_threats", "domain_rank"]);
   });
 
-  it("system prompts carry the scope rules and the plan-first sentence", () => {
+  it("system prompts carry the scope rules; the root has no tools and no plan sentence", () => {
     const sys = threatIntelAgent.system(ctx);
-    expect(sys).toContain("先用使用者提問的語言寫一句簡短的計畫");
-    expect(sys).toContain("brief");
+    expect(sys).not.toContain("先用使用者提問的語言寫一句簡短的計畫");
+    expect(sys).toContain("不要寫計畫句");
+    expect(sys).toContain("【分析師報告】");
+    expect(Object.keys(threatIntelAgent.tools(ctx))).toEqual([]);
+    expect(threatIntelAgent.maxSteps).toBe(1);
     expect(sys).toContain("不是台灣被攻擊");
     expect(sys).toContain("金融業");
     expect(attackAnalyst.system).toContain("不可改寫");
@@ -66,8 +72,6 @@ describe("threat-intel agent definition", () => {
       expect(sys).toContain("rank");
     }
     expect(networkAnalyst.system).toContain("compareLastWeek: true");
-    const desc = (threatIntelAgent.tools(ctx).brief as unknown as { description: string }).description;
-    expect(desc).toContain("先用一句話告訴使用者你要派哪些分析師");
   });
 
   it("analyst prompt includes question, location and domain", () => {
@@ -76,44 +80,48 @@ describe("threat-intel agent definition", () => {
     expect(attackAnalyst.prompt({ question: "q", location: "TW", language: "zh-TW", prefetched: "已預先取得：x" })).toBe(
       "問題：q\nlocation：TW\n輸出語言：繁體中文\n\n已預先取得：x",
     );
+    expect(attackAnalyst.prompt({ question: "q", location: "TW", compareLastWeek: true })).toContain("與上週比較：是");
+  });
+
+  it("analyst prepare waits for the parallel prefetch summary, but not forever", async () => {
+    expect(await attackAnalyst.prepare!({ question: "q", location: "TW", pendingPrefetch: Promise.resolve("已預先取得：y") }, ctx, "s")).toBe(
+      "已預先取得：y",
+    );
+    expect(await attackAnalyst.prepare!({ question: "q", location: "TW" }, ctx, "s")).toBe("");
+    vi.useFakeTimers();
+    try {
+      const p = attackAnalyst.prepare!({ question: "q", location: "TW", pendingPrefetch: new Promise(() => {}) }, ctx, "s");
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await p).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
-describe("brief tool", () => {
-  it("fans out the chosen analysts with the namespaced toolCallId and dedupes", async () => {
-    const out = (await run({ question: "q", analysts: ["attack", "network", "attack"] })) as {
-      reports: Array<{ analyst: string; report: string }>;
-      failed: unknown[];
-    };
+describe("dispatchAnalysts (under the deterministic brief span)", () => {
+  it("fans out the planned analysts under the given parent span, deduped", async () => {
+    const out = await dispatchAnalysts(ctx, "root/brief", plan(["attack", "network", "attack"]), "q");
     expect(out.reports.map((r) => r.analyst)).toEqual(["attack", "network"]);
     expect(out.failed).toEqual([]);
     expect(sub.calls.map((c) => [c[0], c[3], c[4]])).toEqual([
-      ["attack-analyst", "root/tc-1", 0],
-      ["network-analyst", "root/tc-1", 1],
+      ["attack-analyst", "root/brief", 0],
+      ["network-analyst", "root/brief", 1],
     ]);
     expect(sub.calls[0]![1]).toEqual({ question: "q", location: "TW", language: "en" });
   });
 
-  it("normalises location and forwards domain", async () => {
-    await run({ question: "q", analysts: ["bot"], location: "jp", domain: "example.com" });
-    expect(sub.calls[0]![1]).toEqual({ question: "q", location: "JP", domain: "example.com", language: "en" });
+  it("forwards location, domain and compareLastWeek", async () => {
+    await dispatchAnalysts(ctx, "root/brief", plan(["bot"], { location: "JP", domain: "example.com", compareLastWeek: true }), "q");
+    expect(sub.calls[0]![1]).toEqual({ question: "q", location: "JP", domain: "example.com", compareLastWeek: true, language: "en" });
   });
 
   it("reports failed and empty analysts in `failed`", async () => {
     sub.texts["attack-analyst"] = new Error("boom");
     sub.texts["network-analyst"] = "   ";
-    const out = (await run({ question: "q", analysts: ["attack", "network", "bot"] })) as {
-      reports: Array<{ analyst: string }>;
-      failed: Array<{ name: string; error: string }>;
-    };
+    const out = await dispatchAnalysts(ctx, "root/brief", plan(["attack", "network", "bot"]), "q");
     expect(out.reports.map((r) => r.analyst)).toEqual(["bot"]);
     expect(out.failed.map((f) => f.name).sort()).toEqual(["attack", "network"]);
-  });
-
-  it("an invalid location returns {error} without dispatching", async () => {
-    const out = await run({ question: "q", analysts: ["attack"], location: "Japan" });
-    expect(out).toMatchObject({ error: expect.stringContaining("ISO 3166-1") });
-    expect(sub.calls).toEqual([]);
   });
 });
 
@@ -130,7 +138,8 @@ describe("threat-intel speed-ups", () => {
     expect(sys).toContain("最多一個精簡表格");
     expect(sys).toContain("不要貼上未翻譯的段落");
     expect(sys).toContain("不是台灣被攻擊"); // scope honesty stays
-    expect(threatIntelAgent.prefetchMode).toBe("background");
+    expect(sys).toContain("failed");
+    expect(threatIntelAgent.prefetchMode).toBe("await");
   });
 
   const radarJson = JSON.parse(
@@ -152,55 +161,51 @@ describe("threat-intel speed-ups", () => {
     return { c, events, fetchMock };
   }
 
-  it("prefetch: one Radar tool as span `{root}/prefetch` with its chart under that span id", async () => {
+  it("prefetch: dispatch → Radar prefetch + brief in parallel; the context carries the reports", async () => {
     const { c, events, fetchMock } = prefetchCtx();
-    const pre = await threatIntelAgent.prefetch!(c, "root", "誰在攻擊日本？跟上週比有什麼變化？");
-    expect(events[0]).toEqual({ type: "span-start", id: "root/prefetch", parentId: "root", kind: "execute_tool", name: "attackers_of", t: 0 });
-    expect(events[1]).toEqual({ type: "span-input", id: "root/prefetch", input: { location: "JP", compareLastWeek: true } });
+    sub.texts["attack-analyst"] = "attack finding https://radar.cloudflare.com/x";
+    c.userText = "誰在攻擊日本？跟上週比有什麼變化？";
+    const pre = await threatIntelAgent.prefetch!(c, "root", c.userText);
+    expect(events[0]).toEqual({ type: "span-start", id: "root/dispatch", parentId: "root", kind: "execute_tool", name: "dispatch", t: 0 });
+    expect(events.find((e) => e.type === "span-end" && e.id === "root/dispatch")).toMatchObject({
+      status: "ok",
+      detail: { output: { analysts: ["attack"], location: "JP", compareLastWeek: true } },
+    });
+    const starts = events.filter((e) => e.type === "span-start").map((e) => (e as { id: string }).id);
+    expect(starts.slice(0, 3)).toEqual(["root/dispatch", "root/prefetch", "root/brief"]);
+    expect(events.find((e) => e.type === "span-input" && e.id === "root/prefetch")).toEqual({
+      type: "span-input",
+      id: "root/prefetch",
+      input: { location: "JP", compareLastWeek: true },
+    });
     expect(fetchMock).toHaveBeenCalled();
-    const chart = events.find((e) => e.type === "chart");
-    expect(chart).toMatchObject({ type: "chart", spanId: "root/prefetch" });
-    expect(events.at(-1)).toMatchObject({ type: "span-end", id: "root/prefetch", status: "ok" });
-    expect((pre.data as { plan: { tool: string } }).plan.tool).toBe("attackers_of");
+    expect(events.find((e) => e.type === "chart")).toMatchObject({ type: "chart", spanId: "root/prefetch" });
+    expect(sub.calls.map((call) => [call[0], call[3]])).toEqual([["attack-analyst", "root/brief"]]);
+    const input = sub.calls[0]![1] as { location: string; compareLastWeek: boolean; pendingPrefetch: Promise<string> };
+    expect(input).toMatchObject({ location: "JP", compareLastWeek: true, language: "zh-TW" });
+    expect(await input.pendingPrefetch).toContain('已預先取得：attackers_of({"location":"JP","compareLastWeek":true})');
+    expect(events.at(-1)).toMatchObject({ type: "span-end", status: "ok" });
+    const data = pre.data as ThreatPrefetch;
+    expect(data.plan.tool).toBe("attackers_of");
+    expect(data.reports).toEqual([{ analyst: "attack", report: "attack finding https://radar.cloudflare.com/x" }]);
+    expect(pre.context).toContain("【分析師報告】");
+    expect(pre.context).toContain("### attack-analyst\nattack finding");
+    expect(pre.context).toContain("【預先查詢的 Radar 資料】");
+    expect(pre.context).not.toContain("failed");
     fetchMock.mockRestore();
   });
 
-  it("prefetch failure: the span ends in error, the run goes on, and brief tells analysts to query themselves", async () => {
+  it("prefetch failure: the Radar span ends in error, analysts still run, failed analysts are listed", async () => {
     const { c, events, fetchMock } = prefetchCtx();
     fetchMock.mockResolvedValue(Response.json({ success: false, errors: [{ message: "nope" }] }, { status: 500 }));
+    sub.texts["attack-analyst"] = new Error("boom");
     const pre = await threatIntelAgent.prefetch!(c, "root", "誰在攻擊台灣");
-    expect(events.at(-1)).toMatchObject({ type: "span-end", id: "root/prefetch", status: "error" });
-    c.prefetched = Promise.resolve(pre);
-    await run2(c, { question: "q", analysts: ["attack"] });
-    expect(String((sub.calls[0]![1] as { prefetched: string }).prefetched)).toContain("失敗");
-    fetchMock.mockRestore();
-  });
-
-  it("brief awaits the prefetch and hands a compact summary to every analyst, plus the user's language", async () => {
-    const { c, fetchMock } = prefetchCtx();
-    c.userText = "誰在攻擊台灣？跟上週比有什麼變化？";
-    const pre = await threatIntelAgent.prefetch!(c, "root", c.userText);
-    let release!: (v: typeof pre) => void;
-    c.prefetched = new Promise((r) => (release = r));
-    const pending = run2(c, { question: "q", analysts: ["attack", "network"] });
-    await Promise.resolve();
-    expect(sub.calls).toEqual([]); // still waiting for the prefetch
-    release(pre);
-    await pending;
-    expect(sub.calls).toHaveLength(2);
-    for (const call of sub.calls) {
-      const input = call[1] as { prefetched: string; language: string };
-      expect(input.language).toBe("zh-TW");
-      expect(input.prefetched).toContain('已預先取得：attackers_of({"location":"TW","compareLastWeek":true})');
-      expect(input.prefetched).toMatch(/data：.*[\u4e00-\u9fff]+ \d/);
-      expect(input.prefetched).toContain("不要再呼叫");
-    }
+    expect(events.find((e) => e.type === "span-end" && e.id === "root/prefetch")).toMatchObject({ status: "error" });
+    expect(events.find((e) => e.type === "span-end" && e.id === "root/brief")).toMatchObject({ status: "error" });
+    const input = sub.calls[0]![1] as { pendingPrefetch: Promise<string> };
+    expect(await input.pendingPrefetch).toContain("失敗");
+    expect(pre.context).toContain("【failed：沒有結果的分析師】attack（boom）");
     fetchMock.mockRestore();
   });
 });
 
-const run2 = (c: RunContext, input: unknown) =>
-  (threatIntelAgent.tools(c).brief as unknown as { execute(i: unknown, o: unknown): Promise<unknown> }).execute(input, {
-    toolCallId: "root/tc-1",
-    messages: [],
-  });

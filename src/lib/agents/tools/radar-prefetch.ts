@@ -7,7 +7,7 @@ export interface RadarPrefetchPlan {
   input: Record<string, unknown>;
 }
 
-const COMPARE_RE = /上週|上周|比較|比较|變化|变化|last week|compar|week[- ]over[- ]week/i;
+export const COMPARE_RE = /上週|上周|比較|比较|變化|变化|last week|compar|week[- ]over[- ]week/i;
 const ATTACK_RE = /攻擊|攻撃|攻击|attack|ddos|waf|駭客|黑客|hacker/i;
 const BOT_RE = /機器人|机器人|爬蟲|爬虫|\bbots?\b|crawler/i;
 const NETWORK_RE = /斷網|断网|中斷|中断|outage|bgp|劫持|網速|网速|品質|品质/i;
