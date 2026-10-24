@@ -410,4 +410,40 @@ describe("knowledge-base agent", () => {
     });
     expect(sub.calls).toHaveLength(0);
   });
+
+  it("after() skips the checker when the root ended on tool calls (step limit): finalText is only a plan sentence", async () => {
+    const ctx = { ...ctxBase, emit: vi.fn() } as RunContext;
+    await kbAgent.after!(ctx, {
+      text: "我先查詢差旅規定，再補查住宿標準，確認金額後整理給你，請稍候一下。[1]",
+      finalText: "我先查詢差旅規定，再補查住宿標準，確認金額後整理給你，請稍候一下。[1]",
+      finalFinishReason: "tool-calls",
+      rootSpanId: "root",
+      toolResults: [{ toolName: "search_kb", output: { results: [{ n: 1, filename: "a.md", snippet: "x" }] } }],
+    });
+    expect(sub.calls).toHaveLength(0);
+  });
+
+  it("after() skips the checker for a short text without any [n] marker; a long one without markers is still checked", async () => {
+    const ctx = { ...ctxBase, emit: vi.fn() } as RunContext;
+    const toolResults = [{ toolName: "search_kb", output: { results: [{ n: 1, filename: "a.md", snippet: "x" }] } }];
+    await kbAgent.after!(ctx, { text: "讓我再查一下。", finalText: "讓我再查一下。", finalFinishReason: "stop", rootSpanId: "root", toolResults });
+    expect(sub.calls).toHaveLength(0);
+    const long = "住宿上限依職級而定，台北地區為每晚三千二百元，其他縣市另有規定，請依公司最新差旅辦法辦理，並於出差前完成申請與核准，逾期恕不受理。";
+    expect(long.length).toBeGreaterThanOrEqual(60);
+    await kbAgent.after!(ctx, { text: long, finalText: long, finalFinishReason: "stop", rootSpanId: "root", toolResults });
+    expect(sub.calls).toHaveLength(1);
+  });
+
+  it("after() still checks a normal answer (finish reason stop, with a [n] marker, even a short one)", async () => {
+    sub.text = '{"unsupported":[]}';
+    const ctx = { ...ctxBase, emit: vi.fn() } as RunContext;
+    await kbAgent.after!(ctx, {
+      text: "上限 3,200 元 [1]",
+      finalText: "上限 3,200 元 [1]",
+      finalFinishReason: "stop",
+      rootSpanId: "root",
+      toolResults: [{ toolName: "search_kb", output: { results: [{ n: 1, filename: "a.md", snippet: "x" }] } }],
+    });
+    expect(sub.calls).toHaveLength(1);
+  });
 });

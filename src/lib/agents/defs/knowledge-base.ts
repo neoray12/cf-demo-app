@@ -57,6 +57,16 @@ export function kbPrefetchContext(output: KbSearchOutput): string {
   return `${head}\n\n${passages}`;
 }
 
+const CITATION_MARKER_RE = /\[\d+\]/;
+const SHORT_UNCITED_MAX_CHARS = 60;
+
+/** Whether the grounding checker should run: skipped after a tool-calls ending and for short texts without a [n] citation. */
+export function shouldCheckGrounding(finalText: string, finalFinishReason: string | undefined): boolean {
+  if (finalFinishReason === "tool-calls") return false;
+  const text = finalText.trim();
+  return !(text.length < SHORT_UNCITED_MAX_CHARS && !CITATION_MARKER_RE.test(text));
+}
+
 export const kbAgent: AgentDef = {
   id: "knowledge-base",
   functionId: "kb-agent",
@@ -73,7 +83,7 @@ export const kbAgent: AgentDef = {
       "回答的每一句話句尾都要標註來源編號 [n]（對應片段的編號 / search_kb 結果的 n 欄位）；一句話用到多個來源就寫 [1][2]。",
       "如果沒有相關資料（search_kb 回傳 instruction），明確回覆「在知識庫中找不到相關資料」，不要用一般知識作答，也不要標註來源。",
       "如果搜尋回傳 error，如實告知搜尋失敗，不要編造答案。",
-      "請用繁體中文簡潔作答，數字與條件要照抄來源內容。",
+      "請完全用使用者提問的語言簡潔作答（中文問題用繁體中文，英文問題用英文）：來源片段若是其他語言，先翻譯再引用，不要貼上未翻譯的原文段落；產品名稱、程式碼與網址保持原樣。數字與條件要照抄來源內容。",
     ].join("\n"),
   tools: buildKbTools,
   // t=0: search_kb(user question) as a traced tool span under the root; awaited (AI Search ≈ 1–2 s) so the first
@@ -94,9 +104,12 @@ export const kbAgent: AgentDef = {
   },
   prefetchMode: "await",
   // Only the final answer step is checked (R30): the plan sentence written before search_kb is not a claim.
-  after: async (ctx, { finalText, rootSpanId, toolResults }) => {
+  // Not checked: a run that ended on tool calls (step limit; finalText is then just the plan sentence), and a short
+  // text with no [n] marker (a plan / meta sentence, not an answer with claims).
+  after: async (ctx, { finalText, finalFinishReason, rootSpanId, toolResults }) => {
     const sources = numberedSources(toolResults);
     if (!sources || finalText.trim() === "") return;
+    if (!shouldCheckGrounding(finalText, finalFinishReason)) return;
     // A checker failure must not fail the answer that was already streamed.
     try {
       await runSubagent(groundingChecker, { answer: finalText, sources }, ctx, rootSpanId, 0);

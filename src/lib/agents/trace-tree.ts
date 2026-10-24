@@ -30,7 +30,8 @@ export interface RunTrace {
   rootIds: string[];
   text: string;
   reasoning: string;
-  citations: CitationEvent["source"][];
+  /** Each citation keeps the id of the tool span that found it (see failedAttemptSpanIds). */
+  citations: Array<CitationEvent["source"] & { spanId: string }>;
   /** Each chart keeps the id of the tool span that produced it, so the UI can place it under that call. */
   charts: Array<ChartEvent["chart"] & { spanId: string }>;
   ttftMs?: number;
@@ -153,7 +154,7 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
       return isAnswer ? { ...s, spans, [field]: s[field] + e.text } : { ...s, spans };
     }
     case "citation":
-      return { ...s, citations: [...s.citations, e.source] };
+      return { ...s, citations: [...s.citations, { ...e.source, spanId: e.spanId }] };
     case "chart":
       return { ...s, charts: [...s.charts, { ...e.chart, spanId: e.spanId }] };
     case "run-end": {

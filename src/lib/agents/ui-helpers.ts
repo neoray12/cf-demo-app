@@ -205,3 +205,45 @@ export function groupSources<T extends { title: string; url?: string; snippet: s
   });
   return [...byKey.values()];
 }
+
+// ---------------------------------------------------------------------------
+// Failed subagent attempts (R32)
+
+/**
+ * A subagent that failed is retried once as a new span (`…:{index}r`); the failed attempt stays in the trace with
+ * status "error", and so do the charts / citations its tools emitted before it failed. Those would show up twice
+ * next to the retry's, so they are dropped from the answer area. The run's root span is never counted: a failed
+ * run keeps everything it produced.
+ */
+export function failedAttemptSpanIds(trace: Pick<RunTrace, "runId" | "spans">): Set<string> {
+  const failedAgents = new Set<string>();
+  for (const n of Object.values(trace.spans)) {
+    if (n.kind === "invoke_agent" && n.id !== trace.runId && n.status === "error") failedAgents.add(n.id);
+  }
+  const hidden = new Set<string>();
+  if (failedAgents.size === 0) return hidden;
+  for (const id of Object.keys(trace.spans)) {
+    // nearest invoke_agent ancestor (the span itself when it is one)
+    let cur: string | undefined = id;
+    for (let guard = 0; cur !== undefined && guard < 64; guard++) {
+      const node: RunTrace["spans"][string] | undefined = trace.spans[cur];
+      if (!node) break;
+      if (node.kind === "invoke_agent") {
+        if (failedAgents.has(node.id)) hidden.add(id);
+        break;
+      }
+      cur = node.parentId;
+    }
+  }
+  return hidden;
+}
+
+/** The trace's charts and citations without those of failed subagent attempts. */
+export function visibleOutputs(trace: RunTrace): { charts: RunTrace["charts"]; citations: RunTrace["citations"] } {
+  const hidden = failedAttemptSpanIds(trace);
+  if (hidden.size === 0) return { charts: trace.charts, citations: trace.citations };
+  return {
+    charts: trace.charts.filter((c) => !hidden.has(c.spanId)),
+    citations: trace.citations.filter((c) => !hidden.has(c.spanId)),
+  };
+}

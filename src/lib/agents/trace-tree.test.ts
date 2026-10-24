@@ -169,7 +169,7 @@ describe("reduceTrace", () => {
     // the chat span keeps its own copy (and the copy nested in the parent is the same node)
     expect(s.spans["r1:chat:0"]).toMatchObject({ text: "Hello", reasoning: "think" });
     expect(s.spans.r1!.children[0]).toBe(s.spans["r1:chat:0"]);
-    expect(s.citations).toEqual([{ title: "T", snippet: "S" }]);
+    expect(s.citations).toEqual([{ title: "T", snippet: "S", spanId: "a" }]);
     expect(s.charts).toEqual([{ ...chart, spanId: "a" }]); // keeps the producing span id
   });
 

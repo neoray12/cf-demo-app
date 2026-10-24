@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { MarkdownRenderer } from "@/app/components/chat/markdown-renderer";
 import { waterfallRows, type SpanNode } from "@/lib/agents/trace-tree";
-import { groundingOf, groupSources, isHttpUrl, type Grounding } from "@/lib/agents/ui-helpers";
+import { groundingOf, groupSources, isHttpUrl, visibleOutputs, type Grounding } from "@/lib/agents/ui-helpers";
 import { cn } from "@/lib/utils";
 import { ActivityTimeline } from "./activity-timeline";
 import { RadarChart } from "./radar-chart";
@@ -174,15 +174,17 @@ export const AgentMessage = memo(function AgentMessage({
 
   // Citations keep their original 1-based numbers (answers cite [n], and the numbering continues across several
   // searches). Repeated hits of one source collapse into one row that lists all its numbers, e.g. [1][4].
-  const sources = useMemo(() => groupSources(trace?.citations ?? []), [trace?.citations]);
+  // Charts and citations of a failed subagent attempt (R32) are dropped: its retry produces them again.
+  const outputs = useMemo(() => (trace ? visibleOutputs(trace) : null), [trace]);
+  const sources = useMemo(() => groupSources(outputs?.citations ?? []), [outputs]);
   const grounding = useMemo(() => groundingOf(trace), [trace]);
   // Charts sit with the tool call that produced them, in call order (a chart exists as soon as its tool returns).
   const charts = useMemo(() => {
-    if (!trace) return [];
-    return trace.charts
+    if (!trace || !outputs) return [];
+    return outputs.charts
       .map((chart, i) => ({ chart, i, start: trace.spans[chart.spanId]?.start ?? Number.MAX_SAFE_INTEGER }))
       .sort((a, b) => a.start - b.start || a.i - b.i);
-  }, [trace]);
+  }, [trace, outputs]);
   const [sourcesOpenState, setSourcesOpen] = useState<boolean | null>(null);
   // Short lists start open; long ones (parallel research) start collapsed so the answer stays in view.
   const sourcesOpen = sourcesOpenState ?? sources.length <= 4;

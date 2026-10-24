@@ -5,6 +5,7 @@ import { stepCountIs, type ModelMessage, type TextStreamPart, type ToolSet } fro
 import type { AgentEnv } from "./env";
 import { createAgentModel } from "./gateway";
 import type { AgentId } from "./ids";
+import { userLanguage, type UserLanguage } from "./language";
 import { createMarkupFilter, type MarkupFilter } from "./markup-filter";
 import { AGENT_MODELS, noThink, type ModelKey } from "./models";
 import type { TraceEvent } from "./trace-events";
@@ -54,6 +55,13 @@ export interface RunContext {
   traced?: boolean;
   /** The agent currently running (set by runAgent / runSubagent); deterministic tool spans are attributed to it. */
   agent?: { name: string; id: string };
+  /** The last user message of the run (set by runAgent); subagents derive their output language from it. */
+  userText?: string;
+}
+
+/** Language of the run's user question (subagent findings are written in it). */
+export function ctxLanguage(ctx: Pick<RunContext, "userText">): UserLanguage {
+  return userLanguage(ctx.userText);
 }
 
 /**
@@ -162,11 +170,19 @@ export interface AgentDef {
   /**
    * Runs after the root stream. `text` = every root step's text glued together; `finalText` = the text of the last
    * root chat step that wrote any (trimmed) — the answer without a plan sentence written before the tool calls
-   * (same rule as the UI's historyAnswer).
+   * (same rule as the UI's historyAnswer). `finalFinishReason` = the finish reason of the LAST root step
+   * ("stop", "tool-calls" when the step limit cut the run off while it was still calling tools, …; undefined when
+   * no step finished).
    */
   after?(
     ctx: RunContext,
-    result: { text: string; finalText: string; rootSpanId: string; toolResults: ToolResultRecord[] },
+    result: {
+      text: string;
+      finalText: string;
+      finalFinishReason?: string;
+      rootSpanId: string;
+      toolResults: ToolResultRecord[];
+    },
   ): Promise<void>;
 }
 
@@ -409,7 +425,14 @@ export async function pipeStepStream(
     /** Between-parts idle window (default STREAM_IDLE_MS); the first-part window is always FIRST_PART_IDLE_MS. */
     idleMs?: number;
   },
-): Promise<{ text: string; finalText: string; firstTokenAt?: number; toolResults: ToolResultRecord[] }> {
+): Promise<{
+  text: string;
+  finalText: string;
+  /** finishReason of the last finished step. */
+  finalFinishReason?: string;
+  firstTokenAt?: number;
+  toolResults: ToolResultRecord[];
+}> {
   const { parentSpanId, modelLabel, forwardText } = opts;
   const idleMs = opts.idleMs ?? STREAM_IDLE_MS;
   const iterator = stream[Symbol.asyncIterator]();
@@ -418,6 +441,7 @@ export async function pipeStepStream(
   // Text per chat span, in step order (finalText = the last step that wrote any).
   const stepTexts = new Map<string, string>();
   let firstTokenAt: number | undefined;
+  let finalFinishReason: string | undefined;
   const toolResults: ToolResultRecord[] = [];
   const chats = (opts.chatSpans as ChatSpanTracker | undefined) ?? createChatSpans(ctx, parentSpanId, modelLabel);
   let stepIndex = 0;
@@ -541,6 +565,7 @@ export async function pipeStepStream(
         for (const id of inputPhaseToolIds()) endTool(id, "error", { error: "incomplete tool arguments" });
         if (!chat) return;
         flushDeltas(chat.id);
+        if (part.finishReason) finalFinishReason = part.finishReason;
         // gateway.ts marks hedged requests on the response (x-agents-hedge*); finish-step carries its headers
         const headers = (part as { response?: { headers?: Record<string, string> } }).response?.headers;
         const hedge =
@@ -619,7 +644,7 @@ export async function pipeStepStream(
   for (const span of chats.openSpans()) chats.end(span, "ok");
 
   const steps = [...stepTexts.values()].map((s) => s.trim()).filter((s) => s !== "");
-  return { text, finalText: steps.at(-1) ?? text.trim(), firstTokenAt, toolResults };
+  return { text, finalText: steps.at(-1) ?? text.trim(), finalFinishReason, firstTokenAt, toolResults };
 }
 
 /**
@@ -951,6 +976,7 @@ export async function runAgent(
     modelKey,
     scope: runScope.scope,
     agent: { name: def.functionId, id: `${def.functionId}-demo` },
+    userText: lastUserText(messages),
   };
   const startedToolSpans = new Set<string>();
   const inputToolSpans = new Set<string>();
@@ -1011,7 +1037,7 @@ export async function runAgent(
       abortSignal: runCtx.signal,
       experimental_telemetry: telemetry(def.functionId, ctx, modelKey),
     });
-    const { text, finalText, toolResults } = await pipeStepStream(result.fullStream, runCtx, {
+    const { text, finalText, finalFinishReason, toolResults } = await pipeStepStream(result.fullStream, runCtx, {
       parentSpanId: runId,
       modelLabel: model.key,
       forwardText: true,
@@ -1022,7 +1048,13 @@ export async function runAgent(
     // A background prefetch the model never asked for still finishes inside the run (its span and citations).
     const pre = prefetch ? await prefetch : {};
     if (runCtx.signal.aborted) throw abortError();
-    await def.after?.(runCtx, { text, finalText, rootSpanId: runId, toolResults: [...(pre.toolResults ?? []), ...toolResults] });
+    await def.after?.(runCtx, {
+      text,
+      finalText,
+      ...(finalFinishReason !== undefined ? { finalFinishReason } : {}),
+      rootSpanId: runId,
+      toolResults: [...(pre.toolResults ?? []), ...toolResults],
+    });
     emit({ type: "span-end", id: runId, t: ctx.now(), status: "ok", detail: { output: text.slice(0, DETAIL_MAX_CHARS) } });
     finish("ok");
   } catch (err) {

@@ -793,6 +793,7 @@ describe("runAgent", () => {
     expect(afterArgs[1]).toEqual({
       text: "Hello world",
       finalText: "world",
+      finalFinishReason: "stop",
       rootSpanId: runId,
       toolResults: [{ toolName: "search_docs", output: { hits: 1 } }],
     });
@@ -1428,12 +1429,29 @@ describe("R30: the grounding checker only sees the final root answer step", () =
       { parentSpanId: "P", modelLabel: "kimi-k2.6", forwardText: false },
     );
     expect(res.finalText).toBe("answer");
+    expect(res.finalFinishReason).toBe("stop");
     const bare = await pipeStepStream(
       fakeStream(clock, [{ at: 7, part: p({ type: "text-delta", id: "t", text: "no steps" }) }]),
       ctx,
       { parentSpanId: "Q", modelLabel: "kimi-k2.6", forwardText: false },
     );
     expect(bare.finalText).toBe("no steps");
+    expect(bare.finalFinishReason).toBeUndefined();
+  });
+
+  it("finalFinishReason is the last step's finish reason (tool-calls when the step limit cut the run off)", async () => {
+    const { ctx, clock } = makeCtx();
+    const res = await pipeStepStream(
+      fakeStream(clock, [
+        { at: 1, part: p({ type: "start-step", request: {}, warnings: [] }) },
+        { at: 2, part: p({ type: "text-delta", id: "t", text: "我先查一下。" }) },
+        { at: 3, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "tool-calls" }) },
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "kimi-k2.6", forwardText: false },
+    );
+    expect(res.finalText).toBe("我先查一下。");
+    expect(res.finalFinishReason).toBe("tool-calls");
   });
 });
 

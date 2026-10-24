@@ -16,6 +16,7 @@ import {
   statusPollDelay,
   summarizeIndex,
   truncateLabel,
+  visibleOutputs,
 } from "./ui-helpers";
 
 describe("indexState", () => {
@@ -179,5 +180,53 @@ describe("groupSources", () => {
     ]);
     expect(groups.map((g) => g.ns)).toEqual([[1, 3], [2, 4]]);
     expect(groups[0]!.source.title).toBe("a.md");
+  });
+});
+
+describe("visibleOutputs (failed subagent attempts)", () => {
+  const chart = (title: string) => ({
+    kind: "bar" as const,
+    title,
+    unit: "percent",
+    period: "7d",
+    data: [{ label: "CN", value: 1 }],
+    sourceUrl: "u",
+  });
+  // root R -> brief tool -> analyst :0 (fails after its tool charted) -> analyst :0r (succeeds, charts again)
+  const events: TraceEvent[] = [
+    { type: "run-start", runId: "R", agent: "threat-intel", model: "kimi-k2.6", t: 0 },
+    { type: "span-start", id: "R", kind: "invoke_agent", name: "threat-intel-agent", t: 0 },
+    { type: "span-start", id: "R/prefetch", parentId: "R", kind: "execute_tool", name: "attackers_of", t: 1 },
+    { type: "chart", spanId: "R/prefetch", chart: chart("prefetch") },
+    { type: "span-end", id: "R/prefetch", t: 2, status: "ok" },
+    { type: "span-start", id: "R/brief", parentId: "R", kind: "execute_tool", name: "brief", t: 3 },
+    { type: "span-start", id: "R/brief:attack-analyst:0", parentId: "R/brief", kind: "invoke_agent", name: "attack-analyst", t: 4 },
+    { type: "span-start", id: "R/brief:attack-analyst:0/c1", parentId: "R/brief:attack-analyst:0", kind: "execute_tool", name: "attackers_of", t: 5 },
+    { type: "chart", spanId: "R/brief:attack-analyst:0/c1", chart: chart("failed attempt") },
+    { type: "citation", spanId: "R/brief:attack-analyst:0/c1", source: { title: "stale", snippet: "s" } },
+    { type: "span-end", id: "R/brief:attack-analyst:0/c1", t: 6, status: "ok" },
+    { type: "span-end", id: "R/brief:attack-analyst:0", t: 7, status: "error", detail: { error: "idle timeout" } },
+    { type: "span-start", id: "R/brief:attack-analyst:0r", parentId: "R/brief", kind: "invoke_agent", name: "attack-analyst", t: 8 },
+    { type: "span-start", id: "R/brief:attack-analyst:0r/c1", parentId: "R/brief:attack-analyst:0r", kind: "execute_tool", name: "attackers_of", t: 9 },
+    { type: "chart", spanId: "R/brief:attack-analyst:0r/c1", chart: chart("retry") },
+    { type: "citation", spanId: "R/brief:attack-analyst:0r/c1", source: { title: "fresh", snippet: "s" } },
+    { type: "span-end", id: "R/brief:attack-analyst:0r/c1", t: 10, status: "ok" },
+    { type: "span-end", id: "R/brief:attack-analyst:0r", t: 11, status: "ok" },
+  ];
+  const fold = (evs: TraceEvent[]): RunTrace => evs.reduce<RunTrace | null>((st, e) => reduceTrace(st, e), null) as RunTrace;
+  const trace = fold(events);
+
+  it("drops the failed attempt's chart and citation, keeps the retry's and the root's own", () => {
+    const out = visibleOutputs(trace);
+    expect(out.charts.map((c) => c.title)).toEqual(["prefetch", "retry"]);
+    expect(out.citations.map((c) => c.title)).toEqual(["fresh"]);
+  });
+
+  it("keeps everything while no attempt has failed, and never hides a failed run's own root outputs", () => {
+    const ok = events.filter((e) => !(e.type === "span-end" && e.id === "R/brief:attack-analyst:0"));
+    const t1 = fold(ok);
+    expect(visibleOutputs(t1).charts).toHaveLength(3);
+    const failedRun = fold([...events, { type: "span-end", id: "R", t: 12, status: "error" } as TraceEvent]);
+    expect(visibleOutputs(failedRun).charts.map((c) => c.title)).toEqual(["prefetch", "retry"]);
   });
 });
