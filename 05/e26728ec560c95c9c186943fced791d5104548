@@ -1,0 +1,37 @@
+src/lib/agents/tools/radar-prefetch.ts
+  s_3a8326f10dc640::t_d83c27decf4f87 10
+src/lib/agents/defs/threat-intel.ts
+  s_3a8326f10dc640::t_b5f914a62ce9fe 1-4,6-7,9,18-19,24-28,32-33,36-37,40-47,69,74,88-97,126-144,146-174,181-182,186,188-189,194,196-199,201-206,213-228,230
+agents.md
+  s_3a8326f10dc640::t_d85a8fdcae19d8 160,193-194
+src/i18n/agents.en.json
+  s_3a8326f10dc640::t_2b5940b7fc98c9 136
+src/lib/agents/tools/threat-dispatch.test.ts
+  s_3a8326f10dc640::t_1356874261e0c6 1-66
+src/lib/agents/tools/threat-dispatch.ts
+  s_3a8326f10dc640::t_5811ca05635cc5 1-47
+src/lib/agents/catalog.ts
+  s_3a8326f10dc640::t_a28b3a77cf0c82 77
+src/lib/agents/defs/threat-intel.runtime.test.ts
+  s_3a8326f10dc640::t_a7d7cbdf34697e 1-89
+src/lib/agents/defs/threat-intel.test.ts
+  s_3a8326f10dc640::t_b8c36a56e35ace 17,22-27,58,60-64,83-98,102-104,108-109,114-116,122,141-142,164,166-180,182-194,198,201,203-207
+src/i18n/agents.zh-TW.json
+  s_3a8326f10dc640::t_4e5655610c71d2 136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "05e26728ec560c95c9c186943fced791d5104548",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
