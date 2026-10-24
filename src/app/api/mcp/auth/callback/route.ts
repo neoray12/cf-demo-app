@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
-import { mcpOAuthStateKey, mcpTokenKey, exchangeCodeForToken } from '@/lib/mcp-auth';
+import { mcpOAuthStateKey, mcpTokenKey, mcpToolCacheKey, mcpPromptCacheKey, exchangeCodeForToken } from '@/lib/mcp-auth';
 
 export async function GET(request: NextRequest) {
   const { env } = await getCloudflareContext();
@@ -77,6 +77,12 @@ export async function GET(request: NextRequest) {
       }),
       { expirationTtl: ttl },
     );
+    // A new grant can expose a different set of servers (e.g. the user picked
+    // other servers on the portal's consent page), so drop the old lists.
+    await Promise.all([
+      kv.delete(mcpToolCacheKey(stateData.sessionId, stateData.serverId)),
+      kv.delete(mcpPromptCacheKey(stateData.sessionId, stateData.serverId)),
+    ]);
 
     return new Response(callbackHtml(true, stateData.serverId), {
       headers: { 'Content-Type': 'text/html; charset=utf-8' },

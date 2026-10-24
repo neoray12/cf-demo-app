@@ -193,3 +193,78 @@ export async function callMcpTool(
     await client.close().catch(() => {});
   }
 }
+
+export interface McpPromptArgument {
+  name: string;
+  description?: string;
+  required?: boolean;
+}
+
+export interface McpPromptInfo {
+  name: string;
+  title?: string;
+  description?: string;
+  arguments?: McpPromptArgument[];
+  serverId: string;
+  serverName: string;
+}
+
+async function connectClient(server: McpServerConfig, accessToken?: string): Promise<Client> {
+  const headers: Record<string, string> = {};
+  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
+  const client = new Client({ name: 'cf-demo-agent', version: '1.0.0' }, { capabilities: {} });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers } }));
+  } catch {
+    await client.connect(new SSEClientTransport(new URL(server.url), { requestInit: { headers } }));
+  }
+  return client;
+}
+
+/**
+ * List the prompts a remote MCP server offers. Servers that do not declare the
+ * `prompts` capability return an empty list instead of an error.
+ */
+export async function listMcpPrompts(server: McpServerConfig, accessToken?: string): Promise<McpPromptInfo[]> {
+  const client = await connectClient(server, accessToken);
+  try {
+    if (!client.getServerCapabilities()?.prompts) return [];
+    const result = await client.listPrompts();
+    return (result.prompts || []).map((p) => ({
+      name: p.name,
+      title: p.title,
+      description: p.description,
+      arguments: p.arguments?.map((a) => ({ name: a.name, description: a.description, required: a.required })),
+      serverId: server.id,
+      serverName: server.name,
+    }));
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
+/**
+ * Expand a prompt into plain text. Only text content is kept; `skipped` counts
+ * image/audio/resource blocks that cannot be shown in a text input.
+ */
+export async function getMcpPrompt(
+  server: McpServerConfig,
+  name: string,
+  args: Record<string, string>,
+  accessToken?: string,
+): Promise<{ description?: string; text: string; skipped: number }> {
+  const client = await connectClient(server, accessToken);
+  try {
+    const result = await client.getPrompt({ name, arguments: args });
+    let skipped = 0;
+    const parts: string[] = [];
+    for (const m of result.messages || []) {
+      if (m.content.type === 'text') parts.push(m.content.text);
+      else skipped++;
+    }
+    return { description: result.description, text: parts.join('\n\n'), skipped };
+  } finally {
+    await client.close().catch(() => {});
+  }
+}

@@ -8,6 +8,8 @@ import { McpConnectionsPanel } from "../components/chat/mcp-panel";
 import { ResizableSidePanel } from "../components/chat/resizable-side-panel";
 import { McpResultView } from "../components/chat/mcp-result-view";
 import { HighlightedCode } from "../components/chat/highlighted-code";
+import { PromptPicker } from "../components/chat/prompt-picker";
+import { useMcpPromptPicker } from "../components/chat/use-mcp-prompt-picker";
 import { McpIcon } from "../components/icons/mcp-icon";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -1237,6 +1239,7 @@ export function ChatPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const promptPicker = useMcpPromptPicker({ input, setInput, connectedServers: connectedMcpServers, textareaRef });
   const isNearBottomRef = useRef(true);
 
   // Debug state (dev-only)
@@ -1743,6 +1746,7 @@ export function ChatPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (promptPicker.handleKeyDown(e)) return;
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       sendInput();
@@ -2002,6 +2006,7 @@ export function ChatPage() {
               <p className="text-center text-[11px] text-amber-600 dark:text-amber-400 mb-1.5">{t("chat.guardrailSuggestions.connectFirst", { server: MCP_SERVER_LABELS[mcpConnectHint] ?? mcpConnectHint })}</p>
             )}
             <div className="relative rounded-3xl border bg-muted/30 focus-within:border-foreground/20 transition-colors">
+              <PromptPicker picker={promptPicker} />
               {pendingAttachment && (
                 <div className="flex items-center gap-1.5 px-4 md:px-5 pt-3">
                   <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground">

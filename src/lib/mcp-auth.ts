@@ -47,6 +47,30 @@ export function mcpToolCacheKey(sessionId: string, serverId: string): string {
   return `mcp-tools:${sessionId}:${serverId}`;
 }
 
+export function mcpPromptCacheKey(sessionId: string, serverId: string): string {
+  return `mcp-prompts:${sessionId}:${serverId}`;
+}
+
+export type McpTokenLookup =
+  | { status: 'ok'; accessToken?: string }
+  | { status: 'missing' }
+  | { status: 'expired' };
+
+/** Read the stored OAuth access token for a server (no-op for public servers). */
+export async function readMcpAccessToken(
+  kv: KVNamespace,
+  sessionId: string,
+  serverId: string,
+  authType: 'none' | 'oauth',
+): Promise<McpTokenLookup> {
+  if (authType !== 'oauth') return { status: 'ok' };
+  const raw = await kv.get(mcpTokenKey(sessionId, serverId));
+  if (!raw) return { status: 'missing' };
+  const data = JSON.parse(raw) as { accessToken: string; expiresAt: number | null };
+  if (data.expiresAt && Date.now() > data.expiresAt) return { status: 'expired' };
+  return { status: 'ok', accessToken: data.accessToken };
+}
+
 // OAuth metadata discovery
 export interface OAuthMetadata {
   authorization_endpoint: string;

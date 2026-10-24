@@ -331,6 +331,18 @@
     },
     "notices": {
       "portalCodeMode": "Portal Code Mode is connected: the Portal runs the code this turn, so the app's Code Mode is paused (no nested Code Mode)"
+    },
+    "prompts": {
+      "title": "MCP prompts",
+      "noServers": "Connect a server in the MCP panel to use prompts",
+      "loading": "Loading prompts…",
+      "empty": "No matching prompts",
+      "loadError": "Couldn't load prompts, try again",
+      "cancel": "Cancel",
+      "fill": "Fill input",
+      "argCount": "{{count}} args",
+      "filled": "Filled {{count}} characters — edit before sending.",
+      "skipped": "Skipped {{count}} non-text item(s)."
     }
   },
   "crawler": {
