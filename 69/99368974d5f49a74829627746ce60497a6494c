@@ -1,0 +1,43 @@
+agents.md
+  s_3a8326f10dc640::t_4260577c5ca020 167
+src/app/components/agents/trace-panel.tsx
+  s_3a8326f10dc640::t_9af414548d1c99 26,84-96
+src/app/pages/agent-chat.tsx
+  s_3a8326f10dc640::t_c8b7a4ab8eff0d 14,135-136
+src/lib/agents/catalog.test.ts
+  s_3a8326f10dc640::t_cbb93d35b0a69f 66
+src/lib/agents/catalog.ts
+  s_3a8326f10dc640::t_9d7da3a8313cb4 30,41,52
+src/lib/agents/defs/docs.ts
+  s_3a8326f10dc640::t_753586f2513cbf 20,104
+src/lib/agents/defs/knowledge-base.ts
+  s_3a8326f10dc640::t_5280bd6413f538 13,73
+src/lib/agents/defs/threat-intel.test.ts
+  s_3a8326f10dc640::t_912814071a4845 32,34,37
+src/lib/agents/defs/threat-intel.ts
+  s_3a8326f10dc640::t_8592d3dcc7c175 70,152
+src/lib/agents/gateway.test.ts
+  s_3a8326f10dc640::t_3e9c16f975bdf5 22-25
+src/lib/agents/kb.test.ts
+  s_3a8326f10dc640::t_66eee3fe8852a3 281,285,289
+src/lib/agents/models.ts
+  s_3a8326f10dc640::t_4cae08c7b060ab 12-13,33,41,44,51,59
+tsconfig.tsbuildinfo
+  s_3a8326f10dc640::t_3b20bb27b214b1 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6999368974d5f49a74829627746ce60497a6494c",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
