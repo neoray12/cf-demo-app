@@ -1,0 +1,25 @@
+agents.md
+  s_3a8326f10dc640::t_b78318537c198b 162,164-165
+src/app/components/agents/kb-workspace.tsx
+  s_3a8326f10dc640::t_52ad84ad7b2f5b 29-30,57-58,87-123,170,215,265,334-336,338,343,378,383,408,410,581,589-597,677-679
+src/lib/agents/ui-helpers.test.ts
+  s_3a8326f10dc640::t_b15a9af8f3de90 13-14,235-256
+src/lib/agents/ui-helpers.ts
+  s_3a8326f10dc640::t_252cc97c1e9726 91-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d9a0bd1ab245a55a100ad554c966f32e4143d216",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
