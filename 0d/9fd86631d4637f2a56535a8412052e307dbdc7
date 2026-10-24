@@ -1,0 +1,23 @@
+src/lib/agents/defs/docs.test.ts
+  s_3a8326f10dc640::t_77bc948d6451c2 91,114-115,121-139
+src/lib/agents/defs/docs.ts
+  s_3a8326f10dc640::t_bb236962b3aeb3 8-9,18,25-26,31-32,81,116
+tsconfig.tsbuildinfo
+  s_3a8326f10dc640::t_06ca03b3f9377c 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0d9fd86631d4637f2a56535a8412052e307dbdc7",
+  "prompts": {},
+  "sessions": {
+    "s_3a8326f10dc640": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d95a7cf7-8503-44cb-8969-359c4743d43f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
