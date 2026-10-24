@@ -69,6 +69,8 @@ export const AGENTS_DASHBOARD_URL = "https://dash.cloudflare.com/5efa272dc28e4e3
 export const AGENT_TOOL_LABEL_KEYS: Record<string, string> = {
   // tools
   search_docs: "agents.tools.search_docs",
+  translate_query: "agents.tools.translate_query",
+  rerank_results: "agents.tools.rerank_results",
   read_doc_page: "agents.tools.read_doc_page",
   research: "agents.tools.research",
   overview: "agents.tools.overview",

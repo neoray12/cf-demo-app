@@ -128,6 +128,8 @@
       "glm-5.3": "GLM 5.3"
     },
     "tools": {
+      "translate_query": "翻譯查詢為英文關鍵字",
+      "rerank_results": "重新排序並精簡結果",
       "search_docs": "搜尋 Cloudflare 文件",
       "read_doc_page": "讀取文件頁面",
       "research": "派出文件研究員",

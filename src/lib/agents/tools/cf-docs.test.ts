@@ -22,7 +22,7 @@ describe("parseDocsSearchResult", () => {
     for (const r of results) {
       expect(r.url.startsWith("https://developers.cloudflare.com/")).toBe(true);
       expect(r.title.length).toBeGreaterThan(0);
-      expect(r.snippet.length).toBeLessThanOrEqual(600);
+      expect(r.snippet.length).toBeLessThanOrEqual(2000);
     }
   });
 
@@ -250,8 +250,8 @@ describe("docs search KV cache", () => {
   });
 
   it("normalizes the query into the key and hashes keys longer than KV allows", async () => {
-    expect(await docsCacheKey("  Workers   VS Pages ")).toBe("docs-search:v1:workers vs pages");
-    expect(await docsCacheKey("字".repeat(400))).toMatch(/^docs-search:v1:sha256:[0-9a-f]{64}$/);
+    expect(await docsCacheKey("  Workers   VS Pages ")).toBe("docs-search:v2:workers vs pages");
+    expect(await docsCacheKey("字".repeat(400))).toMatch(/^docs-search:v2:sha256:[0-9a-f]{64}$/);
   });
 
   it("miss → live search, deduped hits written with a 1 h TTL; hit → no request, cache.hit attribute", async () => {
@@ -260,7 +260,7 @@ describe("docs search KV cache", () => {
     const first = await searchDocsHits(makeCtx(kv).ctx, "Workers vs Pages");
     expect(first.cacheHit).toBe(false);
     expect(first.hits.map((h) => h.url)).toEqual(["https://developers.cloudflare.com/a/", "https://developers.cloudflare.com/b/"]);
-    expect(kv.puts).toEqual([{ key: "docs-search:v1:workers vs pages", ttl: DOCS_CACHE_TTL_S }]);
+    expect(kv.puts).toEqual([{ key: "docs-search:v2:workers vs pages", ttl: DOCS_CACHE_TTL_S }]);
     expect(DOCS_CACHE_TTL_S).toBe(3600);
     expect(attrs).toContainEqual({ "cache.hit": false });
 

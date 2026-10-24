@@ -10,14 +10,17 @@ import type { RunContext } from "../runtime";
 import { setActiveSpanAttributes } from "../tracing";
 
 const DOCS_HOST = "developers.cloudflare.com";
-const SNIPPET_MAX = 600;
+/** Kept long (the docs server returns ~0.6–2 k chars per hit) so compressDocsHits can centre its ≤ 700-char window. */
+const SNIPPET_MAX = 2000;
 export const SEARCH_LIMIT = 5;
+/** Snippet length of the model-callable search_docs results (unchanged from before the compressor). */
+const CITED_SNIPPET_MAX = 600;
 const PAGE_MAX_CHARS = 12_000;
 /** Per search call (connect + call), tied to ctx.signal. The server takes 4.5–11 s per search. */
 export const SEARCH_TIMEOUT_MS = 25_000;
 const READ_TIMEOUT_MS = 30_000;
 export const DOCS_CACHE_TTL_S = 3600;
-export const DOCS_CACHE_PREFIX = "docs-search:v1:";
+export const DOCS_CACHE_PREFIX = "docs-search:v2:"; // v2: snippets up to 2000 chars
 const KV_KEY_MAX_BYTES = 512;
 
 export interface DocsSearchHit {
@@ -269,7 +272,7 @@ export async function searchDocsWithCitations(
 ): Promise<{ results: DocsSearchHit[]; error?: string; cacheHit: boolean }> {
   const { hits, cacheHit, error } = await searchDocsHits(ctx, query);
   if (error) return { results: [], error, cacheHit };
-  const results = hits.slice(0, limit);
+  const results = hits.slice(0, limit).map((h) => ({ ...h, snippet: h.snippet.slice(0, CITED_SNIPPET_MAX) }));
   for (const r of results) {
     ctx.emit({ type: "citation", spanId, source: { title: r.title, url: r.url, snippet: r.snippet } });
   }

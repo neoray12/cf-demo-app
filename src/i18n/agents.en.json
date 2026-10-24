@@ -128,6 +128,8 @@
       "glm-5.3": "GLM 5.3"
     },
     "tools": {
+      "translate_query": "Translate query to English keywords",
+      "rerank_results": "Rerank and trim results",
       "search_docs": "Search Cloudflare docs",
       "read_doc_page": "Read a docs page",
       "research": "Dispatch docs researchers",

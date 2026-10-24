@@ -66,11 +66,43 @@ describe("docs agent (lean flow)", () => {
     expect(docsResearcher.tools(ctx)).toEqual({});
   });
 
-  it("prefetch: search_docs(user question) as span `{root}/prefetch` with citations", async () => {
+  it("prefetch: translate_query → search_docs(English keywords) → rerank_results, citations for kept hits only", async () => {
     const { ctx, events } = makeCtx();
     const pre = await docsAgent.prefetch!(ctx, "root", "Workers 和 Pages 差在哪？");
-    expect(events[0]).toEqual({ type: "span-start", id: "root/prefetch", parentId: "root", kind: "execute_tool", name: "search_docs", t: 0 });
-    expect(events.filter((e) => e.type === "citation").map((e) => (e as { spanId: string }).spanId)).toEqual(["root/prefetch"]);
+    const starts = events.filter((e) => e.type === "span-start") as Array<{ id: string; name: string }>;
+    expect(starts.map((e) => [e.id, e.name])).toEqual([
+      ["root/translate", "translate_query"],
+      ["root/prefetch", "search_docs"],
+      ["root/rerank", "rerank_results"],
+    ]);
+    expect(events.find((e) => e.type === "span-end" && e.id === "root/translate")).toMatchObject({
+      detail: { output: { query: "Workers vs Pages", products: ["Workers", "Pages"] } },
+    });
+    expect(events.find((e) => e.type === "span-input" && e.id === "root/prefetch")).toMatchObject({ input: { query: "Workers vs Pages" } });
+    expect(events.filter((e) => e.type === "citation").map((e) => (e as { spanId: string }).spanId)).toEqual(["root/rerank"]);
+    expect(events.find((e) => e.type === "span-end" && e.id === "root/rerank")).toMatchObject({
+      status: "ok",
+      detail: { output: { kept: 1, dropped: 0 } },
+    });
+    expect(pre.data).toEqual({ results: [expect.objectContaining({ title: "Workers vs Pages" })] });
+  });
+
+  it("prefetch: a translated query with no hits is retried as written, inside the same search span", async () => {
+    const { ctx, events } = makeCtx();
+    fetchMock.mockImplementation(async (_u, init) => {
+      const q = JSON.parse(init!.body as string).params.arguments.query as string;
+      if (q === "Workers vs Pages") {
+        const body = { jsonrpc: "2.0", id: 1, result: { content: [{ type: "text", text: "" }] } };
+        return Response.json(body);
+      }
+      return mcpResponse(q);
+    });
+    const pre = await docsAgent.prefetch!(ctx, "root", "Workers 和 Pages 差在哪？");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(events.find((e) => e.type === "span-end" && e.id === "root/prefetch")).toMatchObject({
+      status: "ok",
+      detail: { output: { fallbackQuery: "Workers 和 Pages 差在哪？" } },
+    });
     expect(pre.data).toEqual({ results: [expect.objectContaining({ title: "Workers 和 Pages 差在哪？" })] });
   });
 
@@ -102,12 +134,14 @@ describe("docs agent (lean flow)", () => {
     for (const [i, q] of ["What is Workers?", "What is Pages?"].entries()) {
       const sub = `root/call-1:docs-researcher:${i}`;
       const starts = events.filter((e) => e.type === "span-start" && (e.id === sub || e.id.startsWith(`${sub}/`) || e.id.startsWith(`${sub}:`)));
+      // English sub-question: no translate span
       expect(starts.map((e) => [(e as { id: string }).id, (e as { kind: string }).kind])).toEqual([
         [sub, "invoke_agent"],
         [`${sub}/search`, "execute_tool"],
+        [`${sub}/rerank`, "execute_tool"],
         [`${sub}:chat:0`, "chat"],
       ]);
-      expect(events.find((e) => e.type === "citation" && e.spanId === `${sub}/search`)).toBeTruthy();
+      expect(events.find((e) => e.type === "citation" && e.spanId === `${sub}/rerank`)).toBeTruthy();
       expect(events.find((e) => e.type === "span-end" && e.id === `${sub}/search`)).toMatchObject({ status: "ok" });
       const call = calls.find((c) => String(c.prompt).startsWith(`Sub-question: ${q}`))!;
       expect(call.prompt).toContain("Documentation search results:");
@@ -128,6 +162,17 @@ describe("docs agent (lean flow)", () => {
     const sys = docsAgent.system(ctx);
     expect(sys).toContain("絕對不要貼上未翻譯的英文段落");
     expect(sys).toContain("網址保持原樣");
+  });
+
+  it("a CJK sub-question is translated before the researcher's search; the root prompt asks for English sub-questions", async () => {
+    const { ctx, events } = makeCtx();
+    ctx.prefetched = Promise.resolve({ data: { results: [] } });
+    await exec(docsAgent.tools(ctx).research, { questions: ["物件儲存的價格", "What is D1?"] });
+    const sub = "root/call-1:docs-researcher:0";
+    expect(events.find((e) => e.type === "span-start" && e.id === `${sub}/translate`)).toMatchObject({ name: "translate_query" });
+    expect(events.find((e) => e.type === "span-input" && e.id === `${sub}/search`)).toMatchObject({ input: { query: "R2 pricing" } });
+    expect(events.find((e) => e.type === "span-start" && e.id === "root/call-1:docs-researcher:1/translate")).toBeUndefined();
+    expect(docsAgent.system(ctx)).toContain("子問題一律用英文撰寫，並使用 Cloudflare 官方產品名稱");
   });
 
   it("an English question gets English researcher findings", async () => {

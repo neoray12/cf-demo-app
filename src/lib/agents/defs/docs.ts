@@ -1,19 +1,96 @@
 // Cloudflare docs agent — lean flow (about 3 sequential model waits for a complex question):
-//   t=0   prefetch: search_docs(user question) as a traced tool span under the root (runs alongside step 0)
+//   t=0   prefetch: translate_query (CJK → English keywords) → search_docs → rerank_results (top 3, trimmed), as
+//         traced tool spans under the root (runs alongside step 0)
 //   step 0 the root writes a one-line plan (R16) and calls research({ questions: 2–3 }) or overview()
-//          research → parallel docs-researchers, each = one deterministic search_docs span + ONE no-tool model call
+//          research → parallel docs-researchers, each = [translate_query if CJK] → search_docs → rerank_results spans
+//          + ONE no-tool model call over the 3 kept hits
 //   step 1 the root writes the answer from the findings (+ the prefetched overview results)
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { languageInstruction, type UserLanguage } from "../language";
 import { ctxLanguage, runParallel, runSubagent, runTracedTool, type AgentDef, type RunContext, type SubagentDef } from "../runtime";
-import { buildDocsTools, formatDocsHits, searchDocsWithCitations, type DocsSearchHit } from "../tools/cf-docs";
+import { buildDocsTools, formatDocsHits, searchDocsHits, type DocsSearchHit } from "../tools/cf-docs";
+import { compressDocsHits, hasCjk, translateDocsQuery, type Reranker } from "../tools/docs-query";
 
-const PREFETCH_HITS = 5;
-const RESEARCH_HITS = 6;
+/** Hits kept after reranking, for the overview and for each researcher. */
+export const DOCS_TOP_K = 3;
 const QUERY_MAX_CHARS = 400;
 
 type DocsSearchOutcome = { results: DocsSearchHit[]; error?: string };
+
+/** Test seam: the reranker used by searchAndCompress (defaults to Workers AI bge-reranker-base). */
+export const docsDeps: { rerank?: Reranker } = {};
+
+/**
+ * One deterministic docs lookup as traced tool spans under `parentSpanId`:
+ * [`{parent}/translate` translate_query, when `translate`] → `{parent}/{searchCallId}` search_docs (all hits, no
+ * citations; a translated query with 0 hits is retried as written) → `{parent}/rerank` rerank_results (top DOCS_TOP_K, snippets ≤ 700 chars; only the KEPT hits are
+ * emitted as citations, under the rerank span). A failed search skips the rerank; a failed rerank falls back to
+ * the first hits.
+ */
+export async function searchAndCompress(
+  ctx: RunContext,
+  parentSpanId: string,
+  text: string,
+  opts: { translate: boolean; searchCallId: string },
+): Promise<DocsSearchOutcome> {
+  const raw = text.trim().slice(0, QUERY_MAX_CHARS);
+  const query = opts.translate
+    ? (
+        await runTracedTool(ctx, parentSpanId, "translate_query", { text: raw }, async () => translateDocsQuery(raw), {
+          callId: "translate",
+        })
+      ).query
+    : raw;
+  // The span output is a compact summary (hit count + titles); the full hits stay in `found` for the reranker.
+  const found: DocsSearchOutcome = { results: [] };
+  await runTracedTool(
+    ctx,
+    parentSpanId,
+    "search_docs",
+    { query },
+    async () => {
+      let r = await searchDocsHits(ctx, query);
+      let fallbackQuery: string | undefined;
+      // The docs search has a relevance cut-off: a translated query that finds nothing is retried as written.
+      if (!r.error && r.hits.length === 0 && query !== raw) {
+        fallbackQuery = raw;
+        r = await searchDocsHits(ctx, raw);
+      }
+      found.results = r.hits;
+      if (r.error) found.error = r.error;
+      return {
+        hits: r.hits.length,
+        cacheHit: r.cacheHit,
+        titles: r.hits.map((h) => h.title),
+        ...(fallbackQuery ? { fallbackQuery } : {}),
+        ...(r.error ? { error: r.error } : {}),
+      };
+    },
+    { callId: opts.searchCallId, failed: (res) => res.error },
+  );
+  let kept: DocsSearchHit[] = [];
+  await runTracedTool(
+    ctx,
+    parentSpanId,
+    "rerank_results",
+    { query, hits: found.results.length, topK: DOCS_TOP_K },
+    async (spanId) => {
+      const c = await compressDocsHits(ctx, query, found.results, DOCS_TOP_K, { citeSpanId: spanId, rerank: docsDeps.rerank });
+      kept = c.hits;
+      return {
+        kept: c.kept,
+        dropped: c.dropped,
+        topScores: c.topScores,
+        reranked: c.reranked,
+        urls: c.hits.map((h) => h.url),
+        ...(c.error ? { fallback: c.error } : {}),
+      };
+    },
+    { callId: "rerank" },
+  );
+  return { results: kept };
+}
 
 export const docsResearcher: SubagentDef<{ question: string; language?: UserLanguage }> = {
   functionId: "docs-researcher",
@@ -30,16 +107,10 @@ export const docsResearcher: SubagentDef<{ question: string; language?: UserLang
   tools: () => ({}),
   prompt: ({ question, language }) =>
     `Sub-question: ${question}${language ? `\n${languageInstruction(language)}` : ""}`,
-  // One deterministic search inside the researcher's own invoke_agent span; its results go into the prompt.
+  // One deterministic lookup inside the researcher's own invoke_agent span (translated when the sub-question is
+  // CJK, reranked to the top 3); only the kept hits go into the prompt.
   prepare: async ({ question }, ctx, spanId) => {
-    const r = await runTracedTool(
-      ctx,
-      spanId,
-      "search_docs",
-      { query: question },
-      (toolId) => searchDocsWithCitations(ctx, question.slice(0, QUERY_MAX_CHARS), toolId, RESEARCH_HITS),
-      { callId: "search", failed: (res) => res.error },
-    );
+    const r = await searchAndCompress(ctx, spanId, question, { translate: hasCjk(question), searchCallId: "search" });
     if (r.error) return `Documentation search failed: ${r.error}`;
     if (r.results.length === 0) return "Documentation search results: (none)";
     return `Documentation search results:\n\n${formatDocsHits(r.results)}`;
@@ -71,7 +142,7 @@ function docsAgentTools(ctx: RunContext): ToolSet {
           .array(z.string().min(1))
           .min(2)
           .max(3)
-          .describe("2-3 self-contained sub-questions, in English, each searchable on its own"),
+          .describe("2-3 self-contained sub-questions, written in English with official Cloudflare product names, each searchable on its own"),
       }),
       execute: async ({ questions }, options) => {
         const [{ ok, failed }, overview] = await Promise.all([
@@ -108,7 +179,7 @@ export const docsAgent: AgentDef = {
     [
       "你是「Cloudflare 文件專家」，只根據官方 Cloudflare 文件回答問題。",
       "【第一步】先用使用者提問的語言寫一句簡短的計畫（不超過 40 字，例如：「我會分別查 Workers 與 Pages 的定位與限制，再整理比較。」），然後在同一步呼叫一個工具：",
-      "- 比較、多個產品或多個面向的問題：呼叫 research，傳入 2–3 個彼此獨立、可單獨搜尋的英文子問題。",
+      "- 比較、多個產品或多個面向的問題：呼叫 research，傳入 2–3 個彼此獨立、可單獨搜尋的子問題。子問題一律用英文撰寫，並使用 Cloudflare 官方產品名稱（例如 Workers、Pages、R2、D1、Workers KV、Durable Objects、Queues、AI Gateway、Workers AI），不要用中文俗稱（文件是英文的，中文查詢搜尋效果差）。",
       "- 簡單、單一主題的問題：呼叫 overview（系統已在一開始用使用者的問題搜尋過文件）。",
       "research 或 overview 回傳後，直接整合結果作答，不要再呼叫工具、不要重複計畫。research 的結果也包含 overview。",
       "read_doc_page 只在使用者明確要求某一頁的詳細內容、且摘要明顯不夠時才使用，一次最多讀一頁；一般問題不要讀頁面。",
@@ -118,19 +189,11 @@ export const docsAgent: AgentDef = {
       "如果 research 的 failed 不是空的，必須在回答中註明哪些子問題沒有查到結果。",
     ].join("\n"),
   tools: docsAgentTools,
-  // t=0: the user's question as a docs search, alongside the root's first model call
+  // t=0: the user's question → translate_query → search_docs → rerank_results, alongside the root's first model call
   prefetch: async (ctx, rootSpanId, userText) => {
-    const query = userText.trim().slice(0, QUERY_MAX_CHARS);
-    if (!query) return { data: { results: [], error: "empty question" } satisfies DocsSearchOutcome };
-    const r = await runTracedTool(
-      ctx,
-      rootSpanId,
-      "search_docs",
-      { query },
-      (toolId) => searchDocsWithCitations(ctx, query, toolId, PREFETCH_HITS),
-      { callId: "prefetch", failed: (res) => res.error },
-    );
-    return { data: { results: r.results, ...(r.error ? { error: r.error } : {}) } satisfies DocsSearchOutcome };
+    if (!userText.trim()) return { data: { results: [], error: "empty question" } satisfies DocsSearchOutcome };
+    const r = await searchAndCompress(ctx, rootSpanId, userText, { translate: true, searchCallId: "prefetch" });
+    return { data: r satisfies DocsSearchOutcome };
   },
   prefetchMode: "background",
 };
