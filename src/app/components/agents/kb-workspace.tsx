@@ -26,7 +26,8 @@ import {
   docDisplayName,
   formatBytes,
   indexState,
-  kbErrorKey,
+  kbFailureKey,
+  readKbResponse,
   shouldKeepPolling,
   statusPollDelay,
   summarizeIndex,
@@ -53,7 +54,8 @@ interface DocItem {
 interface UploadItem {
   id: number;
   name: string;
-  state: "uploading" | "done" | "error";
+  /** uploading = presign + PUT to R2; indexing = /upload/complete (triggers the AI Search sync). */
+  state: "uploading" | "indexing" | "done" | "error";
   errorKey?: string;
 }
 
@@ -82,10 +84,43 @@ function storeWorkspace(id: string): void {
   }
 }
 
-async function getJson(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; body: unknown }> {
-  const res = await fetch(url, init);
-  const body: unknown = await res.json().catch(() => null);
-  return { ok: res.ok, status: res.status, body };
+/** fetch + readKbResponse: a non-JSON / HTML answer (WAF challenge page) comes back as `blocked`, never as a throw. */
+async function getJson(url: string, init?: RequestInit) {
+  return readKbResponse(await fetch(url, init));
+}
+
+const postJson = (url: string, body: unknown) =>
+  getJson(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+/**
+ * Direct-to-R2 upload: presign (server validates type / size / count and picks the key + content type) -> PUT the
+ * file to the presigned R2 URL (bypasses the zone WAF and Next's body buffering) -> complete (verifies the object
+ * and triggers indexing). Returns null on success, otherwise an i18n error key.
+ */
+async function uploadDirect(file: File, workspace: string, onStored: () => void): Promise<string | null> {
+  const pre = await postJson("/api/agents/kb/upload/presign", {
+    workspace,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+  });
+  if (!pre.ok) return kbFailureKey(pre);
+  const p = pre.body as { key?: unknown; url?: unknown; headers?: unknown } | null;
+  if (typeof p?.key !== "string" || typeof p.url !== "string") return "agents.kb.errors.server";
+  try {
+    const put = await fetch(p.url, {
+      method: "PUT",
+      headers: (p.headers as Record<string, string> | undefined) ?? {},
+      body: file,
+    });
+    if (!put.ok) return "agents.kb.errors.storage";
+  } catch {
+    // network / CORS failure talking to R2
+    return "agents.kb.errors.storage";
+  }
+  onStored();
+  const done = await postJson("/api/agents/kb/upload/complete", { workspace, key: p.key });
+  return done.ok ? null : kbFailureKey(done);
 }
 
 const STATE_STYLE: Record<IndexState, string> = {
@@ -132,6 +167,7 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
   const [files, setFiles] = useState<KbStatusFile[]>([]);
   const [instanceStatus, setInstanceStatus] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [loadBlocked, setLoadBlocked] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -176,6 +212,7 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
     setFiles([]);
     setInstanceStatus(null);
     setLoadError(false);
+    setLoadBlocked(false);
     setUploads([]);
     setImp({ phase: "idle" });
     stopImport();
@@ -225,6 +262,7 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
         const list = d?.ok ? ((d.body as { docs?: DocItem[] } | null)?.docs ?? []) : null;
         if (list) setDocs(list);
         setLoadError(!list);
+        setLoadBlocked(Boolean(d?.blocked || s?.blocked));
         let fileList: KbStatusFile[] | null = null;
         if (s?.ok) {
           const body = s.body as { status?: string; files?: KbStatusFile[] } | null;
@@ -293,17 +331,16 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
       setUploads((us) => [...us, { id, name: file.name, state: "uploading" }]);
       count++;
       try {
-        const form = new FormData();
-        form.append("file", file);
-        form.append("workspace", target);
-        const res = await getJson("/api/agents/kb/upload", { method: "POST", body: form });
+        const errorKey = await uploadDirect(file, target, () => {
+          if (valueRef.current === target) patchUpload(id, { state: "indexing" });
+        });
         if (valueRef.current !== target) break;
-        if (res.ok) {
+        if (errorKey === null) {
           uploadedAny = true;
           patchUpload(id, { state: "done" });
         } else {
           count--;
-          patchUpload(id, { state: "error", errorKey: kbErrorKey(res.body) });
+          patchUpload(id, { state: "error", errorKey });
         }
       } catch {
         count--;
@@ -338,16 +375,12 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
     setImp({ phase: "starting" });
     let jobId: string;
     try {
-      const res = await getJson("/api/agents/kb/import-site", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, workspace: target }),
-      });
+      const res = await postJson("/api/agents/kb/import-site", { url, workspace: target });
       const id = (res.body as { jobId?: unknown } | null)?.jobId;
       // Navigated away (or switched workspace) during the POST: do not start polling for a dead component.
       if (!mountedRef.current || valueRef.current !== target) return;
       if (!res.ok || typeof id !== "string") {
-        setImp({ phase: "error", errorKey: kbErrorKey(res.body) });
+        setImp({ phase: "error", errorKey: kbFailureKey(res) });
         return;
       }
       jobId = id;
@@ -372,9 +405,9 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
         if (!mountedRef.current || valueRef.current !== target || importTimerRef.current === null) return;
         if (!res.ok) {
           // A foreign / malformed job is final; anything else (incl. a 404 from KV not having caught up yet) gets a few retries.
-          if (res.status === 400 || res.status === 403 || ++failures >= IMPORT_MAX_POLL_FAILURES) {
+          if ((!res.blocked && (res.status === 400 || res.status === 403)) || ++failures >= IMPORT_MAX_POLL_FAILURES) {
             stopImport();
-            setImp({ phase: "error", errorKey: kbErrorKey(res.body) });
+            setImp({ phase: "error", errorKey: kbFailureKey(res) });
           }
           return;
         }
@@ -545,7 +578,7 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
                 <ul className="flex flex-col gap-0.5 text-xs">
                   {uploads.slice(-6).map((u) => (
                     <li key={u.id} className="flex items-center gap-1.5 min-w-0">
-                      {u.state === "uploading" ? (
+                      {u.state === "uploading" || u.state === "indexing" ? (
                         <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
                       ) : u.state === "done" ? (
                         <CheckCircle2 className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
@@ -553,6 +586,15 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
                         <XCircle className="size-3 shrink-0 text-destructive" />
                       )}
                       <span className="truncate">{u.name}</span>
+                      {u.state === "uploading" && (
+                        <span className="shrink-0 text-muted-foreground">{t("agents.kb.uploadUploading")}</span>
+                      )}
+                      {u.state === "indexing" && (
+                        <span className="shrink-0 text-muted-foreground">{t("agents.kb.uploadIndexing")}</span>
+                      )}
+                      {u.state === "done" && (
+                        <span className="shrink-0 text-muted-foreground">{t("agents.kb.uploadDone")}</span>
+                      )}
                       {u.state === "error" && u.errorKey && (
                         <span className="shrink-0 text-destructive">{t(u.errorKey)}</span>
                       )}
@@ -632,7 +674,9 @@ export function KbWorkspace({ value, onChange, storeContent, onStoreContentChang
               )}
             </div>
             {loadError && (
-              <p className="text-xs text-destructive">{t(writable ? "agents.kb.loadFailed" : "agents.kb.loadFailedStatic")}</p>
+              <p className="text-xs text-destructive">
+                {t(loadBlocked ? "agents.kb.errors.blockedByWaf" : writable ? "agents.kb.loadFailed" : "agents.kb.loadFailedStatic")}
+              </p>
             )}
             {docs === null && !loadError && <p className="text-xs text-muted-foreground">{t("agents.kb.docsLoading")}</p>}
             {docs && docs.length === 0 && <p className="text-xs text-muted-foreground">{t("agents.kb.docsEmpty")}</p>}

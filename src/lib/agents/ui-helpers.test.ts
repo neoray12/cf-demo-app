@@ -10,6 +10,8 @@ import {
   groundingOf,
   groupSources,
   indexState,
+  kbFailureKey,
+  readKbResponse,
   isHttpUrl,
   kbErrorKey,
   shouldKeepPolling,
@@ -228,5 +230,27 @@ describe("visibleOutputs (failed subagent attempts)", () => {
     expect(visibleOutputs(t1).charts).toHaveLength(3);
     const failedRun = fold([...events, { type: "span-end", id: "R", t: 12, status: "error" } as TraceEvent]);
     expect(visibleOutputs(failedRun).charts.map((c) => c.title)).toEqual(["prefetch", "retry"]);
+  });
+});
+
+describe("readKbResponse / kbFailureKey", () => {
+  it("passes JSON bodies through", async () => {
+    const ok = await readKbResponse(Response.json({ docs: [] }));
+    expect(ok).toEqual({ ok: true, status: 200, body: { docs: [] }, blocked: false });
+    const err = await readKbResponse(Response.json({ error: "agents.kb.errors.tooMany" }, { status: 400 }));
+    expect(kbFailureKey(err)).toBe("agents.kb.errors.tooMany");
+  });
+
+  it("maps a Cloudflare challenge page (403 text/html) or any non-JSON body to blockedByWaf", async () => {
+    const challenge = await readKbResponse(
+      new Response("<!DOCTYPE html><title>Just a moment...</title>", {
+        status: 403,
+        headers: { "content-type": "text/html; charset=UTF-8", "cf-mitigated": "challenge" },
+      }),
+    );
+    expect(challenge).toMatchObject({ ok: false, status: 403, blocked: true });
+    expect(kbFailureKey(challenge)).toBe("agents.kb.errors.blockedByWaf");
+    const garbage = await readKbResponse(new Response("not json", { status: 200 }));
+    expect(garbage).toMatchObject({ ok: false, blocked: true });
   });
 });

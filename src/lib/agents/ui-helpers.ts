@@ -88,6 +88,36 @@ export function kbErrorKey(body: unknown): string {
   return typeof e === "string" && /^agents\.kb\.errors\.[A-Za-z]+$/.test(e) ? e : "agents.kb.errors.server";
 }
 
+export interface KbResponse {
+  ok: boolean;
+  status: number;
+  body: unknown;
+  /** The body was not JSON (or was HTML): typically a Cloudflare challenge / block page from the zone WAF. */
+  blocked: boolean;
+}
+
+/**
+ * Reads a /api/agents/kb/* response. Every route answers JSON, so an HTML or unparseable body means something in
+ * front of the Worker answered instead (a WAF Managed Challenge is a 403 text/html page with `cf-mitigated`).
+ */
+export async function readKbResponse(res: Response): Promise<KbResponse> {
+  const type = res.headers.get("content-type") ?? "";
+  const text = await res.text().catch(() => "");
+  if (/text\/html/i.test(type) || res.headers.has("cf-mitigated")) {
+    return { ok: false, status: res.status, body: null, blocked: true };
+  }
+  try {
+    return { ok: res.ok, status: res.status, body: JSON.parse(text) as unknown, blocked: false };
+  } catch {
+    return { ok: false, status: res.status, body: null, blocked: true };
+  }
+}
+
+/** i18n key for a failed KbResponse: `blockedByWaf` for a non-JSON / HTML answer, otherwise the route's own key. */
+export function kbFailureKey(r: Pick<KbResponse, "body" | "blocked">): string {
+  return r.blocked ? "agents.kb.errors.blockedByWaf" : kbErrorKey(r.body);
+}
+
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "";
   if (n < 1024) return `${n} B`;
