@@ -9,18 +9,11 @@ import { Eye, EyeOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 
-const DEMO_USERS = [
-  { username: 'neo', name: 'Neo', email: 'neo@cloudflare.com' },
-  { username: 'vera', name: 'Vera', email: 'vera@cloudflare.com' },
-  { username: 'menghsien', name: 'Kevin', email: 'menghsien@cloudflare.com' },
-  { username: 'demo', name: 'Demo', email: 'demo@cloudflare.com' },
-];
-
 export function LoginPage() {
   const router = useRouter();
   const { t } = useTranslation();
-  const [username, setUsername] = useState("neo");
-  const [password, setPassword] = useState("neo");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

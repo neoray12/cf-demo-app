@@ -1,6 +1,9 @@
 import { NextRequest } from 'next/server';
-import { streamText, stepCountIs } from 'ai';
+import { stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { getTracedAI } from '@/lib/agents/tracing';
+import { getRequestUser } from '@/lib/auth';
+import { TurnRecorder, historyConfigured, isValidConversationId, saveTurn, type ModelAttempt } from '@/lib/chat-history';
 import { z } from 'zod';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { cookies } from 'next/headers';
@@ -119,6 +122,7 @@ export async function POST(request: NextRequest) {
     images = [],
     webSearchProvider: rawWebSearchProvider,
     conversationId,
+    turnIndex: rawTurnIndex,
   } = body as {
     messages: Array<{ role: string; content: string }>;
     model?: string;
@@ -132,10 +136,19 @@ export async function POST(request: NextRequest) {
     /** Pasted screenshots as data URLs, attached to the latest user turn. */
     images?: string[];
     webSearchProvider?: string;
-    /** Per-conversation id — Auto Router session affinity key. */
+    /** Per-conversation id — Auto Router session affinity, tracing session and history key. */
     conversationId?: string;
+    /** Position of this turn in the conversation; a resend at the same position replaces it in history. */
+    turnIndex?: number;
   };
   const webSearchProvider = isWebSearchProvider(rawWebSearchProvider) ? rawWebSearchProvider : 'ceramic';
+  const turnIndex = Number.isInteger(rawTurnIndex) && (rawTurnIndex as number) >= 0 ? (rawTurnIndex as number) : 0;
+
+  // Verified identity (Access JWT or signed login cookie). The userEmail in the
+  // body is only a fallback for gateway analytics, never for history ownership.
+  const user = await getRequestUser(request, env as any);
+  const analyticsEmail = user?.email ?? userEmail;
+  const analyticsName = user?.name ?? userName;
 
   if (!messages || !Array.isArray(messages)) {
     return new Response(JSON.stringify({ error: 'messages is required' }), {
@@ -179,11 +192,11 @@ export async function POST(request: NextRequest) {
   const isExternal = provider !== 'workers-ai';
   // usertier: vera & kevin(menghsien) are VIP, others are regular
   const VIP_EMAILS = new Set(['vera@cloudflare.com', 'menghsien@cloudflare.com']);
-  const usertier = userEmail && VIP_EMAILS.has(userEmail) ? 'VIP' : 'regular';
+  const usertier = analyticsEmail && VIP_EMAILS.has(analyticsEmail) ? 'VIP' : 'regular';
 
   // department: neo=技術, others=業務
   const TECH_EMAILS = new Set(['neo@cloudflare.com']);
-  const department = userEmail && TECH_EMAILS.has(userEmail) ? '技術' : '業務';
+  const department = analyticsEmail && TECH_EMAILS.has(analyticsEmail) ? '技術' : '業務';
 
   // Build metadata header for AI Gateway analytics
   // Use \uXXXX escape for non-ASCII chars (e.g. Chinese) to keep header Latin-1/ByteString safe
@@ -191,8 +204,8 @@ export async function POST(request: NextRequest) {
   const metadataJson = JSON.stringify({
     tools_enabled: toolsEnabled,
     web_search_provider: toolsEnabled ? webSearchProvider : null,
-    name: userName ?? 'anonymous',
-    email: userEmail ?? 'unknown',
+    name: analyticsName ?? 'anonymous',
+    email: analyticsEmail ?? 'unknown',
     usertier,
     department,
   }).replace(/[^\x20-\x7E]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
@@ -203,13 +216,29 @@ export async function POST(request: NextRequest) {
   // Auto Router reports the model it picked in response headers; captured here
   // and forwarded to the client as a `routed-model` event.
   let routedInfo: { model: string; reason: string | null } | null = null;
+  // History: set once the request is fully parsed (only for a verified user).
+  let recorder: TurnRecorder | null = null;
+  // Which model call the next gateway request belongs to (for the history record).
+  let currentAttempt = 'stream-1';
 
   function sanitizeSseFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const headers = new Headers(init?.headers as HeadersInit);
     if (isExternal) headers.delete('Authorization');
+    const attempt = currentAttempt;
+    const startedMs = recorder?.elapsed() ?? 0;
     return fetch(url, { ...init, headers }).then((res) => {
       const routedModel = res.headers.get('cf-aig-routed-model');
       if (routedModel) routedInfo = { model: routedModel, reason: res.headers.get('cf-aig-routing-reason') };
+      recorder?.noteGatewayCall({
+        attempt,
+        path: new URL(String(url instanceof Request ? url.url : url)).pathname,
+        status: res.status,
+        startedMs,
+        cfRay: res.headers.get('cf-ray'),
+        aigLogId: res.headers.get('cf-aig-log-id'),
+        aigCacheStatus: res.headers.get('cf-aig-cache-status'),
+        routedModel,
+      });
       if (!res.body || !res.headers.get('content-type')?.includes('text/event-stream')) return res;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -313,6 +342,7 @@ export async function POST(request: NextRequest) {
   let codeModeActive = false;
   let webSearchActive = false;
   let portalCatalogPrompt = '';
+  const uploadedFiles: UploadedFileInfo[] = [];
   // An MCP Portal connected with ?codemode=search_and_execute already runs the
   // model's JS on the Portal. Wrapping it in the app's Code Mode as well nests
   // two code runtimes, hides the Portal's tool catalog from the model, and
@@ -347,7 +377,6 @@ export async function POST(request: NextRequest) {
     // Upload any attached CSV/XLSX into the sandbox before building the
     // tools, so executeCode's description can tell the model exactly where
     // to find them — the model can't discover files on its own inside the sandbox.
-    const uploadedFiles: UploadedFileInfo[] = [];
     if (chatSandboxConfigured(env as any)) {
       for (const att of attachments) {
         if (!att?.name || !att?.contentBase64) continue;
@@ -430,6 +459,95 @@ export async function POST(request: NextRequest) {
       (webSearchActive ? WEB_SEARCH_PROMPT : '') +
       portalCatalogPrompt;
 
+  // Cloudflare Agents tracing (production only; plain `ai` in next dev). Payloads
+  // are recorded so the dashboard's session replay shows the whole turn.
+  const ai = await getTracedAI({ storeContent: true });
+  const traceConversationId = isValidConversationId(conversationId) ? conversationId : undefined;
+  const telemetry = {
+    isEnabled: true,
+    functionId: 'main-chat',
+    metadata: {
+      agentId: 'main-chat-demo',
+      ...(traceConversationId ? { conversationId: traceConversationId } : {}),
+      model: compatModelId,
+      turnIndex,
+      ...(user ? { email: user.email } : {}),
+    },
+  };
+
+  // Full turn record for the signed-in user's history (D1 index + R2 record).
+  if (user && traceConversationId && historyConfigured(env as any)) {
+    recorder = new TurnRecorder({
+      conversationId: traceConversationId,
+      turnIndex,
+      user,
+      request: {
+        model: modelId,
+        provider,
+        compatModelId,
+        toolsEnabled,
+        codeMode,
+        codeModeActive,
+        appCodeModeSkipped,
+        mcpServers: mcpServerIds,
+        webSearchProvider: toolsEnabled ? webSearchProvider : null,
+        edgeColo,
+        country: ((cf as { country?: string } | undefined)?.country as string | undefined) ?? null,
+        userAgent: request.headers.get('user-agent'),
+        maxOutputTokens: skipMaxTokens ? null : maxTokens,
+        systemPrompt,
+        tools: Object.entries(tools ?? {}).map(([name, t]) => ({ name, description: String((t as { description?: string }).description ?? '') })),
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        userText: [...messages].reverse().find((m) => m.role === 'user')?.content ?? '',
+        imageKeys: [],
+        attachments: attachments.map((a) => ({
+          name: a.name,
+          bytes: Math.floor(((a.contentBase64?.length ?? 0) * 3) / 4),
+          sandboxPath: uploadedFiles.find((f) => f.name === a.name)?.path ?? null,
+        })),
+      },
+    });
+  }
+
+  // One history entry per model call: usage and per-step details from onFinish,
+  // or the error when the call never finished.
+  function trackAttempt(label: string) {
+    const startedMs = recorder?.elapsed() ?? 0;
+    let finished = false;
+    return {
+      onFinish(e: { finishReason?: string; totalUsage?: unknown; usage?: unknown; steps?: Array<Record<string, any>> }) {
+        finished = true;
+        recorder?.noteAttempt({
+          attempt: label,
+          startedMs,
+          endedMs: recorder.elapsed(),
+          finishReason: e.finishReason ?? null,
+          usage: (e.totalUsage ?? e.usage ?? null) as ModelAttempt['usage'],
+          steps: (e.steps ?? []).map((s) => ({
+            finishReason: s.finishReason ?? null,
+            usage: s.usage ?? null,
+            responseId: s.response?.id ?? null,
+            modelId: s.response?.modelId ?? null,
+            toolCalls: Array.isArray(s.toolCalls) ? s.toolCalls.length : 0,
+          })),
+          error: null,
+        });
+      },
+      end(error: unknown) {
+        if (finished || !recorder) return;
+        recorder.noteAttempt({
+          attempt: label,
+          startedMs,
+          endedMs: recorder.elapsed(),
+          finishReason: null,
+          usage: null,
+          steps: [],
+          error: error ? String((error as Error)?.message ?? error) : 'stream ended without finish',
+        });
+      },
+    };
+  }
+
   // Abort on inactivity rather than on a fixed total budget. One 60s signal
   // spanned every step of a multi-step run (tool-call argument streaming, tool
   // execution, then the answer), so a long Code Mode script — Kimi streams a
@@ -449,18 +567,22 @@ export async function POST(request: NextRequest) {
       if (idle) clearTimeout(idle);
     };
     bump();
-    const result = streamText({
+    currentAttempt = `stream-${attempt}`;
+    const tracked = trackAttempt(currentAttempt);
+    const result = ai.streamText({
       model: openai.chat(compatModelId),
       system: systemPrompt,
       messages: chatMessages as any,
       ...(skipMaxTokens ? {} : { maxOutputTokens: maxTokens }),
       ...(tools ? { tools, stopWhen: stepCountIs(8) } : {}),
       abortSignal: ac.signal,
-      onFinish: ({ text, finishReason, usage }) => {
-        console.log(JSON.stringify({ event: 'chat_finish', attempt, model: compatModelId, finishReason, textLen: text?.length || 0, usage }));
+      experimental_telemetry: telemetry,
+      onFinish: (e) => {
+        tracked.onFinish(e as any);
+        console.log(JSON.stringify({ event: 'chat_finish', attempt, model: compatModelId, finishReason: e.finishReason, textLen: e.text?.length || 0, usage: e.usage }));
       },
     });
-    return { result, bump, done };
+    return { result, bump, done, tracked };
   }
 
   // Stream NDJSON events for text, tool calls, reasoning
@@ -470,6 +592,8 @@ export async function POST(request: NextRequest) {
   let routedSent = false;
 
   function send(controller: ReadableStreamDefaultController, data: Record<string, unknown>) {
+    // Every event the browser sees also goes into the history record.
+    recorder?.onEvent(data as { type: string });
     try {
       controller.enqueue(encoder.encode(JSON.stringify(data) + '\n'));
     } catch {
@@ -534,10 +658,11 @@ export async function POST(request: NextRequest) {
     controller: ReadableStreamDefaultController,
     attempt: number
   ): Promise<{ hasTextContent: boolean; hasToolCalls: boolean; hasError: boolean; toolResults: ToolResultEntry[] }> {
-    const { result, bump, done } = createStream(attempt);
+    const { result, bump, done, tracked } = createStream(attempt);
     let hasTextContent = false;
     let hasToolCalls = false;
     let hasError = false;
+    let streamError: unknown = null;
     const toolResults: ToolResultEntry[] = [];
 
     try {
@@ -626,6 +751,7 @@ export async function POST(request: NextRequest) {
           }
 
           if (!errMsg) errMsg = String(part.error);
+          streamError = errMsg;
 
           console.error(JSON.stringify({ event: 'chat_stream_error', attempt, model: compatModelId, errorType: errType, gatewayCode: errCode, statusCode: errStatusCode, error: errMsg }));
           send(controller, {
@@ -658,8 +784,12 @@ export async function POST(request: NextRequest) {
           break;
       }
     }
+    } catch (err) {
+      streamError = err;
+      throw err;
     } finally {
       done();
+      tracked.end(streamError);
     }
     return { hasTextContent, hasToolCalls, hasError, toolResults };
   }
@@ -684,19 +814,25 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Chat API] Smart retry: injecting ${toolResults.length} tool result(s) as context`);
 
-    const retryResult = streamText({
+    currentAttempt = 'smart-retry';
+    const tracked = trackAttempt(currentAttempt);
+    const retryResult = ai.streamText({
       model: openai.chat(compatModelId),
       system: SYSTEM_PROMPT,
       messages: retryMessages as any,
       // No tools — force text generation
       ...(skipMaxTokens ? {} : { maxOutputTokens: maxTokens }),
       abortSignal: AbortSignal.timeout(120_000),
-      onFinish: ({ text, finishReason, usage }) => {
-        console.log(JSON.stringify({ event: 'chat_finish', attempt: 'smart-retry', model: compatModelId, finishReason, textLen: text?.length || 0, usage }));
+      experimental_telemetry: telemetry,
+      onFinish: (e) => {
+        tracked.onFinish(e as any);
+        console.log(JSON.stringify({ event: 'chat_finish', attempt: 'smart-retry', model: compatModelId, finishReason: e.finishReason, textLen: e.text?.length || 0, usage: e.usage }));
       },
     });
 
     let hasText = false;
+    let retryError: unknown = null;
+    try {
     for await (const part of retryResult.fullStream) {
       switch (part.type) {
         case 'text-delta':
@@ -719,12 +855,37 @@ export async function POST(request: NextRequest) {
           break;
         case 'error':
           console.error('[Chat API] Smart retry error:', part.error);
+          retryError = part.error;
           break;
         default:
           break;
       }
     }
+    } catch (err) {
+      retryError = err;
+      throw err;
+    } finally {
+      tracked.end(retryError);
+    }
     return hasText;
+  }
+
+  // The history write runs after the stream closes, so it is registered with
+  // waitUntil up front (the response may already be finished by then).
+  let historySaved: () => void = () => {};
+  if (recorder) {
+    ctx.waitUntil(new Promise<void>((resolve) => { historySaved = resolve; }));
+    request.signal?.addEventListener('abort', () => { if (recorder) recorder.clientGone = true; });
+  }
+  async function saveHistory() {
+    if (!recorder) return;
+    try {
+      await saveTurn(env as any, recorder.finish(), validImages);
+    } catch (err) {
+      console.error('[Chat API] history save failed:', (err as Error)?.message ?? err);
+    } finally {
+      historySaved();
+    }
   }
 
   const stream = new ReadableStream({
@@ -844,7 +1005,13 @@ export async function POST(request: NextRequest) {
         });
       } finally {
         try { controller.close(); } catch { /* already closed */ }
+        await saveHistory();
       }
+    },
+    cancel() {
+      // The browser went away (stop button / closed tab); the model call still
+      // runs to the end, and the record says the user never saw all of it.
+      if (recorder) recorder.clientGone = true;
     },
   });
 

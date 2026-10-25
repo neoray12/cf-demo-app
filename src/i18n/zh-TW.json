@@ -30,8 +30,8 @@
   "login": {
     "title": "Cloudflare Demo",
     "description": "登入以使用 AI Agent、網站爬蟲與 Log 瀏覽器",
-    "username": "帳號",
-    "usernamePlaceholder": "輸入帳號",
+    "username": "帳號或 Email",
+    "usernamePlaceholder": "例如 neo@cloudflare.com",
     "password": "密碼",
     "passwordPlaceholder": "輸入密碼",
     "loggingIn": "登入中...",
@@ -323,6 +323,36 @@
       "list": "列出 Salesforce 前 10 筆客戶（Account），整理成表格"
     },
     "mcpPanelResize": "拖曳調整 MCP 面板寬度（雙擊恢復預設）",
+    "historyPanelResize": "拖曳調整歷史面板寬度（雙擊恢復預設）",
+    "history": {
+      "button": "歷史",
+      "title": "對話歷史",
+      "close": "關閉",
+      "search": "搜尋標題或內容",
+      "empty": "還沒有保存的對話",
+      "noMatch": "找不到符合的對話",
+      "signInToSave": "登入後才會保存對話",
+      "unconfigured": "歷史儲存尚未設定（HISTORY_DB / HISTORY_BUCKET）",
+      "loadError": "無法載入歷史",
+      "openError": "無法開啟這個對話",
+      "retry": "重試",
+      "turns": "{{count}} 輪",
+      "actions": "更多動作",
+      "rename": "重新命名",
+      "export": "匯出完整紀錄 (JSON)",
+      "delete": "刪除",
+      "deleteConfirm": "確定要刪除「{{title}}」？這會刪除所有紀錄且無法復原。",
+      "group": {
+        "today": "今天",
+        "yesterday": "昨天",
+        "week": "過去 7 天",
+        "older": "更早"
+      },
+      "status": {
+        "error": "錯誤",
+        "client-aborted": "已中斷"
+      }
+    },
     "mcpResult": {
       "script": "腳本",
       "args": "參數",

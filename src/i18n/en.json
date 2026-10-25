@@ -30,8 +30,8 @@
   "login": {
     "title": "Cloudflare Demo",
     "description": "Sign in to use AI Agent, Web Crawler, and Log Explorer",
-    "username": "Username",
-    "usernamePlaceholder": "Enter username",
+    "username": "Username or email",
+    "usernamePlaceholder": "e.g. neo@cloudflare.com",
     "password": "Password",
     "passwordPlaceholder": "Enter password",
     "loggingIn": "Signing in...",
@@ -323,6 +323,36 @@
       "list": "List the first 10 Salesforce customers (Accounts) as a table"
     },
     "mcpPanelResize": "Drag to resize the MCP panel (double-click to reset)",
+    "historyPanelResize": "Drag to resize the history panel (double-click to reset)",
+    "history": {
+      "button": "History",
+      "title": "Chat history",
+      "close": "Close",
+      "search": "Search titles or messages",
+      "empty": "No saved conversations yet",
+      "noMatch": "No matching conversations",
+      "signInToSave": "Sign in to save conversations",
+      "unconfigured": "History storage is not configured (HISTORY_DB / HISTORY_BUCKET)",
+      "loadError": "Couldn't load history",
+      "openError": "Couldn't open this conversation",
+      "retry": "Retry",
+      "turns": "{{count}} turns",
+      "actions": "More actions",
+      "rename": "Rename",
+      "export": "Export full record (JSON)",
+      "delete": "Delete",
+      "deleteConfirm": "Delete \"{{title}}\"? All of its records are removed and can't be restored.",
+      "group": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "week": "Previous 7 days",
+        "older": "Older"
+      },
+      "status": {
+        "error": "error",
+        "client-aborted": "interrupted"
+      }
+    },
     "mcpResult": {
       "script": "Script",
       "args": "Arguments",

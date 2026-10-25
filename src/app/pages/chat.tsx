@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, ChevronDown, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Search, Database, Route, Lock } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, ChevronDown, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Search, Database, Route, Lock, History } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,19 +29,12 @@ import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/cha
 import { ProcessTimeline, type ChatTimeline } from "../components/chat/process-timeline";
 import { GatewayBlockCard } from "../components/chat/gateway-block-card";
 import { SuggestionCategories, type SuggestionSendOpts } from "../components/chat/suggestion-categories";
-import type { TimelineEvent } from "@/lib/chat-timeline";
+import { applyChatEvent, createTurnState, type MessagePart, type ToolCallInfo } from "@/lib/chat-turn";
+import type { HistoryTurn } from "@/lib/chat-history";
+import { HistoryPanel } from "../components/chat/history-panel";
 import type { GatewayBlock } from "@/lib/mcp-guardrails";
 
 // ── Types ──
-interface ToolCallInfo {
-  id: string;
-  name: string;
-  args?: unknown;
-  result?: unknown;
-  status: "calling" | "done" | "error";
-  error?: string;
-}
-
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -59,11 +52,6 @@ interface ChatMessage {
   /** Per-turn processing timeline — front-end only, never sent to the server. */
   timeline?: ChatTimeline;
 }
-
-type MessagePart =
-  | { type: "reasoning"; text: string }
-  | { type: "text"; text: string }
-  | { type: "tool"; id: string };
 
 interface PendingImage {
   id: string;
@@ -1202,6 +1190,10 @@ export function ChatPage() {
     error: null,
   });
   const [showMcpPanel, setShowMcpPanel] = useState(false);
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false);
+  // Bumped after each turn so an open history panel picks up the saved turn.
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const [activeConversationId, setActiveConversationId] = useState("");
   const [connectedMcpServers, setConnectedMcpServers] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [pendingAttachment, setPendingAttachment] = useState<{ name: string; contentBase64: string; size: number } | null>(null);
@@ -1330,6 +1322,8 @@ export function ChatPage() {
           codeMode: codeModeEnabledRef.current,
           webSearchProvider,
           conversationId: conversationIdRef.current,
+          // Earlier user turns; a resend of the same turn overwrites it in history.
+          turnIndex: Math.max(allMessages.filter((m) => m.role === "user").length - 1, 0),
           mcpServers: turnMcpServersRef.current ?? connectedMcpServers,
           userName,
           userEmail,
@@ -1367,47 +1361,19 @@ export function ChatPage() {
 
       const decoder = new TextDecoder();
       let buffer = "";
-      let accText = "";
-      let accReasoning = "";
-      let toolCalls: ToolCallInfo[] = [];
-      let parts: MessagePart[] = [];
-      let routedModel: ChatMessage["routedModel"];
-      let notices: string[] = [];
-      const events: TimelineEvent[] = [];
-      const record = (ev: TimelineEvent) => events.push(ev);
+      // Same reducer the server's history recorder uses, so a restored
+      // conversation renders exactly like this live one.
+      let turn = createTurnState();
       const now = () => performance.now() - t0;
-      // Only the first of a run of same-kind deltas matters for step boundaries.
-      const recordDelta = (kind: "text" | "reasoning") => {
-        if (events[events.length - 1]?.kind !== kind) record({ t: now(), kind });
-      };
-      const recordToolStart = (id: string, name: string) => record({ t: now(), kind: "tool-start", id, name });
-      // Append to the trailing part of the same kind, otherwise start a new one —
-      // this is what keeps "text → tool → text" in the order it happened.
-      // Some providers emit tool-call without a preceding tool-call-start
-      const ensureTool = (id: string, name: string) => {
-        if (toolCalls.some((tc) => tc.id === id)) return;
-        toolCalls = [...toolCalls, { id, name, status: "calling" }];
-        parts = [...parts, { type: "tool", id }];
-        recordToolStart(id, name);
-      };
-      const appendPart = (type: "text" | "reasoning", text: string) => {
-        if (!text) return;
-        const last = parts[parts.length - 1];
-        if (last && last.type === type) parts = [...parts.slice(0, -1), { type, text: last.text + text }];
-        else parts = [...parts, { type, text }];
-      };
 
       // 50ms batched flush
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
       const flushUpdate = (endAt: number | null = null) => {
         flushTimer = null;
-        const t = accText;
-        const r = accReasoning;
-        const tc = [...toolCalls];
-        const pt = parts;
-        const timeline = { events: [...events], endAt, startedAt: t0 };
+        const { content, reasoning, toolCalls, parts, routedModel, notices, events } = turn;
+        const timeline = { events, endAt, startedAt: t0 };
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content: t, reasoning: r, toolCalls: tc, parts: pt, routedModel, notices, timeline } : m)
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content, reasoning, toolCalls, parts, routedModel, notices, timeline } : m)
         );
       };
       const scheduleFlush = () => {
@@ -1428,51 +1394,29 @@ export function ChatPage() {
             debugEvents.push(line);
             try {
               const event = JSON.parse(line);
+              turn = applyChatEvent(turn, event, now());
               switch (event.type) {
                 case "text-delta":
                   if (!debugFirstToken) debugFirstToken = Date.now() - debugStart;
                   gotTextContent = true;
-                  accText += event.text;
-                  if (event.text) recordDelta("text");
-                  appendPart("text", event.text);
                   scheduleFlush();
                   break;
                 case "reasoning-delta":
                   if (!debugFirstToken) debugFirstToken = Date.now() - debugStart;
-                  accReasoning += event.text;
-                  if (event.text) recordDelta("reasoning");
-                  appendPart("reasoning", event.text);
                   scheduleFlush();
                   break;
                 case "tool-call-start":
-                  toolCalls = [...toolCalls, { id: event.toolCallId, name: event.toolName, status: "calling" }];
-                  parts = [...parts, { type: "tool", id: event.toolCallId }];
-                  recordToolStart(event.toolCallId, event.toolName);
                   debugToolNames.push(event.toolName);
                   scheduleFlush();
                   break;
                 case "tool-call":
-                  ensureTool(event.toolCallId, event.toolName);
-                  toolCalls = toolCalls.map((tc) =>
-                    tc.id === event.toolCallId ? { ...tc, args: event.args } : tc
-                  );
+                case "tool-error":
+                case "routed-model":
+                case "notice":
                   scheduleFlush();
                   break;
                 case "tool-result":
                   hasToolResults = true;
-                  ensureTool(event.toolCallId, event.toolName);
-                  toolCalls = toolCalls.map((tc) =>
-                    tc.id === event.toolCallId ? { ...tc, status: "done" as const, result: event.result } : tc
-                  );
-                  record({ t: now(), kind: "tool-end", id: event.toolCallId, outcome: event.result?.blocked === true ? "blocked" : "done" });
-                  scheduleFlush();
-                  break;
-                case "tool-error":
-                  ensureTool(event.toolCallId, event.toolName);
-                  toolCalls = toolCalls.map((tc) =>
-                    tc.id === event.toolCallId ? { ...tc, status: "error" as const, error: event.error } : tc
-                  );
-                  record({ t: now(), kind: "tool-end", id: event.toolCallId, outcome: "error" });
                   scheduleFlush();
                   break;
                 case "error":
@@ -1489,14 +1433,6 @@ export function ChatPage() {
                       userIp: event.userIp || null,
                     },
                   });
-                  break;
-                case "routed-model":
-                  routedModel = { model: event.model, reason: event.reason ?? null };
-                  scheduleFlush();
-                  break;
-                case "notice":
-                  if (typeof event.kind === "string" && !notices.includes(event.kind)) notices = [...notices, event.kind];
-                  scheduleFlush();
                   break;
                 case "finish":
                 case "done":
@@ -1596,6 +1532,9 @@ export function ChatPage() {
       setIsLoading(false);
       abortRef.current = null;
       streamingMsgIdRef.current = null;
+      setActiveConversationId(conversationIdRef.current);
+      // The server writes history after the stream closes (waitUntil).
+      setTimeout(() => setHistoryRefreshKey((k) => k + 1), 1500);
       // Update debug info
       setDebugInfo({
         startedAt: debugStart,
@@ -1758,8 +1697,38 @@ export function ChatPage() {
     setMessages([]);
     setInput("");
     conversationIdRef.current = crypto.randomUUID();
+    setActiveConversationId("");
     textareaRef.current?.focus();
   }, [isLoading, handleStop]);
+
+  // Open a saved conversation: its turns become the chat, and new messages
+  // continue it under the same conversation id (history + tracing session).
+  const openConversation = useCallback(async (id: string) => {
+    if (isLoading) handleStop();
+    if (isMobile) setShowHistoryPanel(false);
+    try {
+      const res = await fetch(`/api/chat/history/${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { turns: HistoryTurn[] };
+      const restored: ChatMessage[] = data.turns.flatMap((turn) => [
+        { id: genId(), role: "user" as const, content: turn.user.content, ...(turn.user.images.length ? { images: turn.user.images } : {}) },
+        { id: genId(), role: "assistant" as const, ...turn.assistant },
+      ]);
+      conversationIdRef.current = id;
+      setActiveConversationId(id);
+      setMessages(restored);
+      const last = data.turns[data.turns.length - 1];
+      const model = last && AI_MODELS.find((m) => (m.workersAiModel ?? m.providerModelId) === last.model);
+      if (model) setSelectedModel(model.id);
+      isNearBottomRef.current = true;
+    } catch (err) {
+      console.error("[Chat] open conversation failed:", err);
+      setErrorDialog({
+        open: true,
+        error: { errorType: "general", message: t("chat.history.openError"), rayId: null, gatewayLogId: null, statusCode: null, gatewayCode: null, userIp: null },
+      });
+    }
+  }, [isLoading, handleStop, isMobile, t]);
 
   const hasMessages = messages.length > 0;
 
@@ -1888,7 +1857,7 @@ export function ChatPage() {
               <span className="hidden md:inline">Code Mode</span>
             </button>
             <button
-              onClick={() => setShowMcpPanel((v) => !v)}
+              onClick={() => { setShowMcpPanel((v) => !v); setShowHistoryPanel(false); }}
               className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
                 showMcpPanel
                   ? "bg-primary/10 text-primary"
@@ -1901,6 +1870,18 @@ export function ChatPage() {
               {connectedMcpServers.length > 0 && (
                 <span className="size-4 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[10px] flex items-center justify-center">{connectedMcpServers.length}</span>
               )}
+            </button>
+            <button
+              onClick={() => { setShowHistoryPanel((v) => !v); setShowMcpPanel(false); }}
+              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
+                showHistoryPanel
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-muted/60"
+              }`}
+              title={t("chat.history.title")}
+            >
+              <History className="size-3.5" />
+              <span className="hidden md:inline">{t("chat.history.button")}</span>
             </button>
             {isDev && (
               <button
@@ -2115,6 +2096,35 @@ export function ChatPage() {
               onClose={() => setShowMcpPanel(false)}
               connectedServers={connectedMcpServers}
               onServersChange={setConnectedMcpServers}
+            />
+          </SheetContent>
+        </Sheet>
+      )}
+
+      {/* ── History Panel: Desktop sidebar ── */}
+      {showHistoryPanel && !isMobile && (
+        <ResizableSidePanel label={t("chat.historyPanelResize")}>
+          <HistoryPanel
+            onClose={() => setShowHistoryPanel(false)}
+            activeId={activeConversationId}
+            onOpen={openConversation}
+            onDeleted={handleNewChat}
+            refreshKey={historyRefreshKey}
+          />
+        </ResizableSidePanel>
+      )}
+
+      {/* ── History Panel: Mobile sheet ── */}
+      {isMobile && (
+        <Sheet open={showHistoryPanel} onOpenChange={setShowHistoryPanel}>
+          <SheetContent side="right" className="p-0 w-[85%] sm:max-w-sm [&>button]:hidden">
+            <VisuallyHidden><SheetTitle>{t("chat.history.title")}</SheetTitle></VisuallyHidden>
+            <HistoryPanel
+              onClose={() => setShowHistoryPanel(false)}
+              activeId={activeConversationId}
+              onOpen={openConversation}
+              onDeleted={handleNewChat}
+              refreshKey={historyRefreshKey}
             />
           </SheetContent>
         </Sheet>

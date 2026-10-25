@@ -36,6 +36,18 @@ bucket_name = "cf-demo-crawler"
 binding = "KV"
 id = "cd03af00eb9340a180014760028fbebd"
 
+# Main chat history — D1 holds the conversation/turn index, R2 the full turn
+# records. Not cf-demo-crawler: AI Search indexes that bucket.
+[[d1_databases]]
+binding = "HISTORY_DB"
+database_name = "cf-demo-chat-history"
+database_id = "82dfa424-a91f-4794-9991-a5f2daf83172"
+migrations_dir = "migrations/chat-history"
+
+[[r2_buckets]]
+binding = "HISTORY_BUCKET"
+bucket_name = "cf-demo-chat-history"
+
 # Dynamic Workers (open beta) — spins up V8 isolates at runtime for the
 # executeJs chat tool. Isolate-level sandboxing, ms startup, JS only;
 # complements the container-based Python sandbox (workers/chat-sandbox).
@@ -54,6 +66,8 @@ service = "cf-demo-app"
 # - CHAT_SANDBOX_URL: https://chat-sandbox.neokung.work — MUST be the custom domain,
 #   not workers.dev; exposePort derives preview-URL hostnames from the request host.
 # - CHAT_SANDBOX_SECRET: shared secret, same value as SANDBOX_API_SECRET on cf-chat-sandbox
+# - LOGIN_USERS: JSON [{"email","name","password"}] — app login accounts
+# - AUTH_SECRET: HMAC key for the cf_demo_user login cookie (falls back to CHAT_SANDBOX_SECRET)
 [vars]
 CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
 AI_GATEWAY_ID = "nkcf-gateway-01"
@@ -65,3 +79,8 @@ AUTO_ROUTER_ALLOWED_PROVIDERS = "anthropic,workers-ai"
 MCP_SERVER_URLS = "cf-docs=https://docs.mcp.cloudflare.com/mcp,cf-observability=https://observability.mcp.cloudflare.com/mcp:oauth,cf-radar=https://radar.mcp.cloudflare.com/mcp:oauth,saas=https://saasmcp.neokung.work/mcp:oauth,saas-cm=https://saasmcp.neokung.work/mcp?codemode=search_and_execute:oauth"
 KB_AI_SEARCH = "cf-demo-kb"
 KB_BUCKET_NAME = "cf-demo-kb"
+# Cloudflare Access identity (optional): set both once the site sits behind an
+# Access application — team domain like "neokung.cloudflareaccess.com" and the
+# application's AUD tag. Empty = only the app login cookie identifies users.
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""

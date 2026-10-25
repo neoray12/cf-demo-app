@@ -47,8 +47,11 @@
 - 搜尋/過濾功能
 
 ### 4. 登入畫面
-- 開發階段：UI only，任意帳密即可登入
-- 未來可接入真正的認證系統
+- 帳密在 Worker secret `LOGIN_USERS`（JSON `[{"email","name","password"}]`），程式碼內沒有帳號；帳號欄可輸入 email 或 `@` 前段，另有 Turnstile
+- 登入成功發 httpOnly、HMAC 簽章的 `cf_demo_user` cookie（30 天，密鑰 `AUTH_SECRET`，沒設退回 `CHAT_SANDBOX_SECRET`）；`GET /api/auth/me`、`POST /api/auth/logout`
+- Dashboard layout 以 `/api/auth/me` 判斷登入，localStorage `cf-demo-user` 只是顯示快取
+- Cloudflare Access：`[vars] ACCESS_TEAM_DOMAIN` + `ACCESS_AUD` 都設定時，`Cf-Access-Jwt-Assertion` 驗證通過即視為登入（優先於 cookie）；目前網站沒有 Access，兩個值為空
+- 本地 `.dev.vars` 有一組產生的測試帳號（neo@cloudflare.com）；本地 Turnstile 可能無法通過
 
 ### 5. MCP (Model Context Protocol) 整合
 
@@ -225,6 +228,26 @@
 | `src/app/components/agents/*` | `use-agent-run`（串流 + 重試）、`agent-message`、`activity-timeline`、`trace-panel`、`span-detail`、`kb-workspace`、`radar-chart` |
 | `src/i18n/agents.{zh-TW,en}.json` | Agents 專用字串（`agents.*`，R28；不要改 `src/i18n/{zh-TW,en}.json`） |
 | `scripts/seed-kb/` | `default/` 範例文件與上傳腳本 |
+
+### 9. 主聊天 Tracing + 對話歷史
+
+設計：`docs/superpowers/specs/2026-10-25-main-chat-tracing-history-design.md`。
+
+- **Tracing**：`/api/chat` 的 `streamText`（含 smart retry）走 `getTracedAI({ storeContent: true })`，`functionId: "main-chat"`、`metadata.agentId: "main-chat-demo"`、`conversationId`（Dashboard 同一 session）、`turnIndex`、`email`。只有 production 有 span
+- **儲存**：D1 `cf-demo-chat-history`（binding `HISTORY_DB`，migration `migrations/chat-history/`）存 `conversations` / `turns` 索引；R2 `cf-demo-chat-history`（binding `HISTORY_BUCKET`，**不要**改用會被 AI Search 索引的 `cf-demo-crawler`）存 `users/{sha256(email)[:16]}/{conversationId}/turn-NNNN.json` 完整紀錄與 `-image-i.*` 附圖
+- **完整紀錄**（`TurnRecord`）：system prompt、工具清單、送出的 messages、前端看到的 assistant（parts/toolCalls 含完整結果/timeline）、每次模型呼叫的 usage 與 steps、每個 AI Gateway 請求的 status / `cf-ray` / `cf-aig-log-id` / 快取狀態、每個 NDJSON 事件（相對毫秒）
+- `send()` 是 NDJSON 唯一出口，`TurnRecorder.onEvent()` 掛在那裡；串流結束後寫入（`ctx.waitUntil` 先登記）。只有驗證過的使用者才存。前端送 `turnIndex`，同位置重送（自動重試、按重試）覆蓋同一輪；用戶端斷線記 `client-aborted`
+- `applyChatEvent()`（`src/lib/chat-turn.ts`）是前端串流與伺服器紀錄共用的 reducer——改 NDJSON 事件時兩邊一起生效
+- API：`GET /api/chat/history`（`q` 搜尋標題與內容）、`GET|PATCH|DELETE /api/chat/history/{id}`（`?raw=1` 匯出完整 JSON）、`GET /api/chat/history/asset?key=`（只能讀自己資料夾）
+- UI：聊天工具列「歷史」按鈕 → 右側面板（與 MCP 面板互斥），點擊載入並可接續
+
+| 檔案 | 說明 |
+|------|------|
+| `src/lib/auth.ts` | `LOGIN_USERS`、簽章 cookie、Access JWT、`getRequestUser()` |
+| `src/lib/chat-turn.ts` | NDJSON 事件 → assistant 訊息 reducer |
+| `src/lib/chat-history.ts` | `TurnRecorder`、`saveTurn`、列表 / 讀取 / 匯出 / 改名 / 刪除 |
+| `src/app/api/chat/history/**` | 歷史 API |
+| `src/app/components/chat/history-panel.tsx` | 歷史面板 |
 
 ## 技術棧
 

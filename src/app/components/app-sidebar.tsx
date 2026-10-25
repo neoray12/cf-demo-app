@@ -122,8 +122,10 @@ export function AppSidebar() {
     if (isMobile) setOpenMobile(false);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("cf-demo-auth");
+    localStorage.removeItem("cf-demo-user");
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     router.push("/login");
   };
 

@@ -19,6 +19,17 @@ bucket_name = "cf-demo-crawler"
 binding = "KV"
 id = "cd03af00eb9340a180014760028fbebd"
 
+# Main chat history (local dev uses miniflare's local D1/R2, separate from production)
+[[d1_databases]]
+binding = "HISTORY_DB"
+database_name = "cf-demo-chat-history"
+database_id = "82dfa424-a91f-4794-9991-a5f2daf83172"
+migrations_dir = "migrations/chat-history"
+
+[[r2_buckets]]
+binding = "HISTORY_BUCKET"
+bucket_name = "cf-demo-chat-history"
+
 [observability.traces]
 enabled = true
 head_sampling_rate = 1

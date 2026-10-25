@@ -14,13 +14,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { t } = useTranslation();
   const [authed, setAuthed] = useState<boolean | null>(null);
 
+  // The server decides who is signed in (Access JWT or the signed login cookie);
+  // localStorage only caches the name/email the sidebar displays.
   useEffect(() => {
-    const isAuth = localStorage.getItem("cf-demo-auth") === "true";
-    if (!isAuth) {
-      router.replace("/login");
-    } else {
-      setAuthed(true);
-    }
+    let cancelled = false;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          localStorage.removeItem("cf-demo-auth");
+          router.replace("/login");
+          return;
+        }
+        const user = (await res.json()) as { name: string; email: string };
+        localStorage.setItem("cf-demo-auth", "true");
+        localStorage.setItem("cf-demo-user", JSON.stringify({ name: user.name, email: user.email }));
+        setAuthed(true);
+      })
+      .catch(() => {
+        if (!cancelled) router.replace("/login");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   // Show nothing while checking auth
