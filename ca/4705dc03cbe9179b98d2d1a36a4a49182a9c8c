@@ -1,0 +1,21 @@
+src/lib/gateway-metadata.test.ts
+  s_35f257df545d16::t_bc60ea8e2fcc68 1-23
+src/lib/gateway-metadata.ts
+  s_35f257df545d16::t_5f50450ee8088b 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ca4705dc03cbe9179b98d2d1a36a4a49182a9c8c",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
