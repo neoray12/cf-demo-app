@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { GUARDRAIL_SCENARIOS } from "@/lib/mcp-guardrails";
+import { CODE_MODE_EXAMPLES } from "@/lib/experiment-compare";
 
 export interface SuggestionSendOpts {
   /** MCP server that must be connected; the turn is sent with only this server. */
@@ -171,14 +172,17 @@ export function SuggestionCategories({
       ],
     },
     {
-      // One question run twice — without and with the Portal's Code Mode — and
-      // compared (tokens, model/tool calls, time); see experiment-compare.ts.
+      // Each question runs twice — without and with the Portal's Code Mode — and
+      // is compared (tokens, model/tool calls, time); see experiment-compare.ts.
       id: "codemode",
       icon: Braces,
-      opts: { mcp: "saas", experiment: "sf-agg" },
-      items: [
-        { title: t("chat.codeModeSuggestions.compareCard.title"), desc: t("chat.codeModeSuggestions.agg"), icon: Braces },
-      ],
+      opts: { mcp: "saas" },
+      items: CODE_MODE_EXAMPLES.map((e) => ({
+        title: t(`chat.codeModeSuggestions.examples.${e.key}.title`),
+        desc: t(`chat.codeModeSuggestions.examples.${e.key}.prompt`),
+        icon: Braces,
+        opts: { mcp: "saas", experiment: e.id },
+      })),
     },
     {
       id: "browser",

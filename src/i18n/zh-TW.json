@@ -287,9 +287,35 @@
       "viewPolicyDesc": "四個卡控場景的 Gateway 政策、DLP 規則與示範流程"
     },
     "codeModeSuggestions": {
-      "agg": "列出 Salesforce 前 5 個 Account，再分別查出每個 Account 的商機數量與總金額，整理成一張表",
-      "compareCard": {
-        "title": "Code Mode 對照：跨物件彙總"
+      "examples": {
+        "agg": {
+          "title": "跨物件彙總",
+          "prompt": "列出 Salesforce 前 5 個 Account，再分別查出每個 Account 的商機數量與總金額，整理成一張表"
+        },
+        "pipeline": {
+          "title": "商機階段分布",
+          "prompt": "統計 Salesforce 所有商機依階段（Stage）的數量與總金額，並算出每個階段占總金額的百分比，整理成一張表"
+        },
+        "cases": {
+          "title": "客服案件分析",
+          "prompt": "列出 Salesforce 所有客服案件，依狀態與優先順序分組計數，再找出案件最多的前 3 個 Account，整理成表格"
+        },
+        "leads": {
+          "title": "潛在客戶來源",
+          "prompt": "統計 Salesforce 潛在客戶依來源（LeadSource）與狀態（Status）的數量，算出每個來源的已轉換比例，整理成一張表"
+        },
+        "sapOrders": {
+          "title": "SAP 訂單明細",
+          "prompt": "列出 SAP 最近 5 筆銷售訂單，再分別查出每筆訂單的項目，算出每筆訂單的品項數與總金額，整理成一張表"
+        },
+        "sapProduction": {
+          "title": "SAP 生產訂單",
+          "prompt": "列出 SAP 前 3 筆生產訂單，再分別查出每筆的工序數與 BOM 元件數，整理成比較表"
+        },
+        "crossMatch": {
+          "title": "SAP × Salesforce 比對",
+          "prompt": "列出 SAP 前 10 個客戶，再比對 Salesforce 的 Account，找出名稱也出現在 Salesforce 的客戶，並列出這些 Account 的商機數量與總金額"
+        }
       }
     },
     "mcpPanelResize": "拖曳調整 MCP 面板寬度（雙擊恢復預設）",

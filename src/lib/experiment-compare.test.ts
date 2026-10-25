@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { compareRuns, comparisonModel } from './experiment-compare';
+import { CODE_MODE_EXAMPLES, compareRuns, comparisonModel } from './experiment-compare';
+import zhTW from '../i18n/zh-TW.json';
+import en from '../i18n/en.json';
 import type { TraceSummary } from './trace-summary';
 
 const off: TraceSummary = { totalMs: 20000, ttftMs: 4000, modelCalls: 8, toolCalls: 6, subagents: 1, inputTokens: 10000, outputTokens: 800 };
@@ -34,5 +36,25 @@ describe('comparisonModel', () => {
 
   it('keeps a concrete model as chosen', () => {
     expect(comparisonModel('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+  });
+});
+
+describe('CODE_MODE_EXAMPLES', () => {
+  it('has at least six comparison questions with unique ids the chat API accepts', () => {
+    expect(CODE_MODE_EXAMPLES.length).toBeGreaterThanOrEqual(6);
+    const ids = CODE_MODE_EXAMPLES.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[\w-]{1,40}$/);
+  });
+
+  it('has a title and a question in both languages for every example', () => {
+    for (const lang of [zhTW, en]) {
+      const examples = (lang as { chat: { codeModeSuggestions: { examples: Record<string, { title?: string; prompt?: string }> } } })
+        .chat.codeModeSuggestions.examples;
+      for (const { key } of CODE_MODE_EXAMPLES) {
+        expect(examples[key]?.title, key).toBeTruthy();
+        expect(examples[key]?.prompt, key).toBeTruthy();
+      }
+    }
   });
 });

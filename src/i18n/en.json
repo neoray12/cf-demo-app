@@ -287,9 +287,35 @@
       "viewPolicyDesc": "Gateway policies, DLP rules and demo flow for the four scenarios"
     },
     "codeModeSuggestions": {
-      "agg": "List the first 5 Salesforce Accounts, then for each one find its number of opportunities and their total amount, and put it all in one table",
-      "compareCard": {
-        "title": "Code Mode comparison: cross-object rollup"
+      "examples": {
+        "agg": {
+          "title": "Cross-object rollup",
+          "prompt": "List the first 5 Salesforce Accounts, then for each one find its number of opportunities and their total amount, and put it all in one table"
+        },
+        "pipeline": {
+          "title": "Pipeline by stage",
+          "prompt": "Group all Salesforce opportunities by stage with the count and total amount per stage, plus each stage's share of the total amount, in one table"
+        },
+        "cases": {
+          "title": "Support case breakdown",
+          "prompt": "List all Salesforce support cases, count them by status and priority, then find the 3 Accounts with the most cases, in tables"
+        },
+        "leads": {
+          "title": "Lead sources",
+          "prompt": "Count Salesforce leads by LeadSource and Status, work out the converted share for each source, and put it in one table"
+        },
+        "sapOrders": {
+          "title": "SAP order details",
+          "prompt": "List the 5 most recent SAP sales orders, then fetch each order's items and work out the number of line items and total amount per order, in one table"
+        },
+        "sapProduction": {
+          "title": "SAP production orders",
+          "prompt": "List the first 3 SAP production orders, then for each one get the number of operations and BOM components, in a comparison table"
+        },
+        "crossMatch": {
+          "title": "SAP × Salesforce match",
+          "prompt": "List the first 10 SAP customers, match them against Salesforce Accounts by name, and for the matches show their number of opportunities and total amount"
+        }
       }
     },
     "mcpPanelResize": "Drag to resize the MCP panel (double-click to reset)",

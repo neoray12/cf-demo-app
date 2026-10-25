@@ -31,3 +31,19 @@ export function compareRuns(off: TraceSummary | null, on: TraceSummary | null): 
 export function comparisonModel(selected: string): string {
   return selected === 'cf-auto' ? DEFAULT_MODEL_ID : selected;
 }
+
+/**
+ * Code Mode comparison questions (home page "Code Mode demos"). Each one needs
+ * several SAP / Salesforce calls plus some arithmetic, where Code Mode helps;
+ * all are read-only. The id is the AI Gateway `test` metadata value, and the
+ * strings live under chat.codeModeSuggestions.examples.{key}.
+ */
+export const CODE_MODE_EXAMPLES = [
+  { id: 'sf-agg', key: 'agg' },
+  { id: 'sf-pipeline', key: 'pipeline' },
+  { id: 'sf-cases', key: 'cases' },
+  { id: 'sf-leads', key: 'leads' },
+  { id: 'sap-orders', key: 'sapOrders' },
+  { id: 'sap-production', key: 'sapProduction' },
+  { id: 'sap-sf-match', key: 'crossMatch' },
+] as const;
