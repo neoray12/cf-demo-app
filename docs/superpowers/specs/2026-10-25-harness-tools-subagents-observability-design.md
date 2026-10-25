@@ -83,7 +83,7 @@
 | `email` | 驗證過的 email（沒有時用 `unknown`） |
 | `usertier` | `VIP` / `regular`（沿用） |
 | `department` | `技術` / `業務`（沿用） |
-| `code_mode` | 這個模型請求所屬 agent 是否在 Code Mode：主模型一律 `false`；`saas` subagent 依設定 / 實驗覆蓋 |
+| `code_mode` | 這一輪的模式（`turnCodeMode`：有委派 server 用 Code Mode 就是 `true`），主模型與 subagent 的每個請求都標同一個值，用 `code_mode` 篩選時同一輪不會被拆開（2026-10-25 實測後由「主模型一律 false」改為此規則） |
 | `test` | 實驗 ID（例如 `sf-agg`），一般聊天為 `none` |
 
 - 拿掉 `name`、`tools_enabled`。

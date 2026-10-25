@@ -49,3 +49,11 @@ export function resolveToolPolicy(input: ToolPolicyInput): ToolPolicy {
   }
   return { core, directServers, delegated };
 }
+
+/**
+ * The turn's Code Mode, tagged on every model request of the turn (main agent
+ * and subagents) so an AI Gateway filter on code_mode keeps each run together.
+ */
+export function turnCodeMode(policy: ToolPolicy): boolean {
+  return policy.delegated.some((d) => d.codeMode);
+}

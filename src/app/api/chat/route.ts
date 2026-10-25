@@ -6,7 +6,7 @@ import { runTracedTool, type RunContext } from '@/lib/agents/runtime';
 import type { TraceEvent } from '@/lib/agents/trace-events';
 import { createChatSpanTracker, MAIN_ROOT_SPAN, type GatewayInfo } from '@/lib/chat-spans';
 import { buildGatewayMetadata } from '@/lib/gateway-metadata';
-import { resolveToolPolicy } from '@/lib/tool-policy';
+import { resolveToolPolicy, turnCodeMode } from '@/lib/tool-policy';
 import { buildDelegateTool } from '@/lib/mcp-subagent';
 import { createIdleGuard } from '@/lib/idle-guard';
 import { getRequestUser } from '@/lib/auth';
@@ -184,8 +184,8 @@ export async function POST(request: NextRequest) {
   // Workers AI: CF_API_TOKEN as Authorization header
   // External providers: strip Authorization so AI Gateway uses stored credentials
   const isExternal = provider !== 'workers-ai';
-  // AI Gateway metadata (five filterable keys): the main model is never in Code Mode;
-  // a delegated server's subagent sends its own code_mode (see languageModel below).
+  // AI Gateway metadata (five filterable keys). code_mode is the turn's mode on every
+  // request — main model and subagents — so a filter on it keeps each run together.
   const gatewayMetadata = (codeMode: boolean) => buildGatewayMetadata({ email: analyticsEmail, codeMode, test: experiment?.id });
 
   // Sanitize SSE stream: some Workers AI models (e.g. llama-3.2-3b) return
@@ -292,7 +292,8 @@ export async function POST(request: NextRequest) {
       },
       fetch: (url, init) => sanitizeSseFetch(url, init, label),
     });
-  const openai = makeProvider(gatewayMetadata(false));
+  // Re-created with the turn's code_mode once the tool policy is known (below).
+  let openai = makeProvider(gatewayMetadata(false));
 
   const useTools = modelSupportsTools(provider, modelId);
   const chatMessages: Array<{ role: string; content: unknown }> = sanitizeMessages(messages);
@@ -367,10 +368,9 @@ export async function POST(request: NextRequest) {
     signal: request.signal ?? new AbortController().signal,
     agent: { name: 'main-chat', id: 'main-chat-demo' },
     traced: isTracingActive(),
-    // Subagents run on the user's model, with their own code_mode in the gateway metadata.
+    // Subagents run on the user's model and carry the turn's code_mode in the gateway metadata.
     languageModel: (functionId) => {
-      const delegated = policy.delegated.find((d) => `${d.serverId}-agent` === functionId);
-      const provider = makeProvider(gatewayMetadata(delegated?.codeMode ?? false), `subagent:${functionId}`);
+      const provider = makeProvider(gatewayMetadata(turnCodeMode(policy)), `subagent:${functionId}`);
       return { model: provider.chat(compatModelId), label: compatModelId, ...(skipMaxTokens ? {} : { maxOutputTokens: maxTokens }) };
     },
   };
@@ -493,7 +493,8 @@ export async function POST(request: NextRequest) {
     (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '') +
     (policy.delegated.length ? DELEGATE_PROMPT : '');
 
-  const codeModeUsed = policy.delegated.some((d) => d.codeMode);
+  const codeModeUsed = turnCodeMode(policy);
+  openai = makeProvider(gatewayMetadata(codeModeUsed));
   const telemetry = {
     isEnabled: true,
     functionId: 'main-chat',

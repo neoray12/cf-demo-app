@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveToolPolicy, delegateToolName, MCP_DIRECT_MAX, type ToolPolicyInput } from './tool-policy';
+import { resolveToolPolicy, delegateToolName, turnCodeMode, MCP_DIRECT_MAX, type ToolPolicyInput } from './tool-policy';
 import { parseMcpServerUrls } from './mcp-client';
 
 const [cfDocs, radar, saas] = parseMcpServerUrls(
@@ -67,5 +67,13 @@ describe('delegateToolName', () => {
   it('sanitizes the server id', () => {
     expect(delegateToolName('cf.radar')).toBe('ask_cf_radar');
     expect(delegateToolName('saas')).toBe('ask_saas');
+  });
+});
+
+describe('turnCodeMode', () => {
+  it('is the mode of the turn: true when any delegated server runs in Code Mode', () => {
+    expect(turnCodeMode({ core: [], directServers: [], delegated: [{ serverId: 'saas', toolName: 'ask_saas', codeMode: true }] })).toBe(true);
+    expect(turnCodeMode({ core: [], directServers: [], delegated: [{ serverId: 'saas', toolName: 'ask_saas', codeMode: false }] })).toBe(false);
+    expect(turnCodeMode({ core: ['searchKnowledge'], directServers: ['cf-docs'], delegated: [] })).toBe(false);
   });
 });
