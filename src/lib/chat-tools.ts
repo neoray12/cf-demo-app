@@ -4,7 +4,7 @@ import { parseMcpServerUrls, connectAndListTools, callMcpTool, portalCodeModeUrl
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 import { PORTAL_CATALOG_SEARCH_CODE, formatPortalCatalog, parsePortalCatalog, type PortalCatalogEntry } from '@/lib/portal-catalog';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview } from '@/lib/chat-sandbox';
-import { normalizeCode } from '@/lib/codemode';
+import { normalizeCode } from '@/lib/js-normalize';
 
 // Wrap tool execute to catch errors gracefully instead of crashing the stream
 export function safeTool<T>(fn: (args: T) => Promise<unknown>) {
