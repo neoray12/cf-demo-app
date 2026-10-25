@@ -1,0 +1,21 @@
+docs/superpowers/plans/2026-10-25-harness-tools-subagents-observability.md
+  s_35f257df545d16::t_a2214d54f75ce6 1-311
+docs/superpowers/specs/2026-10-25-harness-tools-subagents-observability-design.md
+  s_35f257df545d16::t_8f3c74bbacd879 1-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "4ce3b811f207a080be7ee4a707b22eb595d91b0f",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
