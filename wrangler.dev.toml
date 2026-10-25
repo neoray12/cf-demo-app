@@ -42,6 +42,9 @@ AGENTS_HEDGE_AFTER_MS = "2500"
 AUTORAG_NAME = "cf-demo-ai-search-mm"
 # Auto Router candidate pool — only providers this gateway has credentials/credits for
 AUTO_ROUTER_ALLOWED_PROVIDERS = "anthropic,workers-ai"
+# Default Auto Router candidate models (cf-aig-allowed-models); each user can pick
+# their own in the chat page (KV auto-router-models:{email}). Empty = no model restriction.
+AUTO_ROUTER_ALLOWED_MODELS = "anthropic/claude-haiku-5.5,anthropic/claude-sonnet-5.5,anthropic/claude-opus-5.5,@cf/openai/gpt-oss-20b,@cf/zai-org/glm-5.2,@cf/qwen/qwen3.8-27b"
 MCP_SERVER_URLS = "cf-docs=https://docs.mcp.cloudflare.com/mcp,cf-observability=https://observability.mcp.cloudflare.com/mcp:oauth,cf-radar=https://radar.mcp.cloudflare.com/mcp:oauth,saas=https://saasmcp.neokung.work/mcp:oauth:agent:codemode"
 OPENCLAW_SANDBOX_URL = "https://cf-openclaw-sandbox.neo-cloudflare.workers.dev"
 KB_AI_SEARCH = "cf-demo-kb"

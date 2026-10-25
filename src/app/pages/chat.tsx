@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Database, Route, PanelLeftOpen, ScrollText } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Database, Route, PanelLeftOpen, ScrollText, ListChecks } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
@@ -25,6 +25,7 @@ import { SuggestionCategories, type SuggestionSendOpts } from "../components/cha
 import { applyChatEvent, createTurnState, type MessagePart, type ToolCallInfo, type TurnState } from "@/lib/chat-turn";
 import { AutoRouterCard } from "../components/chat/auto-router-card";
 import { SystemPromptDialog } from "../components/chat/system-prompt-dialog";
+import { AutoRouterModelsDialog } from "../components/chat/auto-router-models-dialog";
 import type { HistoryTurn } from "@/lib/chat-history";
 import { HistoryPanel } from "../components/chat/history-panel";
 import { SubagentCard } from "../components/chat/subagent-card";
@@ -1131,6 +1132,7 @@ export function ChatPage() {
   });
   const [showMcpPanel, setShowMcpPanel] = useState(false);
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
+  const [showAutoRouterModels, setShowAutoRouterModels] = useState(false);
   // ChatGPT-style history column on the left: open by default on desktop
   // (remembered per browser), a slide-over sheet on mobile.
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -1803,6 +1805,16 @@ export function ChatPage() {
               </button>
             )}
             <ModelSelector selectedModel={selectedModel} onModelChange={setSelectedModel} />
+            {selectedModel === "cf-auto" && (
+              <button
+                onClick={() => setShowAutoRouterModels(true)}
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted/60 transition-colors"
+                title={t("chat.autoRouterModels.title")}
+              >
+                <ListChecks className="size-3.5" />
+                <span className="hidden md:inline">{t("chat.autoRouterModels.button")}</span>
+              </button>
+            )}
             <button
               onClick={() => setShowMcpPanel((v) => !v)}
               className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
@@ -2068,6 +2080,7 @@ export function ChatPage() {
       )}
 
       <SystemPromptDialog open={showSystemPrompt} onOpenChange={setShowSystemPrompt} />
+      <AutoRouterModelsDialog open={showAutoRouterModels} onOpenChange={setShowAutoRouterModels} />
 
       <ErrorDialog
         open={errorDialog.open}

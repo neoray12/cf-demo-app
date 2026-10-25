@@ -11,6 +11,7 @@ import { buildDelegateTool } from '@/lib/mcp-subagent';
 import { createIdleGuard } from '@/lib/idle-guard';
 import { parseRoutingHeaders, type AutoRouting } from '@/lib/auto-router';
 import { DEFAULT_SYSTEM_PROMPT, composeSystemPrompt, systemPromptKey } from '@/lib/system-prompt';
+import { autoRouterModelsKey, parseModelList, resolveAllowedModels } from '@/lib/auto-router-models';
 import { getRequestUser } from '@/lib/auth';
 import { TurnRecorder, historyConfigured, isValidConversationId, saveTurn, type ModelAttempt } from '@/lib/chat-history';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
@@ -190,7 +191,7 @@ export async function POST(request: NextRequest) {
     return fetch(url, { ...init, headers }).then((res) => {
       const routedModel = res.headers.get('cf-aig-routed-model');
       // Only the main model's routing is shown on the answer (subagents route on their own).
-      if (routedModel && !label) routedInfo = parseRoutingHeaders(res.headers, (env as any).AUTO_ROUTER_ALLOWED_PROVIDERS);
+      if (routedModel && !label) routedInfo = parseRoutingHeaders(res.headers, (env as any).AUTO_ROUTER_ALLOWED_PROVIDERS, autoRouterModels);
       recorder?.noteGatewayCall({
         attempt,
         path: new URL(String(url instanceof Request ? url.url : url)).pathname,
@@ -249,11 +250,16 @@ export async function POST(request: NextRequest) {
   // Auto Router: pin one model per turn (session affinity) and restrict the
   // candidate pool to providers this gateway actually has credentials for.
   const autoRouterHeaders: Record<string, string> = {};
+  let autoRouterModels: string[] | null = null;
   if (provider === 'auto') {
     const sid = (await cookies()).get('session_id')?.value || 'anonymous';
     autoRouterHeaders['cf-aig-session-id'] = `${sid}:${String(conversationId || 'default').replace(/[^\w-]/g, '').slice(0, 64)}`;
     const allowed = (env as any).AUTO_ROUTER_ALLOWED_PROVIDERS as string | undefined;
     if (allowed) autoRouterHeaders['cf-aig-allowed-providers'] = allowed;
+    // Candidate models: the user's own picks (chat page), else the wrangler default.
+    const stored = user ? await (env as any).KV.get(autoRouterModelsKey(user.email)).catch(() => null) : null;
+    autoRouterModels = resolveAllowedModels(stored ? parseModelList(stored) : null, (env as any).AUTO_ROUTER_ALLOWED_MODELS);
+    if (autoRouterModels) autoRouterHeaders['cf-aig-allowed-models'] = autoRouterModels.join(',');
   }
 
   // `label` set = a subagent's provider: its requests are recorded under that

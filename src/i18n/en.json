@@ -417,7 +417,9 @@
           "label": "Fallback: nothing to classify",
           "desc": "The request had no text to classify, so AI Gateway selected a model without the router."
         }
-      }
+      },
+      "models": "Candidate models",
+      "noModelRestriction": "No model restriction (by provider)"
     },
     "systemPrompt": {
       "button": "System Prompt",
@@ -442,6 +444,27 @@
       "errors": {
         "empty": "The system prompt can't be empty",
         "too_long": "The system prompt is longer than {{max}} characters",
+        "unauthenticated": "Please sign in first",
+        "save": "Couldn't save, please try again"
+      }
+    },
+    "autoRouterModels": {
+      "button": "Candidates",
+      "title": "Auto Router candidate models",
+      "description": "Pick the models Auto Router may choose from (cf-aig-allowed-models). Saved for your account only and used from your next message. Without your own list the wrangler default applies.",
+      "usingDefault": "Using the wrangler default",
+      "usingCustom": "Using your own list",
+      "count": "{{n}} models selected",
+      "signInToSave": "Sign in to save",
+      "selectAll": "Select all available",
+      "useDefault": "Use default",
+      "save": "Save",
+      "saved": "Saved — used from your next message",
+      "providerUnavailable": "This gateway has no key or credits for this provider",
+      "errors": {
+        "empty": "Pick at least one model",
+        "unknown_model": "Unknown models: {{models}}",
+        "unavailable_provider": "These models’ provider is unavailable: {{models}}",
         "unauthenticated": "Please sign in first",
         "save": "Couldn't save, please try again"
       }

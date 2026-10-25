@@ -104,7 +104,7 @@ export function applyChatEvent(s: TurnState, ev: ChatStreamEvent, t: number): Tu
           model: ev.model,
           reason: ev.reason ?? null,
           ...Object.fromEntries(
-            (['decisionId', 'requestId', 'logId', 'allowedProviders'] as const).filter((k) => ev[k] !== undefined).map((k) => [k, ev[k]]),
+            (['decisionId', 'requestId', 'logId', 'allowedProviders', 'allowedModels'] as const).filter((k) => ev[k] !== undefined).map((k) => [k, ev[k]]),
           ),
         },
       };

@@ -4,6 +4,9 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Route } from "lucide-react";
 import { ROUTING_REASONS, type AutoRouting } from "@/lib/auto-router";
+import { AUTO_ROUTER_CATALOG } from "@/lib/auto-router-models";
+
+const modelLabel = (id: string) => AUTO_ROUTER_CATALOG.find((m) => m.id === id)?.label ?? id;
 
 type Routed = Pick<AutoRouting, "model" | "reason"> & Partial<Omit<AutoRouting, "model" | "reason">>;
 
@@ -52,6 +55,24 @@ export function AutoRouterCard({ routed }: { routed: Routed }) {
           {row(
             t("chat.autoRouter.pool"),
             routed.allowedProviders?.length ? routed.allowedProviders.join(", ") : t("chat.autoRouter.defaultPool"),
+          )}
+          {row(
+            t("chat.autoRouter.models"),
+            routed.allowedModels?.length ? (
+              <span className="flex flex-wrap gap-1">
+                {routed.allowedModels.map((id) => (
+                  <span
+                    key={id}
+                    title={id}
+                    className={`rounded px-1.5 py-0.5 ${id === routed.model ? "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300 font-medium" : "bg-muted"}`}
+                  >
+                    {modelLabel(id)}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              t("chat.autoRouter.noModelRestriction")
+            ),
           )}
           {routed.decisionId && row(t("chat.autoRouter.decisionId"), <span className="font-mono">{routed.decisionId}</span>)}
           {routed.logId && row(t("chat.autoRouter.logId"), <span className="font-mono">{routed.logId}</span>)}

@@ -265,6 +265,7 @@
 ### 11. Auto Router 決策顯示、System Prompt 編輯（2026-10-25）
 
 - **Auto Router**：回應只會帶 `cf-aig-routed-model`、`cf-aig-routing-reason`（8 種代碼）、`cf-aig-routing-decision-id`、`cf-aig-request-id`；**AI Gateway 不提供各候選模型的分數**（不在 header、body、Logs API；Log 的 `score` 是人工評分欄位）。`parseRoutingHeaders()`（`src/lib/auto-router.ts`）解析後以 `routed-model` 事件送出（只取主模型的請求），回答上方的 `AutoRouterCard` 顯示模型、原因與說明、候選範圍（`AUTO_ROUTER_ALLOWED_PROVIDERS`）、Decision ID、Log ID
+- **Auto Router 候選模型**：每次請求帶 `cf-aig-allowed-models`（使用者自訂清單，KV `auto-router-models:{email}`；沒有時用 `[vars] AUTO_ROUTER_ALLOWED_MODELS`；兩者都空就不限定模型），並保留 `cf-aig-allowed-providers`（模型必須同時符合）。目錄 `AUTO_ROUTER_CATALOG`（`src/lib/auto-router-models.ts`，29 個；2026-10-25 在 `nkcf-gateway-01` 實測 Anthropic 9 個、Workers AI 7 個可用，OpenAI 400、xAI / Fireworks 402），provider 不在 `AUTO_ROUTER_ALLOWED_PROVIDERS` 的模型在畫面反灰、API 也拒收（400）。選了 Auto Router 時工具列出現「候選模型」按鈕；`API GET/PUT/DELETE /api/chat/auto-router-models`；Auto Router 卡片列出這一輪的候選模型並標出選中的那個。不存在的模型送到 Auto Router 會回 400（`allowedModels contains models not available`）
 - **Auto Router 的 token 會少算**：Auto Router 自動啟用 prompt 快取，串流回傳的 usage 只含未快取的輸入（實測 4 vs Log 的 2,854，其中 2,850 是 cache write）。直接呼叫模型時沒有這個問題。正確數字要從 AI Gateway Logs API（`usage_metadata`）取
 - **System Prompt**：基本提示詞每個使用者一份，存 KV `system-prompt:{email}`，預設為 `DEFAULT_SYSTEM_PROMPT`（`src/lib/system-prompt.ts`，demo 用、含工具選擇指引）。Harness 依這一輪實際提供的工具附加段落（`HARNESS_SECTIONS`）：資安攔截規則一律附加（使用者改不掉），其餘只在該工具有提供時附加。API `GET/PUT/DELETE /api/chat/system-prompt`（上限 8,000 字）；工具列「System Prompt」按鈕開編輯視窗，可看唯讀的 Harness 段落、還原預設
 

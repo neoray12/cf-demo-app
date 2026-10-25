@@ -417,7 +417,9 @@
           "label": "無法分類，改用備選",
           "desc": "請求沒有可分類的文字，AI Gateway 不經路由器另選模型。"
         }
-      }
+      },
+      "models": "候選模型",
+      "noModelRestriction": "未限定模型（依候選 provider）"
     },
     "systemPrompt": {
       "button": "System Prompt",
@@ -442,6 +444,27 @@
       "errors": {
         "empty": "System Prompt 不能是空的",
         "too_long": "System Prompt 超過 {{max}} 字",
+        "unauthenticated": "請先登入",
+        "save": "儲存失敗，請再試一次"
+      }
+    },
+    "autoRouterModels": {
+      "button": "候選模型",
+      "title": "Auto Router 候選模型",
+      "description": "勾選 Auto Router 可以選用的模型（cf-aig-allowed-models），只影響你自己的帳號，下一則訊息開始生效。沒有自訂時使用 wrangler 的預設清單。",
+      "usingDefault": "目前使用 wrangler 預設",
+      "usingCustom": "目前使用你自訂的清單",
+      "count": "已選 {{n}} 個模型",
+      "signInToSave": "登入後才能儲存",
+      "selectAll": "全選可用",
+      "useDefault": "使用預設",
+      "save": "儲存",
+      "saved": "已儲存，下一則訊息開始生效",
+      "providerUnavailable": "此 gateway 沒有這個 provider 的金鑰或額度，無法選用",
+      "errors": {
+        "empty": "至少要選一個模型",
+        "unknown_model": "未知的模型：{{models}}",
+        "unavailable_provider": "這些模型的 provider 無法使用：{{models}}",
         "unauthenticated": "請先登入",
         "save": "儲存失敗，請再試一次"
       }

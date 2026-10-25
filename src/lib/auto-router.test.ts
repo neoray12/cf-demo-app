@@ -10,13 +10,14 @@ describe('parseRoutingHeaders', () => {
       'cf-aig-request-id': '01a1714b-2afd-7451-bf1a-00844a1dc6e9',
       'cf-aig-log-id': '01a1714b-2afd-7451-bf1a-00844a1dc6e9',
     });
-    expect(parseRoutingHeaders(h, 'anthropic, workers-ai')).toEqual({
+    expect(parseRoutingHeaders(h, 'anthropic, workers-ai', ['anthropic/claude-haiku-5.5', '@cf/openai/gpt-oss-20b'])).toEqual({
       model: 'anthropic/claude-haiku-5.5',
       reason: 'cost_optimal_within_pool',
       decisionId: 'df8f2827-9394-4e59-aaa2-df3d588bd989',
       requestId: '01a1714b-2afd-7451-bf1a-00844a1dc6e9',
       logId: '01a1714b-2afd-7451-bf1a-00844a1dc6e9',
       allowedProviders: ['anthropic', 'workers-ai'],
+      allowedModels: ['anthropic/claude-haiku-5.5', '@cf/openai/gpt-oss-20b'],
     });
   });
 
@@ -32,6 +33,7 @@ describe('parseRoutingHeaders', () => {
       requestId: null,
       logId: null,
       allowedProviders: null,
+      allowedModels: null,
     });
   });
 });
