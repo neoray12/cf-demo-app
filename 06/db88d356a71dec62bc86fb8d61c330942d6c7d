@@ -1,0 +1,81 @@
+src/lib/chat-turn.test.ts
+  s_35f257df545d16::t_4b527645c4038b 1-67
+src/app/(dashboard)/layout.tsx
+  s_35f257df545d16::t_3fec4fb3dd9715 17-18,20-39
+src/i18n/zh-TW.json
+  s_35f257df545d16::t_7009456e57aafb 33-34,326-355
+src/app/api/auth/me/route.ts
+  s_35f257df545d16::t_9de2a95f74d833 1-10
+docs/superpowers/specs/2026-10-25-main-chat-tracing-history-design.md
+  s_35f257df545d16::t_6924afff857a16 1-100
+src/lib/auth.test.ts
+  s_35f257df545d16::t_aae36f0a6b6f58 1-119
+src/app/components/app-sidebar.tsx
+  s_35f257df545d16::t_074d91eaf1485c 125,127-128
+src/app/pages/login.tsx
+  s_35f257df545d16::t_ced495a6f31344 15-16
+wrangler.toml
+  s_35f257df545d16::t_88afcae0db712f 39-50,69-70,82-86
+wrangler.dev.toml
+  s_35f257df545d16::t_31ec15b6ee667a 22-32
+src/app/api/chat/route.ts
+  s_35f257df545d16::t_995d7b81f3d94c 2,4-6,125,139,141-142,145-151,195,199,207-208,219-222,227-228,232-241,345,462-550,570-572,579-582,585,595-596,661,665,754,787-789,792,817-819,826-829,834-835,858,864-869,873-890,1008,1011-1015
+src/lib/history-route.ts
+  s_35f257df545d16::t_b724c5d32515ac 1-16
+src/lib/auth.ts
+  s_35f257df545d16::t_a0447bf8137e9e 1-240
+src/i18n/en.json
+  s_35f257df545d16::t_e5f40a35b017a9 33-34,326-355
+src/app/api/chat/history/route.ts
+  s_35f257df545d16::t_6d9d2b9bd967b7 1-15
+src/lib/chat-history.test.ts
+  s_35f257df545d16::t_eec1ea4f2322a1 1-123
+src/app/api/auth/logout/route.ts
+  s_35f257df545d16::t_f3c96f62501bc5 1-6
+src/app/components/chat/history-panel.tsx
+  s_35f257df545d16::t_f1a820ef7d3473 1-209
+src/app/api/chat/history/[id]/route.ts
+  s_35f257df545d16::t_3137220a8a592b 1-43
+src/app/pages/chat.tsx
+  s_35f257df545d16::t_0934a4771c7205 18,32-34,1193-1196,1325-1326,1364-1366,1373-1374,1376,1397,1413-1415,1535-1537,1700,1704-1732,1860,1874-1885,2104-2132
+env.d.ts
+  s_35f257df545d16::t_ead43ebc794b12 12-13
+src/lib/chat-turn.ts
+  s_35f257df545d16::t_4cfc5e40643f1b 1-93
+agents.md
+  s_879fd140c4db7c::t_7e886f9d51e7d4 251
+  s_879fd140c4db7c::t_71635bab69bc14 248-250
+  s_35f257df545d16::t_e2296dc385f81a 50-54,232-247
+migrations/chat-history/0001_init.sql
+  s_35f257df545d16::t_66ba86d083bd8e 1-46
+src/lib/chat-history.ts
+  s_35f257df545d16::t_fe9cbeb8fdd059 1-501
+src/app/api/auth/login/route.ts
+  s_35f257df545d16::t_f945ade8de191d 2,17-24,41,46-51
+src/app/api/chat/history/asset/route.ts
+  s_35f257df545d16::t_060f2d77c377e1 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "06db88d356a71dec62bc86fb8d61c330942d6c7d",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_879fd140c4db7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad674571da1f307fe",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
