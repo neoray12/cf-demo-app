@@ -1,27 +1,16 @@
 'use client';
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Activity } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AGENT_MODELS, type ModelKey } from "@/lib/agents/models";
-import { waterfallRows, type SpanNode } from "@/lib/agents/trace-tree";
 import { cn } from "@/lib/utils";
 import { SpanDetail } from "./span-detail";
-import { compact, secs, serverNow, spanEnd, spanLabel, traceCounts, turnElapsed, useNow } from "./trace-utils";
+import { compact, secs, serverNow, spanLabel, traceCounts, turnElapsed, useNow } from "./trace-utils";
+import { TraceWaterfall } from "../trace/trace-waterfall";
 import { turnStatus, type AgentTurn } from "./use-agent-run";
-
-const BAR_COLORS: Record<SpanNode["kind"], string> = {
-  invoke_agent: "bg-violet-500/80 dark:bg-violet-400/80",
-  chat: "bg-sky-500/80 dark:bg-sky-400/80",
-  execute_tool: "bg-amber-500/80 dark:bg-amber-400/80",
-};
-const DOT_COLORS: Record<SpanNode["kind"], string> = {
-  invoke_agent: "bg-violet-500 dark:bg-violet-400",
-  chat: "bg-sky-500 dark:bg-sky-400",
-  execute_tool: "bg-amber-500 dark:bg-amber-400",
-};
 
 function Metric({ label, value, title }: { label: string; value: React.ReactNode; title?: string }) {
   return (
@@ -110,79 +99,15 @@ function Waterfall({
   onSelect: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const trace = turn.trace;
-  const rows = useMemo(() => (trace ? waterfallRows(trace) : []), [trace]);
-  if (!trace || rows.length === 0) return null;
-  const live = trace.status === "running";
-  const sNow = serverNow(turn, now);
-  const maxEnd = rows.reduce((m, r) => Math.max(m, spanEnd(r.node, sNow)), 0);
-  const scale = Math.max(1, live ? Math.max(sNow, maxEnd) : Math.max(trace.totalMs ?? 0, maxEnd));
-  const pct = (ms: number) => `${Math.min(100, Math.max(0, (ms / scale) * 100))}%`;
-
+  if (!turn.trace) return null;
   return (
-    <div className="flex flex-col">
-      <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>{t("agents.trace.clickHint")}</span>
-        <span className="tabular-nums">{secs(scale)}</span>
-      </div>
-      {rows.map(({ node, depth }) => {
-        const end = spanEnd(node, sNow);
-        const open = node.end === null;
-        const error = node.status === "error";
-        const ttftAt = node.kind === "chat" && node.ttftMs !== undefined ? node.start + node.ttftMs : undefined;
-        return (
-          <button
-            type="button"
-            key={node.id}
-            onClick={() => onSelect(node.id)}
-            className={cn(
-              "grid grid-cols-[minmax(0,42%)_1fr] items-center gap-2 rounded px-1 py-[3px] text-left text-[11px] hover:bg-muted/60",
-              selectedId === node.id && "bg-muted",
-            )}
-          >
-            <span className="flex min-w-0 items-center gap-1" style={{ paddingLeft: depth * 10 }}>
-              <span className={cn("size-1.5 shrink-0 rounded-full", error ? "bg-red-500" : DOT_COLORS[node.kind])} />
-              <span className={cn("truncate", error && "text-destructive")} title={`${node.kind} ${node.name}`}>
-                {spanLabel(node, t)}
-              </span>
-              <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{secs(end - node.start)}</span>
-            </span>
-            <span className="relative h-3.5 rounded-sm bg-muted/50">
-              <span
-                className={cn(
-                  "absolute top-0.5 bottom-0.5 rounded-sm",
-                  error ? "bg-red-500/80" : BAR_COLORS[node.kind],
-                  open && "animate-pulse",
-                )}
-                style={{ left: pct(node.start), width: `max(2px, ${pct(end - node.start)})` }}
-              />
-              {ttftAt !== undefined && (
-                <span
-                  className="absolute -bottom-1 -translate-x-1/2 text-[8px] leading-none text-foreground"
-                  style={{ left: pct(ttftAt) }}
-                  title={`${t("agents.trace.chatTtft")} ${secs(node.ttftMs, 2)}`}
-                >
-                  ▲
-                </span>
-              )}
-            </span>
-          </button>
-        );
-      })}
-      <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
-        {(["invoke_agent", "chat", "execute_tool"] as const).map((k) => (
-          <span key={k} className="inline-flex items-center gap-1">
-            <span className={cn("inline-block h-2 w-3 rounded-sm", BAR_COLORS[k])} />
-            {t(k === "invoke_agent" ? "agents.trace.legendAgent" : k === "chat" ? "agents.trace.legendChat" : "agents.trace.legendTool")}
-          </span>
-        ))}
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2 w-3 rounded-sm bg-red-500/80" />
-          {t("agents.trace.legendError")}
-        </span>
-        <span className="inline-flex items-center gap-1">▲ {t("agents.trace.chatTtft")}</span>
-      </div>
-    </div>
+    <TraceWaterfall
+      trace={turn.trace}
+      sNow={serverNow(turn, now)}
+      selectedId={selectedId}
+      onSelect={onSelect}
+      label={(node) => spanLabel(node, t)}
+    />
   );
 }
 

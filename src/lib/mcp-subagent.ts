@@ -7,7 +7,7 @@ import { runSubagent, toolSpanId, errorMessage, type RunContext, type SubagentDe
 import { delegateToolName } from './tool-policy';
 import type { McpServerConfig } from './mcp-client';
 
-export type DelegateResult = { result: string; blocked?: boolean; [k: string]: unknown } | { error: string };
+export type DelegateResult = { result: string; codeMode: boolean; blocked?: boolean; [k: string]: unknown } | { error: string };
 
 const SUBAGENT_MAX_STEPS = 8;
 
@@ -71,7 +71,7 @@ export function buildDelegateTool(args: {
         }
         const def = subagentDef(server, tools, loaded.catalogPrompt, codeMode);
         const { text } = await run(def, { task }, ctx, toolSpanId(parentSpanId, options.toolCallId), 0);
-        return block ? { ...(block as object), result: text, blocked: true } : { result: text };
+        return block ? { ...(block as object), result: text, blocked: true, codeMode } : { result: text, codeMode };
       } catch (err) {
         return { error: errorMessage(err) };
       }

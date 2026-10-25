@@ -20,9 +20,6 @@ import {
 import { GUARDRAIL_SCENARIOS } from "@/lib/mcp-guardrails";
 
 export interface SuggestionSendOpts {
-  tools?: boolean;
-  /** true/false sets the app's Code Mode toggle; undefined leaves it alone. */
-  codeMode?: boolean;
   /** MCP server that must be connected; the turn is sent with only this server. */
   mcp?: string;
 }
@@ -154,7 +151,7 @@ export function SuggestionCategories({
     {
       id: "sandbox",
       icon: Terminal,
-      opts: { tools: true },
+      opts: {},
       items: [
         { title: t("chat.sandboxSuggestions.factorial.title"), desc: t("chat.sandboxSuggestions.factorial.prompt"), icon: Terminal },
         { title: t("chat.sandboxSuggestions.fibonacci.title"), desc: t("chat.sandboxSuggestions.fibonacci.prompt"), icon: Terminal },
@@ -164,7 +161,7 @@ export function SuggestionCategories({
     {
       id: "dw",
       icon: Zap,
-      opts: { tools: true },
+      opts: {},
       items: [
         { title: t("chat.dwSuggestions.speed.title"), desc: t("chat.dwSuggestions.speed.prompt"), icon: Zap },
         { title: t("chat.dwSuggestions.compare.title"), desc: t("chat.dwSuggestions.compare.prompt"), icon: Zap },
@@ -172,25 +169,9 @@ export function SuggestionCategories({
       ],
     },
     {
-      // Same questions run through the app's own Code Mode (all Salesforce
-      // tools wrapped in one JS sandbox) and through the MCP Portal's Code
-      // Mode (portal exposes only search/execute). The app toggle must be off
-      // for the Portal variant, otherwise the code execution would be nested.
-      id: "codemode",
-      icon: Braces,
-      opts: { tools: true },
-      items: [
-        { title: t("chat.codeModeSuggestions.appList.title"), desc: t("chat.codeModeSuggestions.list"), icon: Braces, opts: { tools: true, codeMode: true, mcp: "saas" } },
-        { title: t("chat.codeModeSuggestions.appAgg.title"), desc: t("chat.codeModeSuggestions.agg"), icon: Braces, opts: { tools: true, codeMode: true, mcp: "saas" } },
-        { title: t("chat.codeModeSuggestions.appCases.title"), desc: t("chat.codeModeSuggestions.cases"), icon: Braces, opts: { tools: true, codeMode: true, mcp: "saas" } },
-        { title: t("chat.codeModeSuggestions.portalAgg.title"), desc: t("chat.codeModeSuggestions.agg"), icon: Braces, opts: { tools: true, codeMode: false, mcp: "saas-cm" } },
-        { title: t("chat.codeModeSuggestions.portalCompare.title"), desc: t("chat.codeModeSuggestions.compare"), icon: Braces, opts: { tools: true, codeMode: false, mcp: "saas-cm" } },
-      ],
-    },
-    {
       id: "browser",
       icon: Globe,
-      opts: { tools: true },
+      opts: {},
       items: [
         { title: t("chat.browserSuggestions.screenshot.title"), desc: t("chat.browserSuggestions.screenshot.prompt"), icon: Camera },
         { title: t("chat.browserSuggestions.summarize.title"), desc: t("chat.browserSuggestions.summarize.prompt"), icon: BookOpen },
@@ -212,7 +193,7 @@ export function SuggestionCategories({
     {
       id: "guardrails",
       icon: ShieldCheck,
-      opts: { tools: true, mcp: "saas" },
+      opts: { mcp: "saas" },
       items: [
         ...GUARDRAIL_SCENARIOS.map((s) => ({ title: t(s.titleKey), desc: t(s.blockPromptKey), icon: ShieldCheck })),
         ...(s2?.resetPromptKey

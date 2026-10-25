@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { Check, Loader2, ShieldAlert, X, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { buildTimeline, type TimelineEvent, type TimelineStep } from "@/lib/chat-timeline";
+import type { RunTrace, SpanNode } from "@/lib/agents/trace-tree";
+import { formatSummary, summarizeTrace } from "@/lib/trace-summary";
+import { TraceWaterfall } from "../trace/trace-waterfall";
+import { SpanDetail } from "../agents/span-detail";
 
 export interface ChatTimeline {
   events: TimelineEvent[];
@@ -21,13 +25,19 @@ export function ProcessTimeline({
   timeline,
   streaming,
   toolLabel,
+  trace,
+  spanLabel,
 }: {
   timeline: ChatTimeline;
   streaming: boolean;
   toolLabel: (name: string) => string;
+  /** Span tree of the turn; when present the finished summary and details come from it. */
+  trace?: RunTrace | null;
+  spanLabel?: (node: SpanNode) => string;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [selectedSpan, setSelectedSpan] = useState<string | null>(null);
   const live = streaming && timeline.endAt === null;
 
   // Re-render once a second while live so running steps tick.
@@ -39,7 +49,7 @@ export function ProcessTimeline({
   }, [live]);
 
   const lastEventAt = timeline.events.length ? timeline.events[timeline.events.length - 1]!.t : 0;
-  if (!live && timeline.events.length === 0) return null;
+  if (!live && timeline.events.length === 0 && !trace) return null;
 
   // An interrupted turn may never have recorded endAt — close it at its last event.
   const endAt = live ? null : (timeline.endAt ?? lastEventAt);
@@ -83,6 +93,36 @@ export function ProcessTimeline({
           <span>{t("chat.timeline.processing", { s: Math.floor(now / 1000) })}</span>
         </div>
         <div className="mt-1 ml-[18px] flex flex-wrap items-center gap-x-3 gap-y-1">{steps.map(stepItem)}</div>
+      </div>
+    );
+  }
+
+  if (trace && trace.status !== "running") {
+    const summary = formatSummary(summarizeTrace(trace), i18n.language === "en" ? "en" : "zh-TW");
+    const selectedNode = selectedSpan ? trace.spans[selectedSpan] : undefined;
+    const end = trace.totalMs ?? 0;
+    return (
+      <div className="mt-1 text-xs text-muted-foreground">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="inline-flex items-center gap-1.5 px-2 py-1 -ml-2 rounded-lg hover:bg-muted/60 transition-colors cursor-pointer text-left"
+        >
+          <ChevronRight className={`size-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+          <span className="tabular-nums">{summary}</span>
+        </button>
+        {expanded && (
+          <div className="mt-2 ml-1 flex max-w-2xl flex-col gap-2 rounded-lg border bg-card/50 p-2">
+            <TraceWaterfall
+              trace={trace}
+              sNow={end}
+              selectedId={selectedSpan}
+              onSelect={setSelectedSpan}
+              label={(node) => (spanLabel ? spanLabel(node) : node.name)}
+            />
+            {selectedNode && <SpanDetail node={selectedNode} now={end} onClose={() => setSelectedSpan(null)} />}
+          </div>
+        )}
       </div>
     );
   }

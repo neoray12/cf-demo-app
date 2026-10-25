@@ -25,6 +25,9 @@ import { SuggestionCategories, type SuggestionSendOpts } from "../components/cha
 import { applyChatEvent, createTurnState, type MessagePart, type ToolCallInfo } from "@/lib/chat-turn";
 import type { HistoryTurn } from "@/lib/chat-history";
 import { HistoryPanel } from "../components/chat/history-panel";
+import { SubagentCard } from "../components/chat/subagent-card";
+import type { RunTrace, SpanNode } from "@/lib/agents/trace-tree";
+import { MAIN_ROOT_SPAN } from "@/lib/trace-summary";
 import type { GatewayBlock } from "@/lib/mcp-guardrails";
 
 // ── Types ──
@@ -44,6 +47,8 @@ interface ChatMessage {
   notices?: string[];
   /** Per-turn processing timeline — front-end only, never sent to the server. */
   timeline?: ChatTimeline;
+  /** Span tree of the turn (model calls, tools, subagents with time and tokens). */
+  trace?: RunTrace | null;
 }
 
 interface PendingImage {
@@ -164,6 +169,41 @@ function friendlyToolName(rawName: string, t: TFunc): string {
   const mcp = parseMcpToolName(rawName, t);
   if (mcp) return mcp.toolLabel;
   return rawName.replace(/_/g, " ");
+}
+
+/** Server label of a delegate tool `ask_<serverId>`, or null for any other tool. */
+function delegateServerLabel(rawName: string): string | null {
+  const m = rawName.match(/^ask_(.+)$/);
+  return m ? (MCP_SERVER_LABELS[m[1]!] ?? m[1]!) : null;
+}
+
+function modelLabel(compatId: string): string {
+  const model = AI_MODELS.find((m) => compatId.endsWith(m.workersAiModel ?? m.providerModelId ?? "\0"));
+  return model?.name ?? compatId;
+}
+
+/** Waterfall row label for a main-chat span. */
+function chatSpanLabel(node: SpanNode, t: TFunc): string {
+  if (node.kind === "chat") return modelLabel(node.name.replace(/^chat /, ""));
+  if (node.kind === "invoke_agent") {
+    if (node.name === "main-chat") return t("chat.trace.mainAgent");
+    const server = node.name.replace(/-agent$/, "");
+    return t("chat.subagent.title", { server: MCP_SERVER_LABELS[server] ?? server });
+  }
+  const step = node.name.match(/^(mcp\.connect|mcp\.tools|sandbox\.warmup|sandbox\.upload|history\.save)(?::([^#]+))?(#codemode)?$/);
+  if (step) {
+    const server = step[2] ? (MCP_SERVER_LABELS[step[2]] ?? step[2]) : "";
+    return t(`chat.trace.step.${step[1]!.replace(".", "_")}`, { server }) + (step[3] ? " · Code Mode" : "");
+  }
+  const delegate = delegateServerLabel(node.name);
+  if (delegate) return t("chat.subagent.ask", { server: delegate });
+  return mcpToolDisplayName(node.name, t) ?? friendlyToolName(node.name, t);
+}
+
+/** Duration of a main-chat tool call from the span tree, once it finished. */
+function toolDurationMs(trace: RunTrace | null | undefined, toolCallId: string): number | undefined {
+  const node = trace?.spans[`${MAIN_ROOT_SPAN}/${toolCallId}`];
+  return node && node.end !== null ? node.end - node.start : undefined;
 }
 
 let msgCounter = 0;
@@ -638,7 +678,7 @@ function KnowledgeResultsDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
 
 // ── Tool Call Display ──
 
-function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+function ToolCallDisplay({ toolCall, durationMs }: { toolCall: ToolCallInfo; durationMs?: number }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const mcp = parseMcpToolName(toolCall.name, t);
@@ -680,6 +720,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           </>
         )}
         {isFailed && <span className="font-medium">· {t("chat.tool.failed")}</span>}
+        {durationMs !== undefined && <span className="tabular-nums opacity-70">· {(durationMs / 1000).toFixed(1)}s</span>}
         {isCalling && (
           <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
         )}
@@ -790,14 +831,23 @@ function AssistantMessage({
   // fallback for messages that never got parts (e.g. "stopped" notices).
   const showContentFallback = Boolean(renderedContent) && !hasTextPart;
   const toolLabel = (name: string) => mcpToolDisplayName(name, t) ?? friendlyToolName(name, t);
+  const sNow = message.timeline ? performance.now() - message.timeline.startedAt : 0;
+  const renderTool = (tc: ToolCallInfo, key: string) => {
+    const server = delegateServerLabel(tc.name);
+    if (server) {
+      const block = tc.result as (GatewayBlock & { source: string; tool: string }) | undefined;
+      return (
+        <div key={key}>
+          <SubagentCard toolCall={tc} trace={message.trace} serverLabel={server} toolLabel={toolLabel} sNow={sNow} />
+          {block?.blocked === true && <GatewayBlockCard block={block} label={server} />}
+        </div>
+      );
+    }
+    return <ToolCallDisplay key={key} toolCall={tc} durationMs={toolDurationMs(message.trace, tc.id)} />;
+  };
 
   return (
     <div className="max-w-full">
-      {message.notices?.includes("portal-codemode") && (
-        <div className="mb-1.5 text-[11px] text-amber-700 dark:text-amber-400">
-          {t("chat.notices.portalCodeMode")}
-        </div>
-      )}
       {message.routedModel && (
         <div className="mb-1.5">
           <span
@@ -813,7 +863,7 @@ function AssistantMessage({
       {parts.length === 0 && (
         <>
           {message.reasoning && <ReasoningDisplay text={message.reasoning} />}
-          {message.toolCalls?.map((tc) => <ToolCallDisplay key={tc.id} toolCall={tc} />)}
+          {message.toolCalls?.map((tc) => renderTool(tc, tc.id))}
         </>
       )}
 
@@ -821,7 +871,7 @@ function AssistantMessage({
         if (part.type === "reasoning") return part.text ? <ReasoningDisplay key={`r${i}`} text={part.text} /> : null;
         if (part.type === "tool") {
           const tc = toolById.get(part.id);
-          return tc ? <ToolCallDisplay key={`t${part.id}`} toolCall={tc} /> : null;
+          return tc ? renderTool(tc, `t${part.id}`) : null;
         }
         if (!part.text) return null;
         const isLastPart = i === parts.length - 1;
@@ -854,7 +904,13 @@ function AssistantMessage({
       )}
 
       {message.timeline && (
-        <ProcessTimeline timeline={message.timeline} streaming={isStreaming} toolLabel={toolLabel} />
+        <ProcessTimeline
+          timeline={message.timeline}
+          streaming={isStreaming}
+          toolLabel={toolLabel}
+          trace={message.trace}
+          spanLabel={(node) => chatSpanLabel(node, t)}
+        />
       )}
 
       {!isStreaming && message.content && !isError && (
@@ -1052,18 +1108,6 @@ export function ChatPage() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_ID);
-  const [toolsEnabled, setToolsEnabled] = useState(false);
-  // Mirror of toolsEnabled that is writable *synchronously*. Suggestion cards
-  // turn tools on and send in the same tick, when the closure still holds the
-  // old `false` — the request then went out without tools and the model did the
-  // arithmetic in its head, with no sandbox call shown.
-  const toolsEnabledRef = useRef(false);
-  useEffect(() => { toolsEnabledRef.current = toolsEnabled; }, [toolsEnabled]);
-  const [codeModeEnabled, setCodeModeEnabled] = useState(false);
-  // Same synchronous-mirror trick as toolsEnabledRef: a Code Mode suggestion
-  // flips the toggle and sends in the same tick.
-  const codeModeEnabledRef = useRef(false);
-  useEffect(() => { codeModeEnabledRef.current = codeModeEnabled; }, [codeModeEnabled]);
   // MCP servers for the current turn when a suggestion pins them (e.g. only the
   // Portal Code Mode connection), so the model doesn't also see the other
   // connected servers' tools. null = every connected server.
@@ -1216,9 +1260,7 @@ export function ChatPage() {
           messages: debugReqMsgs,
           model: modelId,
           provider,
-          toolsEnabled: toolsEnabledRef.current,
           images,
-          codeMode: codeModeEnabledRef.current,
           conversationId: conversationIdRef.current,
           // Earlier user turns; a resend of the same turn overwrites it in history.
           turnIndex: Math.max(allMessages.filter((m) => m.role === "user").length - 1, 0),
@@ -1268,10 +1310,10 @@ export function ChatPage() {
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
       const flushUpdate = (endAt: number | null = null) => {
         flushTimer = null;
-        const { content, reasoning, toolCalls, parts, routedModel, notices, events } = turn;
+        const { content, reasoning, toolCalls, parts, routedModel, notices, events, trace } = turn;
         const timeline = { events, endAt, startedAt: t0 };
         setMessages((prev) =>
-          prev.map((m) => m.id === assistantMsgId ? { ...m, content, reasoning, toolCalls, parts, routedModel, notices, timeline } : m)
+          prev.map((m) => m.id === assistantMsgId ? { ...m, content, reasoning, toolCalls, parts, routedModel, notices, timeline, trace } : m)
         );
       };
       const scheduleFlush = () => {
@@ -1295,8 +1337,18 @@ export function ChatPage() {
               turn = applyChatEvent(turn, event, now());
               switch (event.type) {
                 case "text-delta":
-                  if (!debugFirstToken) debugFirstToken = Date.now() - debugStart;
-                  gotTextContent = true;
+                  // Deltas with a spanId are a subagent's progress, not the answer.
+                  if (!event.spanId) {
+                    if (!debugFirstToken) debugFirstToken = Date.now() - debugStart;
+                    gotTextContent = true;
+                  }
+                  scheduleFlush();
+                  break;
+                case "run-start":
+                case "span-start":
+                case "span-input":
+                case "span-end":
+                case "run-end":
                   scheduleFlush();
                   break;
                 case "reasoning-delta":
@@ -1443,7 +1495,7 @@ export function ChatPage() {
         toolCallNames: debugToolNames,
       });
     }
-  }, [selectedModel, toolsEnabled, codeModeEnabled, connectedMcpServers]);
+  }, [selectedModel, connectedMcpServers]);
 
   const handleSend = useCallback(async (text: string, mcpServers?: string[]) => {
     const images = pendingImages;
@@ -1630,23 +1682,12 @@ export function ChatPage() {
 
   const hasMessages = messages.length > 0;
 
-  // Suggestion cards: tool demos need tools enabled to actually invoke
-  // executeCode / createWebPreview / MCP tools. Write the ref synchronously —
-  // setToolsEnabled alone would still send the stale value this tick.
+  // Suggestion cards: the harness picks the tools; a card only pins which MCP
+  // server the turn needs.
   const handleSuggestion = (prompt: string, opts: SuggestionSendOpts) => {
-    // Show the example's settings right away, even if it can't be sent yet.
-    if (opts.tools) {
-      toolsEnabledRef.current = true;
-      setToolsEnabled(true);
-    }
-    if (opts.codeMode !== undefined) {
-      codeModeEnabledRef.current = opts.codeMode;
-      setCodeModeEnabled(opts.codeMode);
-    }
     if (opts.mcp && !connectedMcpServers.includes(opts.mcp)) {
       // Its MCP server isn't connected: fill the input instead of sending.
-      // Sending this exact prompt later re-runs this check, so it can't go out
-      // with the wrong server (e.g. App Code Mode wrapping the Portal's).
+      // Sending this exact prompt later re-runs this check.
       pendingSuggestionRef.current = { prompt, opts };
       setMcpConnectHint(opts.mcp);
       setInput(prompt);
@@ -1715,36 +1756,6 @@ export function ChatPage() {
               </button>
             )}
             <ModelSelector selectedModel={selectedModel} onModelChange={setSelectedModel} />
-            <button
-              onClick={() => setToolsEnabled((v) => !v)}
-              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
-                toolsEnabled
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted/60"
-              }`}
-              title={toolsEnabled ? "工具已啟用 (AI Search / 瀏覽器 / Sandbox / MCP)" : "啟用工具 (AI Search / 瀏覽器 / Sandbox / MCP)"}
-            >
-              <Zap className="size-3.5" />
-              <span className="hidden md:inline">工具</span>
-            </button>
-            <button
-              onClick={() => {
-                setCodeModeEnabled((v) => {
-                  const next = !v;
-                  if (next) setToolsEnabled(true);
-                  return next;
-                });
-              }}
-              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
-                codeModeEnabled
-                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                  : "text-muted-foreground hover:bg-muted/60"
-              }`}
-              title={t("chat.tool.codeModeTooltip")}
-            >
-              <Braces className="size-3.5" />
-              <span className="hidden md:inline">Code Mode</span>
-            </button>
             <button
               onClick={() => setShowMcpPanel((v) => !v)}
               className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${

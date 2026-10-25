@@ -344,9 +344,7 @@
       "result": "Result",
       "toolCount": "{{count}} tools"
     },
-    "notices": {
-      "portalCodeMode": "Portal Code Mode is connected: the Portal runs the code this turn, so the app's Code Mode is paused (no nested Code Mode)"
-    },
+    "notices": {},
     "prompts": {
       "title": "MCP prompts",
       "noServers": "Connect a server in the MCP panel to use prompts",
@@ -358,6 +356,22 @@
       "argCount": "{{count}} args",
       "filled": "Filled {{count}} characters — edit before sending.",
       "skipped": "Skipped {{count}} non-text item(s)."
+    },
+    "subagent": {
+      "title": "{{server}} subagent",
+      "ask": "Ask the {{server}} subagent",
+      "directTools": "Direct tools",
+      "stats": "{{s}} s · {{calls}} model calls · {{input}} in / {{output}} out tokens"
+    },
+    "trace": {
+      "mainAgent": "AI Agent",
+      "step": {
+        "mcp_connect": "Connect {{server}}",
+        "mcp_tools": "Load {{server}} tools",
+        "sandbox_warmup": "Warm up the sandbox",
+        "sandbox_upload": "Upload attachment to the sandbox",
+        "history_save": "Save chat history"
+      }
     }
   },
   "crawler": {

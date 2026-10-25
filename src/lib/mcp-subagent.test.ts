@@ -43,7 +43,7 @@ describe('buildDelegateTool', () => {
       loadTools: async () => ({ tools: { close: blockedTool }, catalogPrompt: '' }),
     });
     const out = await tool.execute!({ task: 'close the deal' }, { toolCallId: 't1', messages: [] });
-    expect(out).toMatchObject({ result: 'The close action was blocked.', blocked: true, ruleId: 'rule-1' });
+    expect(out).toMatchObject({ result: 'The close action was blocked.', blocked: true, ruleId: 'rule-1', codeMode: false });
   });
 
   it('returns the error instead of throwing when the subagent fails', async () => {
@@ -62,7 +62,7 @@ describe('buildDelegateTool', () => {
       run: async (_def, _input, _ctx, parentSpanId) => { parents.push(parentSpanId); return { text: 'ok' }; },
       loadTools: async () => ({ tools: {}, catalogPrompt: '' }),
     });
-    await tool.execute!({ task: 'x' }, { toolCallId: 'c9', messages: [] });
+    expect(await tool.execute!({ task: 'x' }, { toolCallId: 'c9', messages: [] })).toEqual({ result: 'ok', codeMode: false });
     expect(parents).toEqual(['main/c9']);
   });
 });

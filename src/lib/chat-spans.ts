@@ -3,8 +3,9 @@
 // Subagents emit their own spans through the agents runtime under these tools.
 import { toolSpanId } from './agents/runtime';
 import type { TraceEvent } from './agents/trace-events';
+import { MAIN_ROOT_SPAN } from './trace-summary';
 
-export const MAIN_ROOT_SPAN = 'main';
+export { MAIN_ROOT_SPAN };
 
 export interface GatewayInfo {
   logId: string | null;
