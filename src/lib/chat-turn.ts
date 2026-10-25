@@ -2,6 +2,8 @@
 // page (live streaming) and the server-side TurnRecorder (history), so a
 // conversation restored from history renders exactly as it streamed.
 import type { TimelineEvent } from './chat-timeline';
+import { reduceTrace, type RunTrace } from './agents/trace-tree';
+import type { TraceEvent } from './agents/trace-events';
 
 export interface ToolCallInfo {
   id: string;
@@ -27,12 +29,14 @@ export interface TurnState {
   notices: string[];
   /** Timestamped steps (ms since the turn started) for the processing timeline. */
   events: TimelineEvent[];
+  /** Span tree (model calls, tools, subagents with time and tokens); null for turns from before span events. */
+  trace: RunTrace | null;
 }
 
 export type ChatStreamEvent = { type: string; [key: string]: any };
 
 export function createTurnState(): TurnState {
-  return { content: '', reasoning: '', toolCalls: [], parts: [], notices: [], events: [] };
+  return { content: '', reasoning: '', toolCalls: [], parts: [], notices: [], events: [], trace: null };
 }
 
 function appendPart(parts: MessagePart[], type: 'text' | 'reasoning', text: string): MessagePart[] {
@@ -56,8 +60,16 @@ function updateTool(s: TurnState, id: string, patch: Partial<ToolCallInfo>): Tur
   return { ...s, toolCalls: s.toolCalls.map((tc) => (tc.id === id ? { ...tc, ...patch } : tc)) };
 }
 
+const SPAN_EVENTS = new Set(['run-start', 'span-start', 'span-end', 'span-input', 'run-end', 'citation', 'chart']);
+
 /** Apply one stream event at `t` ms into the turn. Unknown events return the state unchanged. */
 export function applyChatEvent(s: TurnState, ev: ChatStreamEvent, t: number): TurnState {
+  if (SPAN_EVENTS.has(ev.type)) return { ...s, trace: reduceTrace(s.trace, ev as TraceEvent) };
+  // Deltas tagged with a span are a subagent's live output: they belong to its
+  // span (shown on its card), never to the answer.
+  if ((ev.type === 'text-delta' || ev.type === 'reasoning-delta') && typeof ev.spanId === 'string') {
+    return s.trace ? { ...s, trace: reduceTrace(s.trace, ev as TraceEvent) } : s;
+  }
   switch (ev.type) {
     case 'text-delta':
     case 'reasoning-delta': {

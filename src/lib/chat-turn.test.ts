@@ -65,3 +65,34 @@ describe('applyChatEvent', () => {
     expect(s.events).toEqual([]);
   });
 });
+
+describe('applyChatEvent with span events', () => {
+  it('keeps subagent deltas (with spanId) out of the answer', () => {
+    const s = fold([
+      [0, { type: 'run-start', runId: 'main', agent: 'main-chat', model: 'm', t: 0 }],
+      [0, { type: 'span-start', id: 'main', kind: 'invoke_agent', name: 'main-chat', t: 0 }],
+      [5, { type: 'text-delta', spanId: 'main/c1:saas-agent:0:chat:0', text: 'subagent thinking aloud' }],
+      [6, { type: 'reasoning-delta', spanId: 'main/c1:saas-agent:0:chat:0', text: 'hmm' }],
+      [9, { type: 'text-delta', text: 'Answer' }],
+    ]);
+    expect(s.content).toBe('Answer');
+    expect(s.reasoning).toBe('');
+    expect(s.parts).toEqual([{ type: 'text', text: 'Answer' }]);
+  });
+
+  it('builds the span tree from span events', () => {
+    const s = fold([
+      [0, { type: 'run-start', runId: 'main', agent: 'main-chat', model: 'm', t: 0 }],
+      [0, { type: 'span-start', id: 'main', kind: 'invoke_agent', name: 'main-chat', t: 0 }],
+      [1, { type: 'span-start', id: 'main/step-1', parentId: 'main', kind: 'chat', name: 'chat m', t: 1 }],
+      [9, { type: 'span-end', id: 'main/step-1', t: 9, status: 'ok', usage: { input: 10, output: 2 } }],
+    ]);
+    expect(s.trace?.spans['main/step-1']).toMatchObject({ end: 9, usage: { input: 10, output: 2 } });
+    expect(s.trace?.rootIds).toEqual(['main']);
+  });
+
+  it('has no trace for a turn recorded before span events existed', () => {
+    const s = fold([[1, { type: 'text-delta', text: 'old answer' }]]);
+    expect(s.trace).toBeNull();
+  });
+});
