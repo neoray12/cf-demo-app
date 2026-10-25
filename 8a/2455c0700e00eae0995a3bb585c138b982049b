@@ -1,0 +1,33 @@
+src/app/api/chat/route.ts
+  s_35f257df545d16::t_aec6a48ee34a65 11,404-418,599-605,608-609,726,971-972
+src/app/pages/chat.tsx
+  s_35f257df545d16::t_910eba06e3a224 1471,1523,1529,1551-1555,1745-1747
+src/lib/chat-history.test.ts
+  s_35f257df545d16::t_ea341634b3bb26 10,149-173
+src/lib/chat-history.ts
+  s_35f257df545d16::t_76bbc8a59b0229 267-269,274-275,282,308-310,330-337
+src/lib/mcp-subagent.test.ts
+  s_35f257df545d16::t_b21bf26df46b68 69-84
+src/lib/mcp-subagent.ts
+  s_35f257df545d16::t_4bfc0f33287d6d 73-75
+src/lib/idle-guard.test.ts
+  s_35f257df545d16::t_13ab1ec449750c 1-52
+src/lib/idle-guard.ts
+  s_35f257df545d16::t_8309b4a89f765c 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8a2455c0700e00eae0995a3bb585c138b982049b",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
