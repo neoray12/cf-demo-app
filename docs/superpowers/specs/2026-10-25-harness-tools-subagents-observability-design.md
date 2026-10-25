@@ -165,6 +165,12 @@ NDJSON：現有事件 + span 事件 ──► 前端答案 reducer / span 樹 / 
 2. 量核心工具定義的 token 數，確認主模型每輪的固定成本。
 3. 確認 `CF_API_TOKEN` 有沒有 AI Gateway Logs 讀取權限（決定費用能不能顯示）。
 
+## 實測結果（2026-10-25）
+
+- 核心工具（6 個）的定義 JSON 約 1,994 字元（含中文描述，約 0.5–1.5k tokens），固定成本小。
+- `CF_API_TOKEN` 呼叫 AI Gateway Logs API 回 200：之後可以用 `cf-aig-log-id` 查實際費用。
+- `saas` 工具數與 `?codemode=` 是否能沿用同一個 OAuth token：需使用者在瀏覽器完成 OAuth 後再測（實作 Task 6 前）。
+
 ## 待確認（請在 review 時決定）
 
 1. **小型 MCP 門檻**：`MCP_DIRECT_MAX = 8`，超過就走 subagent。Radar、Workers Observability 工具數待實測，可能也會變成 subagent。
