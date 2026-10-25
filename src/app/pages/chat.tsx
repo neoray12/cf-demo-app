@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Database, Route, History } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Database, Route, PanelLeftOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
@@ -75,6 +75,9 @@ const MAX_IMAGES = 4;
 
 // Only these accept image input. Pasting a screenshot while a text-only model
 // is selected would otherwise fail deep in the provider with an opaque error.
+// "0" when the user collapsed the history column; anything else = open.
+const HISTORY_OPEN_KEY = "cf-demo-history-open";
+
 const VISION_MODEL_IDS = new Set([
   "cf-auto",
   "claude-sonnet-5-5",
@@ -1075,7 +1078,19 @@ export function ChatPage() {
     error: null,
   });
   const [showMcpPanel, setShowMcpPanel] = useState(false);
-  const [showHistoryPanel, setShowHistoryPanel] = useState(false);
+  // ChatGPT-style history column on the left: open by default on desktop
+  // (remembered per browser), a slide-over sheet on mobile.
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(HISTORY_OPEN_KEY) === "0") setHistoryOpen(false);
+    } catch {}
+  }, []);
+  const toggleHistory = useCallback((open: boolean) => {
+    setHistoryOpen(open);
+    try { localStorage.setItem(HISTORY_OPEN_KEY, open ? "1" : "0"); } catch {}
+  }, []);
   // Bumped after each turn so an open history panel picks up the saved turn.
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [activeConversationId, setActiveConversationId] = useState("");
@@ -1589,7 +1604,7 @@ export function ChatPage() {
   // continue it under the same conversation id (history + tracing session).
   const openConversation = useCallback(async (id: string) => {
     if (isLoading) handleStop();
-    if (isMobile) setShowHistoryPanel(false);
+    if (isMobile) setMobileHistoryOpen(false);
     try {
       const res = await fetch(`/api/chat/history/${encodeURIComponent(id)}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1662,12 +1677,36 @@ export function ChatPage() {
 
   return (
     <div className="flex h-[calc(100svh-3.5rem)] overflow-hidden">
+      {/* ── History: left column (desktop) ── */}
+      {historyOpen && !isMobile && (
+        <div className="w-64 shrink-0">
+          <HistoryPanel
+            onClose={() => toggleHistory(false)}
+            onNewChat={handleNewChat}
+            activeId={activeConversationId}
+            onOpen={openConversation}
+            onDeleted={handleNewChat}
+            refreshKey={historyRefreshKey}
+          />
+        </div>
+      )}
+
       {/* ── Chat area ── */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* ── Header ── */}
-        <div className="flex shrink-0 py-2.5 px-3 md:px-4">
+        <div className="flex shrink-0 py-2.5 px-3 md:px-4 relative">
+          {(isMobile || !historyOpen) && (
+            <button
+              onClick={() => (isMobile ? setMobileHistoryOpen(true) : toggleHistory(true))}
+              className="absolute left-3 top-2.5 inline-flex items-center h-8 px-2 text-muted-foreground rounded-lg hover:bg-muted/60 transition-colors"
+              title={t("chat.history.expand")}
+              aria-label={t("chat.history.expand")}
+            >
+              <PanelLeftOpen className="size-4" />
+            </button>
+          )}
           <div className="max-w-3xl mx-auto w-full flex items-center justify-center gap-1 relative">
-            {hasMessages && (
+            {hasMessages && (isMobile || !historyOpen) && (
               <button
                 onClick={handleNewChat}
                 className="inline-flex items-center gap-1.5 h-8 px-2 text-muted-foreground rounded-lg hover:bg-muted/60 transition-colors"
@@ -1708,7 +1747,7 @@ export function ChatPage() {
               <span className="hidden md:inline">Code Mode</span>
             </button>
             <button
-              onClick={() => { setShowMcpPanel((v) => !v); setShowHistoryPanel(false); }}
+              onClick={() => setShowMcpPanel((v) => !v)}
               className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
                 showMcpPanel
                   ? "bg-primary/10 text-primary"
@@ -1721,18 +1760,6 @@ export function ChatPage() {
               {connectedMcpServers.length > 0 && (
                 <span className="size-4 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[10px] flex items-center justify-center">{connectedMcpServers.length}</span>
               )}
-            </button>
-            <button
-              onClick={() => { setShowHistoryPanel((v) => !v); setShowMcpPanel(false); }}
-              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
-                showHistoryPanel
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted/60"
-              }`}
-              title={t("chat.history.title")}
-            >
-              <History className="size-3.5" />
-              <span className="hidden md:inline">{t("chat.history.button")}</span>
             </button>
             {isDev && (
               <button
@@ -1952,26 +1979,15 @@ export function ChatPage() {
         </Sheet>
       )}
 
-      {/* ── History Panel: Desktop sidebar ── */}
-      {showHistoryPanel && !isMobile && (
-        <ResizableSidePanel label={t("chat.historyPanelResize")}>
-          <HistoryPanel
-            onClose={() => setShowHistoryPanel(false)}
-            activeId={activeConversationId}
-            onOpen={openConversation}
-            onDeleted={handleNewChat}
-            refreshKey={historyRefreshKey}
-          />
-        </ResizableSidePanel>
-      )}
 
-      {/* ── History Panel: Mobile sheet ── */}
+      {/* ── History: mobile sheet ── */}
       {isMobile && (
-        <Sheet open={showHistoryPanel} onOpenChange={setShowHistoryPanel}>
-          <SheetContent side="right" className="p-0 w-[85%] sm:max-w-sm [&>button]:hidden">
+        <Sheet open={mobileHistoryOpen} onOpenChange={setMobileHistoryOpen}>
+          <SheetContent side="left" className="p-0 w-[85%] sm:max-w-sm [&>button]:hidden">
             <VisuallyHidden><SheetTitle>{t("chat.history.title")}</SheetTitle></VisuallyHidden>
             <HistoryPanel
-              onClose={() => setShowHistoryPanel(false)}
+              onClose={() => setMobileHistoryOpen(false)}
+              onNewChat={() => { handleNewChat(); setMobileHistoryOpen(false); }}
               activeId={activeConversationId}
               onOpen={openConversation}
               onDeleted={handleNewChat}

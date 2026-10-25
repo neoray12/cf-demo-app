@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { History, X, Search, MoreHorizontal, Pencil, Download, Trash2, RotateCcw, Loader2 } from "lucide-react";
+import { PanelLeftClose, SquarePen, Search, MoreHorizontal, Pencil, Download, Trash2, RotateCcw, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +14,9 @@ import { AI_MODELS } from "@/lib/types";
 import type { ConversationSummary } from "@/lib/chat-history";
 
 interface HistoryPanelProps {
+  /** Collapse the column (ChatGPT-style left sidebar). */
   onClose: () => void;
+  onNewChat: () => void;
   /** The conversation open in the chat right now (highlighted). */
   activeId: string;
   onOpen: (id: string) => void;
@@ -42,7 +44,7 @@ function modelName(model: string | null): string {
   return m?.name ?? model.split("/").pop() ?? model;
 }
 
-export function HistoryPanel({ onClose, activeId, onOpen, onDeleted, refreshKey }: HistoryPanelProps) {
+export function HistoryPanel({ onClose, onNewChat, activeId, onOpen, onDeleted, refreshKey }: HistoryPanelProps) {
   const { t, i18n } = useTranslation();
   const [items, setItems] = useState<ConversationSummary[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -100,15 +102,25 @@ export function HistoryPanel({ onClose, activeId, onOpen, onDeleted, refreshKey 
   const timeFmt = new Intl.DateTimeFormat(i18n.language === "en" ? "en" : "zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div className="flex flex-col h-full border-l bg-background">
-      <div className="px-4 py-3 border-b shrink-0 space-y-2.5">
+    <div className="flex flex-col h-full border-r bg-muted/20">
+      <div className="px-3 pt-2.5 pb-3 shrink-0 space-y-2.5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <History className="size-4 text-muted-foreground" />
-            <span className="text-sm font-semibold">{t("chat.history.title")}</span>
-          </div>
-          <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-muted/60 transition-colors" aria-label={t("chat.history.close")}>
-            <X className="size-4" />
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted/60 transition-colors"
+            title={t("chat.history.collapse")}
+            aria-label={t("chat.history.collapse")}
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
+          <span className="text-sm font-semibold">{t("chat.history.title")}</span>
+          <button
+            onClick={onNewChat}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted/60 transition-colors"
+            title={t("chat.history.newChat")}
+            aria-label={t("chat.history.newChat")}
+          >
+            <SquarePen className="size-4" />
           </button>
         </div>
         <div className="relative">

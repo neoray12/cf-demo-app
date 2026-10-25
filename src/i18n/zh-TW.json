@@ -308,11 +308,8 @@
       "list": "列出 Salesforce 前 10 筆客戶（Account），整理成表格"
     },
     "mcpPanelResize": "拖曳調整 MCP 面板寬度（雙擊恢復預設）",
-    "historyPanelResize": "拖曳調整歷史面板寬度（雙擊恢復預設）",
     "history": {
-      "button": "歷史",
       "title": "對話歷史",
-      "close": "關閉",
       "search": "搜尋標題或內容",
       "empty": "還沒有保存的對話",
       "noMatch": "找不到符合的對話",
@@ -336,7 +333,10 @@
       "status": {
         "error": "錯誤",
         "client-aborted": "已中斷"
-      }
+      },
+      "newChat": "新對話",
+      "collapse": "收合對話歷史",
+      "expand": "展開對話歷史"
     },
     "mcpResult": {
       "script": "腳本",

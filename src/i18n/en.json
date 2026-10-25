@@ -308,11 +308,8 @@
       "list": "List the first 10 Salesforce customers (Accounts) as a table"
     },
     "mcpPanelResize": "Drag to resize the MCP panel (double-click to reset)",
-    "historyPanelResize": "Drag to resize the history panel (double-click to reset)",
     "history": {
-      "button": "History",
       "title": "Chat history",
-      "close": "Close",
       "search": "Search titles or messages",
       "empty": "No saved conversations yet",
       "noMatch": "No matching conversations",
@@ -336,7 +333,10 @@
       "status": {
         "error": "error",
         "client-aborted": "interrupted"
-      }
+      },
+      "newChat": "New chat",
+      "collapse": "Collapse chat history",
+      "expand": "Show chat history"
     },
     "mcpResult": {
       "script": "Script",

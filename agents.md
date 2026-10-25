@@ -239,7 +239,7 @@
 - `send()` 是 NDJSON 唯一出口，`TurnRecorder.onEvent()` 掛在那裡；串流結束後寫入（`ctx.waitUntil` 先登記）。只有驗證過的使用者才存。前端送 `turnIndex`，同位置重送（自動重試、按重試）覆蓋同一輪；用戶端斷線記 `client-aborted`
 - `applyChatEvent()`（`src/lib/chat-turn.ts`）是前端串流與伺服器紀錄共用的 reducer——改 NDJSON 事件時兩邊一起生效
 - API：`GET /api/chat/history`（`q` 搜尋標題與內容）、`GET|PATCH|DELETE /api/chat/history/{id}`（`?raw=1` 匯出完整 JSON）、`GET /api/chat/history/asset?key=`（只能讀自己資料夾）
-- UI：聊天工具列「歷史」按鈕 → 右側面板（與 MCP 面板互斥），點擊載入並可接續
+- UI：仿 ChatGPT 的左側歷史欄（聊天區左邊，`w-64`），預設展開、可收合（localStorage `cf-demo-history-open`，"0" = 收合），收合後聊天標頭左側有展開按鈕；手機改成左側滑出的 Sheet，預設關閉。點擊載入並可接續
 
 | 檔案 | 說明 |
 |------|------|
