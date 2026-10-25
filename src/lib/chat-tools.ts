@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { classifyMcpError } from '@/lib/mcp-guardrails';
-import { parseMcpServerUrls, connectAndListTools, callMcpTool, type McpToolInfo } from '@/lib/mcp-client';
+import { parseMcpServerUrls, connectAndListTools, callMcpTool, portalCodeModeUrl, type McpServerConfig, type McpToolInfo } from '@/lib/mcp-client';
 import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
-import { PORTAL_CATALOG_SEARCH_CODE, formatPortalCatalog, isPortalCodeModeUrl, parsePortalCatalog, type PortalCatalogEntry } from '@/lib/portal-catalog';
+import { PORTAL_CATALOG_SEARCH_CODE, formatPortalCatalog, parsePortalCatalog, type PortalCatalogEntry } from '@/lib/portal-catalog';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview } from '@/lib/chat-sandbox';
 import { normalizeCode } from '@/lib/codemode';
 
@@ -344,155 +344,183 @@ export function buildWebPreviewTool(env: Record<string, unknown>, sessionId: str
   };
 }
 
-// Build MCP tools from connected servers for injection into streamText
+type Kv = KVNamespace;
+
+async function serverAccessToken(kv: Kv, sessionId: string, server: McpServerConfig): Promise<string | undefined | null> {
+  if (server.authType !== 'oauth') return undefined;
+  const raw = await kv.get(mcpTokenKey(sessionId, server.id));
+  return raw ? (JSON.parse(raw) as { accessToken: string }).accessToken : null;
+}
+
+/** The server as the harness connects to it: Portal Code Mode switches to the search/execute interface. */
+function connectionFor(server: McpServerConfig, codeMode: boolean): McpServerConfig {
+  return codeMode ? { ...server, url: portalCodeModeUrl(server.url) } : server;
+}
+
+/**
+ * A connected server's tool list (KV-cached 5 min per session + server + interface).
+ * null = not authorized yet, or the server could not be reached.
+ */
+export async function listServerTools(
+  env: Record<string, unknown>,
+  sessionId: string,
+  server: McpServerConfig,
+  codeMode = false,
+): Promise<McpToolInfo[] | null> {
+  const kv = env.KV as Kv;
+  const cacheKey = mcpToolCacheKey(sessionId, codeMode ? `${server.id}#codemode` : server.id);
+  const cached = await kv.get(cacheKey);
+  if (cached) return JSON.parse(cached) as McpToolInfo[];
+  const accessToken = await serverAccessToken(kv, sessionId, server);
+  if (accessToken === null) return null;
+  const result = await connectAndListTools(connectionFor(server, codeMode), accessToken);
+  if (!result.success) return null;
+  await kv.put(cacheKey, JSON.stringify(result.tools), { expirationTtl: 300 });
+  return result.tools;
+}
+
+/** MCP tools as AI SDK tools (key `tool_{serverId}_{toolName}`); calls go to `server` as given. */
+export function mcpToolsToAiTools(
+  env: Record<string, unknown>,
+  sessionId: string,
+  server: McpServerConfig,
+  tools: McpToolInfo[],
+): Record<string, any> {
+  const kv = env.KV as Kv;
+  const serverId = server.id;
+  const mcpTools: Record<string, any> = {};
+  for (const tool of tools) {
+    const toolKey = `tool_${serverId}_${tool.name}`;
+    // Build zod-compatible schema description from MCP inputSchema
+    const inputSchema = tool.inputSchema || {};
+    const properties = (inputSchema as any).properties || {};
+    const required = (inputSchema as any).required || [];
+
+    // Build a zod object from the JSON Schema properties
+    const zodShape: Record<string, any> = {};
+    for (const [key, prop] of Object.entries(properties)) {
+      const p = prop as { type?: string; description?: string };
+      let zodField: any;
+      switch (p.type) {
+        case 'number':
+        case 'integer':
+          zodField = z.number();
+          break;
+        case 'boolean':
+          zodField = z.boolean();
+          break;
+        case 'array':
+          zodField = z.array(z.any());
+          break;
+        case 'object':
+          zodField = z.record(z.string(), z.any());
+          break;
+        default:
+          zodField = z.string();
+      }
+      if (p.description) zodField = zodField.describe(p.description);
+      if (!required.includes(key)) zodField = zodField.optional();
+      zodShape[key] = zodField;
+    }
+
+    mcpTools[toolKey] = {
+      description: tool.description || `MCP tool: ${tool.name} (from ${server.name})`,
+      inputSchema: z.object(zodShape),
+      execute: safeTool(async (args: Record<string, unknown>) => {
+        try {
+          console.log(`[Chat API] MCP tool call: ${toolKey}`, args);
+          const accessToken = (await serverAccessToken(kv, sessionId, server)) ?? undefined;
+          const result = await callMcpTool(server, tool.name, args, accessToken);
+          const textParts = result.content
+            .filter((c) => c.type === 'text' && c.text)
+            .map((c) => c.text);
+          // Prefer structured data (e.g. Salesforce { summary, totalSize, records })
+          // so Code Mode scripts can compute on it; fall back to the text.
+          if (result.structuredContent && !result.isError) {
+            return { source: server.name, result: result.structuredContent };
+          }
+          return { source: server.name, result: textParts.join('\n') || JSON.stringify(result.content) };
+        } catch (err) {
+          const block = classifyMcpError(err, serverId);
+          if (block) {
+            console.warn('[Chat API] MCP tool blocked by Gateway', {
+              toolKey,
+              ruleId: block.ruleId,
+              direction: block.direction,
+            });
+            return { ...block, source: server.name, tool: tool.name };
+          }
+          console.error(`[Chat API] MCP tool error (${toolKey}):`, err);
+          return { error: `MCP tool failed: ${(err as Error).message}` };
+        }
+      }),
+    };
+  }
+  return mcpTools;
+}
+
+/** Tools of the servers the main model calls directly (small servers, see tool-policy.ts). */
 export async function buildMcpTools(
   env: Record<string, unknown>,
   sessionId: string,
   serverIds: string[],
 ): Promise<Record<string, any>> {
-  const kv = env.KV as KVNamespace;
   const allServers = parseMcpServerUrls((env.MCP_SERVER_URLS as string) || '');
-
   const mcpTools: Record<string, any> = {};
-
   for (const serverId of serverIds) {
     const server = allServers.find((s) => s.id === serverId);
     if (!server) continue;
-
-    // Try cached tools first
-    let tools: McpToolInfo[] = [];
-    const cached = await kv.get(mcpToolCacheKey(sessionId, serverId));
-    if (cached) {
-      tools = JSON.parse(cached) as McpToolInfo[];
-    } else {
-      // Get access token for OAuth servers
-      let accessToken: string | undefined;
-      if (server.authType === 'oauth') {
-        const tokenDataRaw = await kv.get(mcpTokenKey(sessionId, serverId));
-        if (!tokenDataRaw) continue; // Skip unauthenticated OAuth servers
-        const tokenData = JSON.parse(tokenDataRaw) as { accessToken: string };
-        accessToken = tokenData.accessToken;
-      }
-      const result = await connectAndListTools(server, accessToken);
-      if (!result.success) continue;
-      tools = result.tools;
-      // Cache for next request
-      await kv.put(mcpToolCacheKey(sessionId, serverId), JSON.stringify(tools), { expirationTtl: 300 });
-    }
-
-    // Convert each MCP tool to Vercel AI SDK tool format
-    for (const tool of tools) {
-      const toolKey = `tool_${serverId}_${tool.name}`;
-      // Build zod-compatible schema description from MCP inputSchema
-      const inputSchema = tool.inputSchema || {};
-      const properties = (inputSchema as any).properties || {};
-      const required = (inputSchema as any).required || [];
-
-      // Build a zod object from the JSON Schema properties
-      const zodShape: Record<string, any> = {};
-      for (const [key, prop] of Object.entries(properties)) {
-        const p = prop as { type?: string; description?: string };
-        let zodField: any;
-        switch (p.type) {
-          case 'number':
-          case 'integer':
-            zodField = z.number();
-            break;
-          case 'boolean':
-            zodField = z.boolean();
-            break;
-          case 'array':
-            zodField = z.array(z.any());
-            break;
-          case 'object':
-            zodField = z.record(z.string(), z.any());
-            break;
-          default:
-            zodField = z.string();
-        }
-        if (p.description) zodField = zodField.describe(p.description);
-        if (!required.includes(key)) zodField = zodField.optional();
-        zodShape[key] = zodField;
-      }
-
-      mcpTools[toolKey] = {
-        description: tool.description || `MCP tool: ${tool.name} (from ${server.name})`,
-        inputSchema: z.object(zodShape),
-        execute: safeTool(async (args: Record<string, unknown>) => {
-          try {
-            console.log(`[Chat API] MCP tool call: ${toolKey}`, args);
-            let accessToken: string | undefined;
-            if (server.authType === 'oauth') {
-              const tokenDataRaw = await kv.get(mcpTokenKey(sessionId, serverId));
-              if (tokenDataRaw) {
-                accessToken = (JSON.parse(tokenDataRaw) as { accessToken: string }).accessToken;
-              }
-            }
-            const result = await callMcpTool(server, tool.name, args, accessToken);
-            const textParts = result.content
-              .filter((c) => c.type === 'text' && c.text)
-              .map((c) => c.text);
-            // Prefer structured data (e.g. Salesforce { summary, totalSize, records })
-            // so Code Mode scripts can compute on it; fall back to the text.
-            if (result.structuredContent && !result.isError) {
-              return { source: server.name, result: result.structuredContent };
-            }
-            return { source: server.name, result: textParts.join('\n') || JSON.stringify(result.content) };
-          } catch (err) {
-            const block = classifyMcpError(err, serverId);
-            if (block) {
-              console.warn('[Chat API] MCP tool blocked by Gateway', {
-                toolKey,
-                ruleId: block.ruleId,
-                direction: block.direction,
-              });
-              return { ...block, source: server.name, tool: tool.name };
-            }
-            console.error(`[Chat API] MCP tool error (${toolKey}):`, err);
-            return { error: `MCP tool failed: ${(err as Error).message}` };
-          }
-        }),
-      };
-    }
+    const tools = await listServerTools(env, sessionId, server);
+    if (tools) Object.assign(mcpTools, mcpToolsToAiTools(env, sessionId, server, tools));
   }
-
   return mcpTools;
 }
 
 /**
- * System-prompt section listing the tools callable through each connected MCP
- * Portal Code Mode server, so the model doesn't guess names. Cached per
- * session + server for 5 minutes, like the tool list.
+ * System-prompt section listing the tools callable through a Portal Code Mode
+ * connection, so the model doesn't guess names. Cached per session + server
+ * for 5 minutes, like the tool list.
  */
-export async function buildPortalCatalogPrompt(
+export async function serverCatalogPrompt(
   env: Record<string, unknown>,
   sessionId: string,
-  serverIds: string[],
+  server: McpServerConfig,
 ): Promise<string> {
-  const kv = env.KV as KVNamespace;
-  const servers = parseMcpServerUrls((env.MCP_SERVER_URLS as string) || '')
-    .filter((s) => serverIds.includes(s.id) && isPortalCodeModeUrl(s.url));
-  const sections = await Promise.all(servers.map(async (server) => {
-    const cacheKey = `mcp-catalog:${sessionId}:${server.id}`;
-    const cached = await kv.get(cacheKey);
-    let tools: PortalCatalogEntry[] = cached ? (JSON.parse(cached) as PortalCatalogEntry[]) : [];
-    if (!cached) {
-      try {
-        const tokenRaw = await kv.get(mcpTokenKey(sessionId, server.id));
-        if (server.authType === 'oauth' && !tokenRaw) return '';
-        const accessToken = tokenRaw ? (JSON.parse(tokenRaw) as { accessToken: string }).accessToken : undefined;
-        const result = await callMcpTool(server, 'portal_codemode_search', { code: PORTAL_CATALOG_SEARCH_CODE }, accessToken);
-        const text = result.content.filter((c) => c.type === 'text' && c.text).map((c) => c.text).join('');
-        tools = parsePortalCatalog(text);
-        if (tools.length) await kv.put(cacheKey, JSON.stringify(tools), { expirationTtl: 300 });
-      } catch (err) {
-        console.warn(`[Chat API] Portal catalog fetch failed for ${server.id}:`, (err as Error).message);
-        return '';
-      }
+  const kv = env.KV as Kv;
+  const cacheKey = `mcp-catalog:${sessionId}:${server.id}`;
+  const cached = await kv.get(cacheKey);
+  let tools: PortalCatalogEntry[] = cached ? (JSON.parse(cached) as PortalCatalogEntry[]) : [];
+  if (!cached) {
+    try {
+      const accessToken = await serverAccessToken(kv, sessionId, server);
+      if (accessToken === null) return '';
+      const result = await callMcpTool(connectionFor(server, true), 'portal_codemode_search', { code: PORTAL_CATALOG_SEARCH_CODE }, accessToken);
+      const text = result.content.filter((c) => c.type === 'text' && c.text).map((c) => c.text).join('');
+      tools = parsePortalCatalog(text);
+      if (tools.length) await kv.put(cacheKey, JSON.stringify(tools), { expirationTtl: 300 });
+    } catch (err) {
+      console.warn(`[Chat API] Portal catalog fetch failed for ${server.id}:`, (err as Error).message);
+      return '';
     }
-    return formatPortalCatalog(server.name, tools);
-  }));
-  return sections.join('');
+  }
+  return formatPortalCatalog(server.name, tools);
+}
+
+/**
+ * The tool set a delegated server's subagent works with: the Portal's
+ * search/execute pair plus its catalog in Code Mode, the full tool list otherwise.
+ */
+export async function buildServerTools(
+  env: Record<string, unknown>,
+  sessionId: string,
+  server: McpServerConfig,
+  opts: { codeMode: boolean },
+): Promise<{ tools: Record<string, any>; catalogPrompt: string } | null> {
+  const list = await listServerTools(env, sessionId, server, opts.codeMode);
+  if (!list) return null;
+  const tools = mcpToolsToAiTools(env, sessionId, connectionFor(server, opts.codeMode), list);
+  const catalogPrompt = opts.codeMode ? await serverCatalogPrompt(env, sessionId, server) : '';
+  return { tools, catalogPrompt };
 }
 
 /** Everything needed to rebuild the same tool set from any isolate. */
