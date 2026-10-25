@@ -169,7 +169,9 @@ NDJSON：現有事件 + span 事件 ──► 前端答案 reducer / span 樹 / 
 
 - 核心工具（6 個）的定義 JSON 約 1,994 字元（含中文描述，約 0.5–1.5k tokens），固定成本小。
 - `CF_API_TOKEN` 呼叫 AI Gateway Logs API 回 200：之後可以用 `cf-aig-log-id` 查實際費用。
-- `saas` 工具數與 `?codemode=` 是否能沿用同一個 OAuth token：需使用者在瀏覽器完成 OAuth 後再測（實作 Task 6 前）。
+- `saas`（SAP & Salesforce Portal）有 46 個工具，定義約 19,000 字元（約 5k tokens）→ 走 subagent。
+- `?codemode=search_and_execute` 可以沿用同一個 OAuth token（`mcp-token:{session}:saas`），不必分開存。
+- 對照範例 `sf-agg` 首次實測（Claude Haiku 5.5，本地）：不開 Code Mode 輸入 44,155 / 輸出 2,545 tokens、8 個工具、23.4 s；開 Code Mode 輸入 25,725 / 輸出 2,352 tokens、3 個工具、24.8 s（輸入 −42%、工具呼叫 −62%、時間 +6%）。
 
 ## 待確認（請在 review 時決定）
 
