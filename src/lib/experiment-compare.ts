@@ -33,17 +33,19 @@ export function comparisonModel(selected: string): string {
 }
 
 /**
- * Code Mode comparison questions (home page "Code Mode demos"). Each one needs
- * several SAP / Salesforce calls plus some arithmetic, where Code Mode helps;
- * all are read-only. The id is the AI Gateway `test` metadata value, and the
+ * Code Mode comparison questions (home page "Code Mode demos"). Each one lists
+ * records and then looks up every one of them (6–14 calls) before computing —
+ * without Code Mode every lookup result is resent on each later step, with Code
+ * Mode one script makes all the calls. All are read-only, and none reads
+ * Contacts (the MCP guardrail demo rules watch those). The id is the AI Gateway `test` metadata value, and the
  * strings live under chat.codeModeSuggestions.examples.{key}.
  */
 export const CODE_MODE_EXAMPLES = [
-  { id: 'sf-agg', key: 'agg' },
-  { id: 'sf-pipeline', key: 'pipeline' },
-  { id: 'sf-cases', key: 'cases' },
-  { id: 'sf-leads', key: 'leads' },
-  { id: 'sap-orders', key: 'sapOrders' },
-  { id: 'sap-production', key: 'sapProduction' },
-  { id: 'sap-sf-match', key: 'crossMatch' },
+  { id: 'sf-opp-forecast', key: 'oppForecast' },
+  { id: 'sf-account-risk', key: 'accountRisk' },
+  { id: 'sf-case-drilldown', key: 'caseDrilldown' },
+  { id: 'sap-order-products', key: 'orderProducts' },
+  { id: 'sap-production-bom', key: 'productionBom' },
+  { id: 'sap-customer-360', key: 'customer360' },
+  { id: 'sap-sf-360', key: 'crossSystem' },
 ] as const;

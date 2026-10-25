@@ -288,33 +288,33 @@
     },
     "codeModeSuggestions": {
       "examples": {
-        "agg": {
-          "title": "跨物件彙總",
-          "prompt": "列出 Salesforce 前 5 個 Account，再分別查出每個 Account 的商機數量與總金額，整理成一張表"
+        "oppForecast": {
+          "title": "Top 10 商機預測",
+          "prompt": "取得 Salesforce 金額最大的 10 筆商機，逐筆查出完整資料（含成交機率與所屬 Account），算出每筆的加權預測金額（金額 × 成交機率），再依 Account 彙總加權金額並排名"
         },
-        "pipeline": {
-          "title": "商機階段分布",
-          "prompt": "統計 Salesforce 所有商機依階段（Stage）的數量與總金額，並算出每個階段占總金額的百分比，整理成一張表"
+        "accountRisk": {
+          "title": "Account 風險評分",
+          "prompt": "針對 Salesforce 全部 Account，逐一查出每個 Account 的商機（數量、總金額）與客服案件（總數、未結案數），用「未結案件數 ÷ 商機數」算風險分數，列出風險最高的 5 個 Account"
         },
-        "cases": {
-          "title": "客服案件分析",
-          "prompt": "列出 Salesforce 所有客服案件，依狀態與優先順序分組計數，再找出案件最多的前 3 個 Account，整理成表格"
+        "caseDrilldown": {
+          "title": "案件最多的客戶",
+          "prompt": "找出 Salesforce 客服案件最多的 5 個 Account，逐一取得每個 Account 的完整資料與它所有商機，整理出產業、案件數、商機總額與最接近成交的商機"
         },
-        "leads": {
-          "title": "潛在客戶來源",
-          "prompt": "統計 Salesforce 潛在客戶依來源（LeadSource）與狀態（Status）的數量，算出每個來源的已轉換比例，整理成一張表"
+        "orderProducts": {
+          "title": "SAP 熱銷產品",
+          "prompt": "SAP 全部銷售訂單逐筆查出訂單項目，彙總每個產品的總訂購數量與總金額，再對前 3 名產品逐一查詢產品主檔與工廠資料（MRP 類型、採購類型），整理成表"
         },
-        "sapOrders": {
-          "title": "SAP 訂單明細",
-          "prompt": "列出 SAP 最近 5 筆銷售訂單，再分別查出每筆訂單的項目，算出每筆訂單的品項數與總金額，整理成一張表"
+        "productionBom": {
+          "title": "SAP 生產 BOM 分析",
+          "prompt": "SAP 全部生產訂單逐筆查出工序與 BOM 元件，算出每筆的工序數、元件數與元件總需求量，再找出被最多生產訂單共用的元件，整理成表"
         },
-        "sapProduction": {
-          "title": "SAP 生產訂單",
-          "prompt": "列出 SAP 前 3 筆生產訂單，再分別查出每筆的工序數與 BOM 元件數，整理成比較表"
+        "customer360": {
+          "title": "SAP 客戶 360",
+          "prompt": "SAP 全部客戶逐一查出業務夥伴完整資料（含地址國家）與各自的銷售訂單總金額，依國家彙總客戶數與訂單金額，並列出每個國家金額最高的客戶"
         },
-        "crossMatch": {
-          "title": "SAP × Salesforce 比對",
-          "prompt": "列出 SAP 前 10 個客戶，再比對 Salesforce 的 Account，找出名稱也出現在 Salesforce 的客戶，並列出這些 Account 的商機數量與總金額"
+        "crossSystem": {
+          "title": "SAP × Salesforce 對照",
+          "prompt": "列出 SAP 全部客戶與 Salesforce 全部 Account，用公司名稱比對兩邊都有的公司；每一家逐一查出 SAP 銷售訂單總額與 Salesforce 商機總額及案件數，整理成對照表（沒有對到的也列出來）"
         }
       }
     },

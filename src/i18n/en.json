@@ -288,33 +288,33 @@
     },
     "codeModeSuggestions": {
       "examples": {
-        "agg": {
-          "title": "Cross-object rollup",
-          "prompt": "List the first 5 Salesforce Accounts, then for each one find its number of opportunities and their total amount, and put it all in one table"
+        "oppForecast": {
+          "title": "Top 10 deal forecast",
+          "prompt": "Take the 10 largest Salesforce opportunities, fetch each one's full record (probability and Account), work out each one's weighted amount (amount × probability), then total the weighted amount per Account and rank them"
         },
-        "pipeline": {
-          "title": "Pipeline by stage",
-          "prompt": "Group all Salesforce opportunities by stage with the count and total amount per stage, plus each stage's share of the total amount, in one table"
+        "accountRisk": {
+          "title": "Account risk score",
+          "prompt": "For every Salesforce Account, look up its opportunities (count and total amount) and support cases (total and open), score risk as open cases ÷ opportunities, and list the 5 riskiest Accounts"
         },
-        "cases": {
-          "title": "Support case breakdown",
-          "prompt": "List all Salesforce support cases, count them by status and priority, then find the 3 Accounts with the most cases, in tables"
+        "caseDrilldown": {
+          "title": "Accounts with most cases",
+          "prompt": "Find the 5 Salesforce Accounts with the most support cases, then fetch each one's full record and all its opportunities, and show industry, case count, total pipeline and the deal closest to closing"
         },
-        "leads": {
-          "title": "Lead sources",
-          "prompt": "Count Salesforce leads by LeadSource and Status, work out the converted share for each source, and put it in one table"
+        "orderProducts": {
+          "title": "SAP best-selling products",
+          "prompt": "Fetch the line items of every SAP sales order, total the quantity and amount ordered per product, then for the top 3 products look up their product master and plant data (MRP type, procurement type), in a table"
         },
-        "sapOrders": {
-          "title": "SAP order details",
-          "prompt": "List the 5 most recent SAP sales orders, then fetch each order's items and work out the number of line items and total amount per order, in one table"
+        "productionBom": {
+          "title": "SAP production BOM",
+          "prompt": "For every SAP production order fetch its operations and BOM components, work out the number of operations, components and total component quantity per order, then find the components shared by the most orders"
         },
-        "sapProduction": {
-          "title": "SAP production orders",
-          "prompt": "List the first 3 SAP production orders, then for each one get the number of operations and BOM components, in a comparison table"
+        "customer360": {
+          "title": "SAP customer 360",
+          "prompt": "For every SAP customer fetch the full business partner record (address country) and its total sales order amount, then total customers and order amount per country and name each country's biggest customer"
         },
-        "crossMatch": {
-          "title": "SAP × Salesforce match",
-          "prompt": "List the first 10 SAP customers, match them against Salesforce Accounts by name, and for the matches show their number of opportunities and total amount"
+        "crossSystem": {
+          "title": "SAP × Salesforce side by side",
+          "prompt": "List all SAP customers and all Salesforce Accounts, match companies present in both by name, and for each one look up its SAP sales order total plus its Salesforce pipeline and case count, in one table (list the unmatched ones too)"
         }
       }
     },

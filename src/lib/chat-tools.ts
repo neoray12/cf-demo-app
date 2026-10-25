@@ -487,7 +487,8 @@ export async function serverCatalogPrompt(
   server: McpServerConfig,
 ): Promise<string> {
   const kv = env.KV as Kv;
-  const cacheKey = `mcp-catalog:${sessionId}:${server.id}`;
+  // v2: entries carry argument names (older cached catalogs had none).
+  const cacheKey = `mcp-catalog:v2:${sessionId}:${server.id}`;
   const cached = await kv.get(cacheKey);
   let tools: PortalCatalogEntry[] = cached ? (JSON.parse(cached) as PortalCatalogEntry[]) : [];
   if (!cached) {
