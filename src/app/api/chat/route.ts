@@ -12,7 +12,7 @@ import { chatSandboxConfigured, uploadFile as sandboxUploadFile, warmSandbox } f
 import { signCodeModeSession, codeModeSecret, describeTools, buildCodeModeModule, RETURN_SHAPE_HINT } from '@/lib/codemode';
 import { parseMcpServerUrls } from '@/lib/mcp-client';
 import { isPortalCodeModeUrl } from '@/lib/portal-catalog';
-import { buildToolSet, safeTool, isWebSearchProvider, buildPortalCatalogPrompt, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
+import { buildToolSet, safeTool, buildPortalCatalogPrompt, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
@@ -74,11 +74,6 @@ const DYNAMIC_WORKER_PROMPT = `
 
 當需要執行 JavaScript 程式碼（快速計算、字串處理、演算法示範）時，優先使用 executeJs 工具——它在毫秒級啟動的 V8 isolate 中執行。需要 Python、pandas、檔案或畫圖時才用 executeCode。executeJs 的沙箱完全禁止網路存取，fetch 會失敗，這是刻意的安全設計。`;
 
-// Extra system prompt guidance when the Web Search tool is available
-const WEB_SEARCH_PROMPT = `
-
-當問題涉及即時資訊、新聞、近期事件、產品最新發表或你訓練資料截止日之後的內容時，先使用 webSearch 工具搜尋；需要某個結果的完整內容時，再對該網址使用 readWebPage。根據搜尋結果回答時，請在回覆最後以 Markdown 連結列出引用來源。`;
-
 // System prompt override when Code Mode collapses everything into one tool
 const CODE_MODE_PROMPT = `
 
@@ -120,7 +115,6 @@ export async function POST(request: NextRequest) {
     userEmail,
     attachments = [],
     images = [],
-    webSearchProvider: rawWebSearchProvider,
     conversationId,
     turnIndex: rawTurnIndex,
   } = body as {
@@ -135,13 +129,11 @@ export async function POST(request: NextRequest) {
     attachments?: Array<{ name: string; contentBase64: string }>;
     /** Pasted screenshots as data URLs, attached to the latest user turn. */
     images?: string[];
-    webSearchProvider?: string;
     /** Per-conversation id — Auto Router session affinity, tracing session and history key. */
     conversationId?: string;
     /** Position of this turn in the conversation; a resend at the same position replaces it in history. */
     turnIndex?: number;
   };
-  const webSearchProvider = isWebSearchProvider(rawWebSearchProvider) ? rawWebSearchProvider : 'ceramic';
   const turnIndex = Number.isInteger(rawTurnIndex) && (rawTurnIndex as number) >= 0 ? (rawTurnIndex as number) : 0;
 
   // Verified identity (Access JWT or signed login cookie). The userEmail in the
@@ -203,7 +195,6 @@ export async function POST(request: NextRequest) {
   // AI Gateway parses unicode escapes correctly — do NOT encodeURIComponent
   const metadataJson = JSON.stringify({
     tools_enabled: toolsEnabled,
-    web_search_provider: toolsEnabled ? webSearchProvider : null,
     name: analyticsName ?? 'anonymous',
     email: analyticsEmail ?? 'unknown',
     usertier,
@@ -340,7 +331,6 @@ export async function POST(request: NextRequest) {
   let browserToolsActive = false;
   let dynamicWorkerActive = false;
   let codeModeActive = false;
-  let webSearchActive = false;
   let portalCatalogPrompt = '';
   const uploadedFiles: UploadedFileInfo[] = [];
   // An MCP Portal connected with ?codemode=search_and_execute already runs the
@@ -389,13 +379,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const toolConfig: ToolSetConfig = { sessionId, sandboxSessionId, edgeColo, uploadedFiles, mcpServerIds, webSearchProvider };
+    const toolConfig: ToolSetConfig = { sessionId, sandboxSessionId, edgeColo, uploadedFiles, mcpServerIds };
     const built = await buildToolSet(env as any, toolConfig, validImages);
     tools = built.tools;
     sandboxToolsActive = built.sandboxToolsActive;
     browserToolsActive = built.browserToolsActive;
     dynamicWorkerActive = built.dynamicWorkerActive;
-    webSearchActive = built.webSearchActive;
 
     // Code Mode: collapse the whole tool set into ONE tool — the model writes
     // a JS script that calls the other tools as functions inside a Dynamic
@@ -456,7 +445,6 @@ export async function POST(request: NextRequest) {
       (sandboxToolsActive ? SANDBOX_PROMPT : '') +
       (browserToolsActive ? BROWSER_PROMPT : '') +
       (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '') +
-      (webSearchActive ? WEB_SEARCH_PROMPT : '') +
       portalCatalogPrompt;
 
   // Cloudflare Agents tracing (production only; plain `ai` in next dev). Payloads
@@ -490,7 +478,6 @@ export async function POST(request: NextRequest) {
         codeModeActive,
         appCodeModeSkipped,
         mcpServers: mcpServerIds,
-        webSearchProvider: toolsEnabled ? webSearchProvider : null,
         edgeColo,
         country: ((cf as { country?: string } | undefined)?.country as string | undefined) ?? null,
         userAgent: request.headers.get('user-agent'),

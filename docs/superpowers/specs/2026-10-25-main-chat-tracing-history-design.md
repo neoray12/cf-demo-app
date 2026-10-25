@@ -43,7 +43,7 @@
 ### 每一輪的完整紀錄（`TurnRecord`，`v: 1`）
 
 - 身分與時間：`conversationId`、`turnIndex`、`email`、`userName`、`authSource`、`startedAt` / `endedAt`（ISO）、`durationMs`、`ttftMs`、`status`（`completed` / `error` / `client-aborted`）。
-- 請求：`model`、`provider`、`compatModelId`、`toolsEnabled`、`codeMode`、`codeModeActive`、`mcpServers`、`webSearchProvider`、`edgeColo`、`country`、`userAgent`、完整 `systemPrompt`、註冊的工具（名稱 + 描述）、送給模型的 `messages`（歷史文字）、圖片 key、附件（名稱、大小、沙箱路徑）、`maxOutputTokens`。
+- 請求：`model`、`provider`、`compatModelId`、`toolsEnabled`、`codeMode`、`codeModeActive`、`mcpServers`、`edgeColo`、`country`、`userAgent`、完整 `systemPrompt`、註冊的工具（名稱 + 描述）、送給模型的 `messages`（歷史文字）、圖片 key、附件（名稱、大小、沙箱路徑）、`maxOutputTokens`。
 - 回應：前端看到的同一份 `assistant`（`content`、`reasoning`、依序 `parts`、`toolCalls` 含完整參數與結果、`routedModel`、`notices`）、`timeline`（與前端 `TimelineEvent` 相同格式，伺服器端計時）、每次模型呼叫（`attempts`：stream / smart-retry / plain retry 的 finishReason、totalUsage、每步 usage 與 response id）、每個 AI Gateway 請求的 `status`、`cf-ray`、`cf-aig-log-id`、`cf-aig-cache-status`、耗時、錯誤。
 - `events`：伺服器送給前端的每一個 NDJSON 事件，附相對毫秒 `t`。
 

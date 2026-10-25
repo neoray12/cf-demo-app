@@ -10,7 +10,6 @@ import {
   Cloud,
   Globe,
   RotateCcw,
-  Search,
   ShieldAlert,
   ShieldCheck,
   Terminal,
@@ -195,8 +194,6 @@ export function SuggestionCategories({
       items: [
         { title: t("chat.browserSuggestions.screenshot.title"), desc: t("chat.browserSuggestions.screenshot.prompt"), icon: Camera },
         { title: t("chat.browserSuggestions.summarize.title"), desc: t("chat.browserSuggestions.summarize.prompt"), icon: BookOpen },
-        { title: t("chat.browserSuggestions.birthdayWeek.title"), desc: t("chat.browserSuggestions.birthdayWeek.prompt"), icon: Search },
-        { title: t("chat.browserSuggestions.news.title"), desc: t("chat.browserSuggestions.news.prompt"), icon: Search },
       ],
     },
     {

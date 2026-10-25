@@ -150,14 +150,6 @@
       "summarize": {
         "title": "網頁摘要",
         "prompt": "幫我閱讀 https://blog.cloudflare.com 並摘要最新文章的重點"
-      },
-      "birthdayWeek": {
-        "title": "網路搜尋",
-        "prompt": "Cloudflare Birthday Week 2026 發表了哪些新功能？請上網查並附上來源"
-      },
-      "news": {
-        "title": "即時資訊",
-        "prompt": "搜尋最新的 AI Agent 相關新聞，整理成 5 點重點"
       }
     },
     "sandboxLabel": "Sandbox 示範",
@@ -209,14 +201,7 @@
       "openPreview": "開啟預覽",
       "collapse": "收合",
       "showInline": "內嵌顯示",
-      "searchKnowledgeByImage": "以圖搜尋知識庫",
-      "webSearch": "網路搜尋",
-      "sourceWebSearch": "Cloudflare Web Search",
-      "searchingWeb": "搜尋網路中",
-      "webSearchFailed": "網路搜尋失敗：{{error}}",
-      "webSearchCount": "{{count}} 筆結果",
-      "webSearchProvider": "Web Search 供應商",
-      "webSearchPrice": "每 1,000 次 {{price}}"
+      "searchKnowledgeByImage": "以圖搜尋知識庫"
     },
     "sandbox": {
       "uptimeUnknown": "未知",
@@ -279,7 +264,7 @@
       },
       "browser": {
         "title": "瀏覽器工具示範",
-        "desc": "截圖、摘要網頁與搜尋最新資訊"
+        "desc": "截圖與摘要網頁內容"
       },
       "safety": {
         "title": "AI 安全測試",

@@ -22,7 +22,6 @@ export interface TurnRequestInfo {
   codeModeActive: boolean;
   appCodeModeSkipped: boolean;
   mcpServers: string[];
-  webSearchProvider: string | null;
   edgeColo: string | null;
   country: string | null;
   userAgent: string | null;

@@ -20,7 +20,6 @@ const request: TurnRequestInfo = {
   codeModeActive: false,
   appCodeModeSkipped: false,
   mcpServers: [],
-  webSearchProvider: 'ceramic',
   edgeColo: 'TPE',
   country: 'TW',
   userAgent: 'vitest',

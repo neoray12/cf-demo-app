@@ -150,14 +150,6 @@
       "summarize": {
         "title": "Summarize a Page",
         "prompt": "Read https://blog.cloudflare.com and summarize the latest posts"
-      },
-      "birthdayWeek": {
-        "title": "Web Search",
-        "prompt": "What did Cloudflare launch during Birthday Week 2026? Search the web and cite sources"
-      },
-      "news": {
-        "title": "Live information",
-        "prompt": "Search for the latest AI agent news and summarize it in 5 bullet points"
       }
     },
     "sandboxLabel": "Sandbox Demo",
@@ -209,14 +201,7 @@
       "openPreview": "Open Preview",
       "collapse": "Collapse",
       "showInline": "Show Inline",
-      "searchKnowledgeByImage": "Search Knowledge by Image",
-      "webSearch": "Web Search",
-      "sourceWebSearch": "Cloudflare Web Search",
-      "searchingWeb": "Searching the web",
-      "webSearchFailed": "Web search failed: {{error}}",
-      "webSearchCount": "{{count}} results",
-      "webSearchProvider": "Web Search provider",
-      "webSearchPrice": "{{price}} per 1,000 requests"
+      "searchKnowledgeByImage": "Search Knowledge by Image"
     },
     "sandbox": {
       "uptimeUnknown": "Unknown",
@@ -279,7 +264,7 @@
       },
       "browser": {
         "title": "Browser Tools Demo",
-        "desc": "Screenshot, summarize pages and search the web"
+        "desc": "Screenshot and summarize web pages"
       },
       "safety": {
         "title": "AI Safety Test",

@@ -281,69 +281,6 @@ export function buildReadWebPageTool(env: Record<string, unknown>) {
   };
 }
 
-export const WEB_SEARCH_PROVIDERS = ['ceramic', 'exa', 'linkup'] as const;
-export type WebSearchProvider = (typeof WEB_SEARCH_PROVIDERS)[number];
-const WEB_SEARCH_TIMEOUT_MS = 15_000;
-const WEB_SEARCH_DESC_MAX_CHARS = 1500;
-
-export function isWebSearchProvider(v: unknown): v is WebSearchProvider {
-  return typeof v === 'string' && (WEB_SEARCH_PROVIDERS as readonly string[]).includes(v);
-}
-
-export function webSearchConfigured(env: Record<string, unknown>): boolean {
-  return Boolean(env.CF_API_TOKEN && env.CF_ACCOUNT_ID);
-}
-
-export function buildWebSearchTool(env: Record<string, unknown>, defaultProvider: WebSearchProvider = 'ceramic') {
-  return {
-    description:
-      '使用 Cloudflare Web Search API（經 AI Gateway）搜尋網路上的即時資訊。適用於新聞、近期事件、產品更新、訓練資料截止日之後的資訊，或使用者明確要求「上網查」時。回傳標題、網址與摘要；需要完整內容時再對結果網址使用 readWebPage。',
-    inputSchema: z.object({
-      query: z.string().min(1).max(1024).describe('搜尋查詢字串'),
-      provider: z.enum(WEB_SEARCH_PROVIDERS).optional().describe('搜尋供應商，除非使用者指定否則不要填'),
-      limit: z.number().int().min(1).max(10).optional().default(5).describe('結果數量 (1-10)'),
-    }),
-    execute: safeTool(async ({ query, provider, limit }: { query: string; provider?: WebSearchProvider; limit?: number }) => {
-      const p = provider ?? defaultProvider;
-      console.log('[Chat API] webSearch:', p, query);
-      const started = Date.now();
-      const res = await fetch(`${BR_API_BASE}/${env.CF_ACCOUNT_ID}/ai/websearch/`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${env.CF_API_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query,
-          provider: p,
-          limit: Math.min(Math.max(limit ?? 5, 1), 10),
-          options: { gateway: { id: (env.AI_GATEWAY_ID as string) || 'nkcf-gateway-01' } },
-        }),
-        signal: AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS),
-      });
-      const raw = (await res.json().catch(() => ({}))) as Record<string, any>;
-      // The REST API may or may not wrap the payload in a { success, result } envelope
-      const data = (raw.result ?? raw) as {
-        items?: Array<{ url: string; title?: string; description?: string }>;
-        metadata?: { requestId?: string; latencyMs?: number };
-      };
-      if (!res.ok || !Array.isArray(data.items)) {
-        const code = raw.error?.code ?? raw.errors?.[0]?.message ?? `HTTP ${res.status}`;
-        const hint = code === 'web_search_payment_required' ? '（AI Gateway 帳戶需要儲值 credits 或設定 BYOK provider key）' : '';
-        return { error: `Web Search 失敗: ${code}${hint}`, provider: p, query };
-      }
-      return {
-        query,
-        provider: p,
-        latencyMs: data.metadata?.latencyMs ?? Date.now() - started,
-        requestId: data.metadata?.requestId ?? null,
-        items: data.items.map((it) => ({
-          url: it.url,
-          title: it.title ?? it.url,
-          description: (it.description ?? '').slice(0, WEB_SEARCH_DESC_MAX_CHARS),
-        })),
-      };
-    }),
-  };
-}
-
 export interface UploadedFileInfo {
   name: string;
   path: string;
@@ -565,7 +502,6 @@ export interface ToolSetConfig {
   edgeColo: string | null;
   uploadedFiles: UploadedFileInfo[];
   mcpServerIds: string[];
-  webSearchProvider?: WebSearchProvider;
 }
 
 // `images` stays outside ToolSetConfig on purpose: the config is signed into
@@ -576,12 +512,6 @@ export async function buildToolSet(env: Record<string, unknown>, cfg: ToolSetCon
   let sandboxToolsActive = false;
   let browserToolsActive = false;
   let dynamicWorkerActive = false;
-  let webSearchActive = false;
-
-  if (webSearchConfigured(env)) {
-    tools.webSearch = buildWebSearchTool(env, cfg.webSearchProvider);
-    webSearchActive = true;
-  }
 
   // Sandbox tools — only when the companion worker is configured
   if (chatSandboxConfigured(env as any)) {
@@ -610,5 +540,5 @@ export async function buildToolSet(env: Record<string, unknown>, cfg: ToolSetCon
     console.log(`[Chat API] Injected ${Object.keys(mcpTools).length} MCP tools from ${cfg.mcpServerIds.length} server(s)`);
   }
 
-  return { tools, sandboxToolsActive, browserToolsActive, dynamicWorkerActive, webSearchActive };
+  return { tools, sandboxToolsActive, browserToolsActive, dynamicWorkerActive };
 }

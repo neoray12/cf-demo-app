@@ -102,7 +102,7 @@
 
 全部走 REST API + `CF_API_TOKEN`（不依賴 `env.AI` binding，本地 `npm run dev` 可測），並經過 `nkcf-gateway-01`。
 
-- **Web Search**（`webSearch` chat 工具，「工具」開啟即註冊）：`POST /accounts/{id}/ai/websearch/`，provider `ceramic`（預設）/`exa`/`linkup`，前端在「工具」旁的下拉選單切換（localStorage `cf-demo-websearch-provider`），body 帶 `webSearchProvider`。需要 AI Gateway credits 或 BYOK，否則回 `web_search_payment_required` (402)
+- **Web Search 已移除**（2026-10-25）：Cloudflare Web Search API 需要 AI Gateway credits 或 BYOK，帳號沒有 credit，`webSearch` 工具、供應商選單與相關範例都已刪除。要恢復可從 git 歷史找 `buildWebSearchTool`
 - **Clef Playground**（`/clef`）：`/api/clef` 並行呼叫 `@cf/cloudflare/clef`（27B，$0.24/M，64K）、`clef-flash`（9B，$0.038/M，**24K**）、`clef-omni`（30B MoE，$0.15/M，64K，支援 `audio`/`videos`），走 `gateway.ai.cloudflare.com/.../workers-ai/@cf/cloudflare/{model}`（帶 `cf-aig-skip-cache` 以免快取扭曲延遲比較），失敗退回 `/ai/run`。音訊/影片只送給 Clef-omni，其他模型回傳 `ignoredMedia`。Clef 是決策模型（noul/choice/score 機率），不產生文字，所以不放進模型選單
 - **Clef 範例素材**：`public/clef-samples/`（來源與授權見 `CREDITS.md`；圖片/影片取自 Wikimedia Commons CC BY-SA / CC0，音訊為 macOS 台灣國語 TTS 合成的虛構劇本，詐騙簡訊截圖為自製）。情境與素材清單在 `src/app/pages/clef-presets.ts`（雙語），點情境會自動載入對應素材；音訊/影片情境只跑 Clef-omni。**帶圖片/音訊/影片的請求一律直接打 REST、不經 AI Gateway**——實測 Gateway 對大型 base64 body 會多花 20–35 秒（關 log 仍約 7 秒），Workers AI 本身不到 1.5 秒
 - **Sandbox / Dynamic Worker 穩定性**（2026-10 實測後的修正）：
@@ -120,7 +120,7 @@
 
 | 檔案 | 說明 |
 |------|------|
-| `src/lib/chat-tools.ts` | `buildWebSearchTool`、`aiSearchQuery`、`buildSearchKnowledgeByImageTool` |
+| `src/lib/chat-tools.ts` | `aiSearchQuery`、`buildSearchKnowledgeByImageTool` |
 | `src/app/api/clef/route.ts` | Clef / Clef-flash 並行呼叫、schema 驗證 |
 | `src/app/pages/clef-playground.tsx` | Playground UI（預設情境、問題建構器、機率視覺化） |
 | `src/app/(dashboard)/clef/page.tsx` | `/clef` 路由 |

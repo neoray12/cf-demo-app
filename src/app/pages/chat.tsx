@@ -15,14 +15,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, ChevronDown, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Search, Database, Route, Lock, History } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Database, Route, History } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
@@ -90,22 +83,12 @@ const VISION_MODEL_IDS = new Set([
   "openai-gpt6-luna",
 ]);
 
-// Cloudflare Web Search API providers — list price per 1k requests, ZDR = Zero Data Retention
-const WEB_SEARCH_PROVIDERS = [
-  { id: "ceramic", name: "Ceramic.ai", price: "$0.25", zdr: true },
-  { id: "exa", name: "Exa", price: "$7", zdr: false },
-  { id: "linkup", name: "Linkup", price: "$5", zdr: true },
-] as const;
-type WebSearchProviderId = (typeof WEB_SEARCH_PROVIDERS)[number]["id"];
-const WEB_SEARCH_PROVIDER_KEY = "cf-demo-websearch-provider";
-
 // i18n key maps (not raw labels) — the maps themselves live outside any
 // component, so lookups resolve through `t` at call time rather than baking
 // in one language.
 const TOOL_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.searchKnowledge",
   searchKnowledgeByImage: "chat.tool.searchKnowledgeByImage",
-  webSearch: "chat.tool.webSearch",
   executeCode: "chat.tool.executeCode",
   executeJs: "chat.tool.executeJs",
   codemode: "chat.tool.codemode",
@@ -117,7 +100,6 @@ const TOOL_KEYS: Record<string, string> = {
 const SOURCE_KEYS: Record<string, string> = {
   searchKnowledge: "chat.tool.sourceSearchKnowledge",
   searchKnowledgeByImage: "chat.tool.sourceSearchKnowledge",
-  webSearch: "chat.tool.sourceWebSearch",
   executeCode: "chat.tool.sourceExecuteCode",
   executeJs: "chat.tool.sourceExecuteJs",
   codemode: "chat.tool.sourceCodemode",
@@ -575,92 +557,6 @@ function ScreenshotDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   );
 }
 
-// ── Web Search Display ──
-
-interface WebSearchResult {
-  query?: string;
-  provider?: string;
-  latencyMs?: number;
-  items?: Array<{ url: string; title: string; description: string }>;
-  error?: string;
-}
-
-function hostnameOf(url: string): string {
-  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
-}
-
-function WebSearchDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
-  const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(true);
-  const isCalling = toolCall.status === "calling";
-  const result = (toolCall.result ?? {}) as WebSearchResult;
-  const query = result.query ?? (toolCall.args as { query?: string } | undefined)?.query ?? "";
-  const providerInfo = WEB_SEARCH_PROVIDERS.find((p) => p.id === result.provider);
-
-  if (isCalling) {
-    return (
-      <div className="my-2">
-        <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 max-w-full">
-          <Search className="size-3 shrink-0" />
-          <span className="truncate">{t("chat.tool.searchingWeb")}{query && ` · ${query}`}</span>
-          <span className="size-3 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin shrink-0" />
-        </span>
-      </div>
-    );
-  }
-
-  if (result.error || !result.items) {
-    return (
-      <div className="my-2">
-        <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400">
-          <Search className="size-3 shrink-0" />
-          <span>{t("chat.tool.webSearchFailed", { error: result.error || "unknown" })}</span>
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="my-2 max-w-xl">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="inline-flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 bg-muted hover:bg-muted/80 text-muted-foreground transition-colors cursor-pointer max-w-full"
-      >
-        <Search className="size-3 shrink-0" />
-        <span className="truncate">{t("chat.tool.webSearch")} · {query}</span>
-        <ChevronRight className={`size-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
-      </button>
-      {expanded && (
-        <div className="mt-1.5 ml-3 rounded-lg border bg-muted/30 p-3">
-          <div className="flex items-center gap-1.5 flex-wrap mb-2">
-            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-primary/10 text-primary font-medium">
-              {providerInfo?.zdr && <Lock className="size-2.5" />}
-              {providerInfo?.name ?? result.provider}
-            </span>
-            {typeof result.latencyMs === "number" && (
-              <span className="text-[11px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground">{result.latencyMs} ms</span>
-            )}
-            <span className="text-[11px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
-              {t("chat.tool.webSearchCount", { count: result.items.length })}
-            </span>
-          </div>
-          <ol className="space-y-2.5">
-            {result.items.map((item, i) => (
-              <li key={`${item.url}-${i}`} className="min-w-0">
-                <a href={item.url} target="_blank" rel="noopener noreferrer" className="group block">
-                  <div className="text-[11px] text-muted-foreground truncate">{i + 1}. {hostnameOf(item.url)}</div>
-                  <div className="text-sm font-medium text-primary group-hover:underline line-clamp-1">{item.title}</div>
-                  {item.description && <div className="text-xs text-muted-foreground line-clamp-2">{item.description}</div>}
-                </a>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Knowledge (AI Search) Display ──
 
 interface KnowledgeResult {
@@ -750,7 +646,6 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
   if (toolCall.name === "executeCode" || toolCall.name === "executeJs" || toolCall.name === "codemode") return <CodeExecutionDisplay toolCall={toolCall} />;
   if (toolCall.name === "createWebPreview") return <WebPreviewDisplay toolCall={toolCall} />;
   if (toolCall.name === "captureScreenshot") return <ScreenshotDisplay toolCall={toolCall} />;
-  if (toolCall.name === "webSearch") return <WebSearchDisplay toolCall={toolCall} />;
   if (toolCall.name === "searchKnowledge" || toolCall.name === "searchKnowledgeByImage") return <KnowledgeResultsDisplay toolCall={toolCall} />;
   const label = friendlyToolName(toolCall.name, t);
   const isCalling = toolCall.status === "calling";
@@ -1172,19 +1067,9 @@ export function ChatPage() {
   // connected servers' tools. null = every connected server.
   const turnMcpServersRef = useRef<string[] | null>(null);
   const pendingSuggestionRef = useRef<{ prompt: string; opts: SuggestionSendOpts } | null>(null);
-  const [webSearchProvider, setWebSearchProvider] = useState<WebSearchProviderId>("ceramic");
   // Auto Router session-affinity key; a new chat starts a new conversation
   const conversationIdRef = useRef<string>(crypto.randomUUID());
 
-  useEffect(() => {
-    const saved = localStorage.getItem(WEB_SEARCH_PROVIDER_KEY);
-    if (WEB_SEARCH_PROVIDERS.some((p) => p.id === saved)) setWebSearchProvider(saved as WebSearchProviderId);
-  }, []);
-
-  const changeWebSearchProvider = useCallback((id: WebSearchProviderId) => {
-    setWebSearchProvider(id);
-    localStorage.setItem(WEB_SEARCH_PROVIDER_KEY, id);
-  }, []);
   const [errorDialog, setErrorDialog] = useState<{ open: boolean; error: ChatErrorState | null }>({
     open: false,
     error: null,
@@ -1320,7 +1205,6 @@ export function ChatPage() {
           toolsEnabled: toolsEnabledRef.current,
           images,
           codeMode: codeModeEnabledRef.current,
-          webSearchProvider,
           conversationId: conversationIdRef.current,
           // Earlier user turns; a resend of the same turn overwrites it in history.
           turnIndex: Math.max(allMessages.filter((m) => m.role === "user").length - 1, 0),
@@ -1545,7 +1429,7 @@ export function ChatPage() {
         toolCallNames: debugToolNames,
       });
     }
-  }, [selectedModel, toolsEnabled, codeModeEnabled, connectedMcpServers, webSearchProvider]);
+  }, [selectedModel, toolsEnabled, codeModeEnabled, connectedMcpServers]);
 
   const handleSend = useCallback(async (text: string, mcpServers?: string[]) => {
     const images = pendingImages;
@@ -1800,44 +1684,11 @@ export function ChatPage() {
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted/60"
               }`}
-              title={toolsEnabled ? "工具已啟用 (AI Search / Web Search / MCP)" : "啟用工具 (AI Search / Web Search / MCP)"}
+              title={toolsEnabled ? "工具已啟用 (AI Search / 瀏覽器 / Sandbox / MCP)" : "啟用工具 (AI Search / 瀏覽器 / Sandbox / MCP)"}
             >
               <Zap className="size-3.5" />
               <span className="hidden md:inline">工具</span>
             </button>
-            {toolsEnabled && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="inline-flex items-center gap-1 h-8 px-2 rounded-lg text-xs text-muted-foreground hover:bg-muted/60 transition-colors"
-                    title={t("chat.tool.webSearchProvider")}
-                  >
-                    <Search className="size-3.5" />
-                    <span className="hidden lg:inline">{WEB_SEARCH_PROVIDERS.find((p) => p.id === webSearchProvider)?.name}</span>
-                    <ChevronDown className="size-3" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="center" className="w-60">
-                  <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">{t("chat.tool.webSearchProvider")}</DropdownMenuLabel>
-                  {WEB_SEARCH_PROVIDERS.map((p) => (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onClick={() => changeWebSearchProvider(p.id)}
-                      className={webSearchProvider === p.id ? "bg-accent" : ""}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm flex items-center gap-1">
-                          {p.name}
-                          {p.zdr && <span className="text-[10px] px-1 rounded bg-green-500/15 text-green-700 dark:text-green-400">ZDR</span>}
-                        </div>
-                        <div className="text-xs text-muted-foreground">{t("chat.tool.webSearchPrice", { price: p.price })}</div>
-                      </div>
-                      {webSearchProvider === p.id && <Check className="size-3.5" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
             <button
               onClick={() => {
                 setCodeModeEnabled((v) => {
