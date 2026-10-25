@@ -12,6 +12,7 @@ import { createIdleGuard } from '@/lib/idle-guard';
 import { parseRoutingHeaders, type AutoRouting } from '@/lib/auto-router';
 import { DEFAULT_SYSTEM_PROMPT, composeSystemPrompt, systemPromptKey } from '@/lib/system-prompt';
 import { autoRouterModelsKey, parseModelList, resolveAllowedModels } from '@/lib/auto-router-models';
+import { createSseFixer, usageProvider } from '@/lib/usage-normalize';
 import { getRequestUser } from '@/lib/auth';
 import { TurnRecorder, historyConfigured, isValidConversationId, saveTurn, type ModelAttempt } from '@/lib/chat-history';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
@@ -185,6 +186,9 @@ export async function POST(request: NextRequest) {
   function sanitizeSseFetch(url: RequestInfo | URL, init?: RequestInit, label?: string): Promise<Response> {
     const headers = new Headers(init?.headers as HeadersInit);
     if (isExternal) headers.delete('Authorization');
+    // A comparison asks the same question twice: without this the second run's
+    // first request is a gateway cache hit (free and instant), skewing the numbers.
+    if (experiment) headers.set('cf-aig-skip-cache', 'true');
     const attempt = label ?? currentAttempt;
     const startedMs = recorder?.elapsed() ?? 0;
     if (!label) mainRequestAt = now();
@@ -219,27 +223,20 @@ export async function POST(request: NextRequest) {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       const encoder2 = new TextEncoder();
+      // Normalizes usage (Anthropic cache tokens) and coerces numeric delta.content;
+      // the provider is the routed model's for Auto Router.
+      const fixer = createSseFixer(() => usageProvider(compatModelId, routedModel));
       const transformed = new ReadableStream({
         async pull(controller) {
           const { done, value } = await reader.read();
-          if (done) { controller.close(); return; }
-          const chunk = decoder.decode(value, { stream: true });
-          const fixed = chunk.replace(/^data: ({.+})$/mg, (_, json) => {
-            try {
-              const obj = JSON.parse(json);
-              if (obj?.choices) {
-                for (const choice of obj.choices) {
-                  if (choice?.delta && typeof choice.delta.content !== 'string' && choice.delta.content != null) {
-                    choice.delta.content = String(choice.delta.content);
-                  }
-                }
-              }
-              return `data: ${JSON.stringify(obj)}`;
-            } catch {
-              return `data: ${json}`;
-            }
-          });
-          controller.enqueue(encoder2.encode(fixed));
+          if (done) {
+            const rest = fixer.flush();
+            if (rest) controller.enqueue(encoder2.encode(rest));
+            controller.close();
+            return;
+          }
+          const fixed = fixer.push(decoder.decode(value, { stream: true }));
+          if (fixed) controller.enqueue(encoder2.encode(fixed));
         },
         cancel() { reader.cancel(); },
       });

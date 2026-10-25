@@ -360,6 +360,7 @@
     },
     "compare": {
       "title": "Code Mode 對照（{{id}}）",
+      "pinnedModel": "兩次都用 {{model}}",
       "metric": "指標",
       "off": "不開 Code Mode",
       "on": "開 Code Mode",

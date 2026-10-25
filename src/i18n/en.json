@@ -360,6 +360,7 @@
     },
     "compare": {
       "title": "Code Mode comparison ({{id}})",
+      "pinnedModel": "both runs on {{model}}",
       "metric": "Metric",
       "off": "Without Code Mode",
       "on": "With Code Mode",

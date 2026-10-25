@@ -449,7 +449,7 @@ export interface HistoryTurn {
     notices: string[];
     timeline: { events: TimelineEvent[]; endAt: number; startedAt: number };
     trace: RunTrace | null;
-    experiment?: { id: string; codeMode: boolean };
+    experiment?: { id: string; codeMode: boolean; model?: string };
   };
 }
 

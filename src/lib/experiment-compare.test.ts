@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compareRuns } from './experiment-compare';
+import { compareRuns, comparisonModel } from './experiment-compare';
 import type { TraceSummary } from './trace-summary';
 
 const off: TraceSummary = { totalMs: 20000, ttftMs: 4000, modelCalls: 8, toolCalls: 6, subagents: 1, inputTokens: 10000, outputTokens: 800 };
@@ -24,5 +24,15 @@ describe('compareRuns', () => {
     const rows = compareRuns({ ...off, ttftMs: null, toolCalls: 0 }, on);
     expect(rows.find((r) => r.key === 'ttftMs')).toEqual({ key: 'ttftMs', off: null, on: 3000, deltaPct: null });
     expect(rows.find((r) => r.key === 'toolCalls')!.deltaPct).toBeNull();
+  });
+});
+
+describe('comparisonModel', () => {
+  it('pins Auto Router to the default model so both runs use the same one', () => {
+    expect(comparisonModel('cf-auto')).toBe('claude-haiku-5-5');
+  });
+
+  it('keeps a concrete model as chosen', () => {
+    expect(comparisonModel('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
   });
 });

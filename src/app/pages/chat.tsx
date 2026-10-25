@@ -32,6 +32,7 @@ import { SubagentCard } from "../components/chat/subagent-card";
 import type { RunTrace, SpanNode } from "@/lib/agents/trace-tree";
 import { MAIN_ROOT_SPAN, summarizeTrace } from "@/lib/trace-summary";
 import { CompareTable } from "../components/chat/compare-table";
+import { comparisonModel } from "@/lib/experiment-compare";
 import { suggestionAction } from "@/lib/suggestion-action";
 import type { GatewayBlock } from "@/lib/mcp-guardrails";
 
@@ -55,7 +56,7 @@ interface ChatMessage {
   /** Span tree of the turn (model calls, tools, subagents with time and tokens). */
   trace?: RunTrace | null;
   /** Code Mode comparison example run this answer belongs to. */
-  experiment?: { id: string; codeMode: boolean };
+  experiment?: { id: string; codeMode: boolean; model?: string };
 }
 
 interface PendingImage {
@@ -916,6 +917,7 @@ function AssistantMessage({
       {compareOff && message.experiment && !isStreaming && message.trace?.status !== "running" && (
         <CompareTable
           id={message.experiment.id}
+          model={message.experiment.model}
           off={compareOff.trace && compareOff.trace.status === "ok" ? summarizeTrace(compareOff.trace) : null}
           on={message.trace && message.trace.status === "ok" ? summarizeTrace(message.trace) : null}
         />
@@ -1122,7 +1124,7 @@ export function ChatPage() {
   const turnMcpServersRef = useRef<string[] | null>(null);
   const pendingSuggestionRef = useRef<{ prompt: string; opts: SuggestionSendOpts } | null>(null);
   // Set only while the Code Mode comparison example sends its two runs.
-  const experimentRef = useRef<{ id: string; codeMode: boolean } | null>(null);
+  const experimentRef = useRef<{ id: string; codeMode: boolean; model: string } | null>(null);
   // Auto Router session-affinity key; a new chat starts a new conversation
   const conversationIdRef = useRef<string>(crypto.randomUUID());
 
@@ -1231,7 +1233,7 @@ export function ChatPage() {
     opts?: { isolated?: boolean },
   ) => {
     const experiment = experimentRef.current ?? undefined;
-    const aiModel = AI_MODELS.find((m) => m.id === selectedModel);
+    const aiModel = AI_MODELS.find((m) => m.id === (experiment?.model ?? selectedModel));
     const modelId = aiModel?.workersAiModel ?? aiModel?.providerModelId ?? "@cf/openai/gpt-oss-120b";
     const provider = aiModel?.provider ?? "workers-ai";
 
@@ -1735,12 +1737,13 @@ export function ChatPage() {
   // second answer once both have finished.
   const runComparison = async (prompt: string, id: string, mcpServers?: string[]) => {
     handleNewChat();
+    const model = comparisonModel(selectedModel);
     try {
-      experimentRef.current = { id, codeMode: false };
+      experimentRef.current = { id, codeMode: false, model };
       const first = await handleSend(prompt, mcpServers);
       // The user pressed stop: the whole comparison stops (a failed run still continues).
       if (first.aborted) return;
-      experimentRef.current = { id, codeMode: true };
+      experimentRef.current = { id, codeMode: true, model };
       await handleSend(prompt, mcpServers, { isolated: true });
     } finally {
       experimentRef.current = null;

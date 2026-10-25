@@ -3,17 +3,25 @@
 import { useTranslation } from "react-i18next";
 import { compareRuns, type CompareRow } from "@/lib/experiment-compare";
 import type { TraceSummary } from "@/lib/trace-summary";
+import { AI_MODELS } from "@/lib/types";
 
 const fmt = (row: CompareRow, v: number | null) =>
   v === null ? "–" : row.key === "totalMs" || row.key === "ttftMs" ? `${(v / 1000).toFixed(1)} s` : v.toLocaleString("en-US");
 
 /** Without vs with Code Mode for one comparison example. */
-export function CompareTable({ id, off, on }: { id: string; off: TraceSummary | null; on: TraceSummary | null }) {
+export function CompareTable({ id, model, off, on }: { id: string; model?: string; off: TraceSummary | null; on: TraceSummary | null }) {
   const { t } = useTranslation();
   const rows = compareRuns(off, on);
   return (
     <div className="mt-3 max-w-xl overflow-x-auto rounded-lg border">
-      <div className="border-b bg-muted/40 px-3 py-1.5 text-xs font-medium">{t("chat.compare.title", { id })}</div>
+      <div className="border-b bg-muted/40 px-3 py-1.5 text-xs font-medium">
+        {t("chat.compare.title", { id })}
+        {model && (
+          <span className="ml-2 font-normal text-muted-foreground">
+            · {t("chat.compare.pinnedModel", { model: AI_MODELS.find((m) => m.id === model)?.name ?? model })}
+          </span>
+        )}
+      </div>
       <table className="w-full text-xs">
         <thead>
           <tr className="text-muted-foreground">
