@@ -62,19 +62,20 @@
 - **MCP_SERVER_URLS 格式**：
   - 公開 server：`id=url`（例如 `cf-docs=https://docs.mcp.cloudflare.com/mcp`）
   - OAuth server：`id=url:oauth`（例如 `cf-radar=https://radar.mcp.cloudflare.com/mcp:oauth`）
+  - 旗標可任意順序疊加：`:agent`（一律交給 subagent）、`:codemode`（開發者選用 Portal Code Mode，連線時自動加 `?codemode=search_and_execute`）
 - **已設定的 servers**：
   - `cf-docs` — Cloudflare Docs（公開）
   - `cf-observability` — Workers Observability（OAuth）
   - `cf-radar` — Radar（OAuth）
-  - `saas` — SAP & Salesforce，走 MCP Server Portal「SaaS MCP Portal」`https://saasmcp.neokung.work/mcp`（OAuth，Access policy「Allow Neo Azure AD & MFA」）
+  - `saas` — SAP & Salesforce，走 MCP Server Portal「SaaS MCP Portal」`https://saasmcp.neokung.work/mcp`（OAuth，Access policy「Allow Neo Azure AD & MFA」），設定為 `:oauth:agent:codemode`：一律由 `saas-agent` subagent 執行，且用 Portal Code Mode。**只有這一張 SAP & Salesforce 卡片**（舊的 `saas-cm` 已合併）
     - **不要直連** `sap-mcp` / `salesforce-mcp.neokung.work` 或 `*.workers.dev`：Gateway 路由、DLP 與 Portal logs 只對經過 Portal 的流量生效
     - Portal 內的 server 是 `sap-mcp` / `salesforce-mcp`（AI Controls，auth_type **oauth**、Require user auth），upstream 為 Access 保護的 `sap-mcp.neokung.work/mcp`、`salesforce-mcp.neokung.work/mcp`；Access 本身就是 OAuth authorization server，Worker 驗 Access JWT
     - **不要**把 `*.workers.dev`（`sap-s4-hana-mcp` / `salesforce-crm-mcp`，unauthenticated）放進 Portal：Worker 讓 `initialize`/`tools/list` 免驗證（同步會成功），但 `tools/call` 一定要 Access JWT → 401 → Portal 回 `needsReauth`，模型會一直叫 `portal_toggle_servers`
     - Portal 工具名稱會加 server ID 前綴 `{server_id}_{tool}`，所以 tool key 形如 `tool_saas_sap-mcp_sap_list_customers`（需 ≤ 64 字元）；Gateway HTTP 政策要比對 **upstream** host（`sap-mcp.neokung.work` / `salesforce-mcp.neokung.work`），不是 Portal 網址
     - `neokung.work` 有 Zone Hold（含子網域）：在 hold 生效期間建立 Portal，custom hostname 建不起來，會回 **1014**。要重建 Portal 前先暫時解除 hold
 
-  - `saas-cm` — 同一個 Portal 加上 `?codemode=search_and_execute`（Portal 政策 `opt_in`）：Portal 只提供 `portal_codemode_search` / `portal_codemode_execute` 兩個工具，模型寫 JS 在 Portal 端的 Dynamic Worker 一次呼叫多個工具。用它時 App 自己的 Code Mode 要關（避免巢狀執行）；首頁「Code Mode 示範」的 Portal 範例會自動關掉並只送 `saas-cm`。Gateway 在 Code Mode 下擋掉的工具呼叫包在 execute 結果裡，不會出現 🛡 攔截卡片
-    - Portal Code Mode 的 search 不是語意搜尋：模型自己寫 JS 過濾 `codemode.tools()`，常猜錯名稱。`/api/chat` 會在連著 Portal Code Mode server 時，先用 `portal_codemode_search` 抓一次工具清單（KV `mcp-catalog:{sessionId}:{serverId}`，TTL 5 分鐘），把 `codemode.<name>(args)` 清單放進 system prompt（`src/lib/portal-catalog.ts`）
+  - Portal Code Mode（`:codemode`）：Portal 只提供 `portal_codemode_search` / `portal_codemode_execute`，模型寫 JS 在 Portal 端的 Dynamic Worker 一次呼叫多個工具。Gateway 在 Code Mode 下擋掉的工具呼叫包在 execute 結果裡，不一定會出現 🛡 攔截卡片
+    - Portal Code Mode 的 search 不是語意搜尋：模型自己寫 JS 過濾 `codemode.tools()`，常猜錯名稱。subagent 在 Code Mode 時先用 `portal_codemode_search` 抓一次工具清單（`serverCatalogPrompt`，KV `mcp-catalog:{sessionId}:{serverId}`，TTL 5 分鐘），把 `codemode.<name>(args)` 清單放進 subagent 的 system prompt（`src/lib/portal-catalog.ts`）
     - Salesforce MCP worker 回傳 `structuredContent`（`{ summary, totalSize, records }` / `{ summary, record }`，同一份 JSON 也放在 text）；App 端 MCP 工具結果優先回傳 structuredContent，Code Mode 腳本可直接計算。Portal 的工具說明來自**管理員授權的背景同步**（約 2 小時一次），worker 改了說明後要在 Dashboard 對 `salesforce-mcp` 重新授權 / Sync，否則 search 看到的是舊說明
 
 #### MCP 相關檔案
@@ -95,8 +96,10 @@
 
 #### Chat API 整合
 - `/api/chat` 接受 `mcpServers: string[]` 參數
-- `buildMcpTools()` 動態從 KV cache 或即時連線取得工具，轉換為 Vercel AI SDK tool 格式
+- 工具清單由 Harness 決定（`resolveToolPolicy()`，`src/lib/tool-policy.ts`），**沒有**「工具」或「Code Mode」開關：模型支援 tool calling 就帶核心工具；已連線 MCP server 工具數 ≤ `MCP_DIRECT_MAX`（8）直接給主模型，超過或帶 `:agent` 就只給一個委派工具 `ask_<serverId>`，由 subagent（`src/lib/mcp-subagent.ts`，重用 agents runtime 的 `runSubagent`，同一個模型）在獨立 context 執行該 server 的工具
+- `listServerTools()` / `mcpToolsToAiTools()`（`src/lib/chat-tools.ts`）從 KV cache（Code Mode 版本 key 加 `#codemode`）或即時連線取得工具，轉換為 Vercel AI SDK tool 格式
 - Tool key 格式：`tool_{serverId}_{toolName}`（例如 `tool_cf-docs_search_cloudflare_documentation`）
+- App 端自己的 Code Mode（`codemode` 包裝工具、`/api/codemode-exec`、`SELF` binding）已移除（2026-10-25）；`executeJs` 的 `normalizeCode` 搬到 `src/lib/js-normalize.ts`
 
 ### 6. Birthday Week 2026 功能
 
@@ -111,7 +114,6 @@
   - `executeJs`（`normalizeCode`）改用括號配對判斷程式形狀：以 `function fib(){}` 宣告開頭、後面接 `console.log(...)` 的腳本以前會被當成函式運算式包起來而 SyntaxError（"Unexpected identifier 'console'"），幾乎每個 DW 範例前 1–2 次都失敗
   - 預設模型改為 `claude-haiku-4-5`，2026-10-14 再換成 `claude-haiku-5-5`（Sandbox/DW 範例實測 6–10 秒；GLM 5.3 因推理過程不串流，同樣範例要 12–88 秒且變異大；gpt-oss-120b 約 8–20 秒，是不想用外部 provider 時的替代）
   - sandbox worker 的 `resolveSandboxId` 做 single-flight，app 端工具呼叫會等同 session 進行中的 warmup，避免兩邊同時 probe/re-roll 互相銷毀 container
-  - **建議卡片第一次點擊會送出 `toolsEnabled:false`**（`setToolsEnabled(true)` 與送出在同一個 tick，closure 還是舊值），模型於是心算、完全不呼叫 sandbox——這就是「有時候沒有正確計算」的主因之一。現在用 `toolsEnabledRef` 同步更新
   - warmup 只在提示詞像是需要 sandbox（`SANDBOX_HINT`）或有附件時才觸發，並順便暖起 Python interpreter；`/api/warmup` 會記錄各階段耗時
   - 聊天訊息改用有序 `parts`（文字/推理/工具依實際發生順序顯示）；等待中顯示計時，工具執行中顯示秒數
 - **介面語言**：預設繁體中文（不偵測瀏覽器語言），只記住使用者手動切換的語言，localStorage key `cf-demo-lang-v2`
@@ -138,7 +140,7 @@
 - 被擋時 MCP client 收到：request 方向 `McpError -30403`（`data.rule_id` / `request_id`）；response 方向 `McpError -32603 Internal Error`（無 rule ID，只在 `saas` Portal 上解讀為「可能被攔截」）。`classifyMcpError()` 把它轉成 `{ blocked: true, … }` 工具結果，前端畫 🛡 卡片，system prompt 要求模型不要重試或繞過
 - DLP regex 限制：Rust regex、無 lookaround、不能有無上限量詞（`+`/`*` 會回 3305）；word_list 每帳號只能 1 個（已被 SAP 規則使用）
 - 規則啟用約 11 秒、停用約 30 秒生效
-- 首頁建議改為可展開類別（含「MCP 卡控示範」）；聊天訊息下方顯示處理過程時間軸（`buildTimeline`）
+- 首頁建議改為可展開類別（含「MCP 卡控示範」）；聊天訊息下方顯示處理過程（見第 10 節）
 
 | 檔案 | 說明 |
 |------|------|
@@ -248,6 +250,17 @@
 | `src/lib/chat-history.ts` | `TurnRecorder`、`saveTurn`、列表 / 讀取 / 匯出 / 改名 / 刪除 |
 | `src/app/api/chat/history/**` | 歷史 API |
 | `src/app/components/chat/history-panel.tsx` | 歷史面板 |
+
+### 10. Harness 工具、MCP Subagent、執行細節（2026-10-25）
+
+設計：`docs/superpowers/specs/2026-10-25-harness-tools-subagents-observability-design.md`；計畫：`docs/superpowers/plans/2026-10-25-harness-tools-subagents-observability.md`。
+
+- **span 事件**：`/api/chat` 的 NDJSON 在原有事件外，送 Agents Demo 的 `run-start` / `span-start` / `span-input` / `span-end` / `run-end`（`src/lib/agents/trace-events.ts`）。主模型由 `createChatSpanTracker()`（`src/lib/chat-spans.ts`）產生：根 `invoke_agent main-chat`、每次模型呼叫一個 `chat` span（從**送出請求**開始算，帶 `usage`、`ttftMs`、`detail.gateway` = `cf-aig-log-id` / 快取 / `cf-ray`）、每個工具一個 `execute_tool` span（id `main/{toolCallId}`）。Subagent 的 span 由 runtime 掛在委派工具 span 底下，其文字 / 推理 delta 帶 `spanId`——`applyChatEvent` 不會把它們放進答案。確定性步驟也是 span：`mcp.connect:{id}`、`mcp.tools:{id}[#codemode]`、`sandbox.warmup`、`sandbox.upload`
+- **前端**：每則回答下方一行摘要（`formatSummary`：總時間、首字、模型呼叫、工具、subagent、輸入 / 輸出 tokens，主 + subagent 加總），展開是共用的 `TraceWaterfall`（`src/app/components/trace/`，Agents Trace 面板也用它），點一列看細節；工具卡片標題帶耗時；`ask_*` 顯示 `SubagentCard`（即時工具晶片、輸出尾巴、結束後自己的時間 / tokens、Code Mode 標籤）
+- **Code Mode 對照範例**：首頁「Code Mode 示範」只有一張卡（`experiment: "sf-agg"`），同一個新對話裡先送 `experiment.codeMode=false`、再只送同一題 `codeMode=true`，第二則回答下方顯示 `CompareTable`（`compareRuns`）。`experiment.codeMode` 是唯一能在請求層覆蓋 Code Mode 的入口
+- **AI Gateway metadata**：恰好 5 個 key（`buildGatewayMetadata`，`src/lib/gateway-metadata.ts`）：`email`、`usertier`、`department`、`code_mode`（主模型一律 false；subagent 依設定 / 實驗）、`test`（實驗 ID，一般 `none`）。拿掉了 `name`、`tools_enabled`
+- **Tracing**：subagent 也走 traced AI SDK（`RunContext.languageModel` hook，runtime 以 `functionId` 取模型），Dashboard 同一個 session 會看到 `main-chat` 與 `saas-agent`；`app.code_mode` / `app.experiment` / `app.tool_policy` 等寫進 telemetry metadata 與 active span 屬性
+- **歷史**：D1 `turns` 新增 `code_mode`、`experiment`（migration `0002_code_mode.sql`），`input_tokens` / `output_tokens` 改為主 + subagent 加總；還原對話會帶回 span 樹（waterfall）與實驗標記
 
 ## 技術棧
 

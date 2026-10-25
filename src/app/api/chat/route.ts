@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
-import { getTracedAI, isTracingActive, setActiveSpanAttributes } from '@/lib/agents/tracing';
+import { getTracedAI, isTracingActive, setActiveSpanAttributes, withToolSpan } from '@/lib/agents/tracing';
 import { runTracedTool, type RunContext } from '@/lib/agents/runtime';
 import type { TraceEvent } from '@/lib/agents/trace-events';
 import { createChatSpanTracker, MAIN_ROOT_SPAN, type GatewayInfo } from '@/lib/chat-spans';
@@ -921,7 +921,19 @@ export async function POST(request: NextRequest) {
   async function saveHistory() {
     if (!recorder) return;
     try {
-      await saveTurn(env as any, recorder.finish(), validImages);
+      // After the response closed, so it is a Cloudflare trace span only (no NDJSON event).
+      const record = recorder.finish();
+      await withToolSpan(
+        {
+          name: 'history.save',
+          callId: `history-${record.conversationId}-${record.turnIndex}`,
+          input: { conversationId: record.conversationId, turnIndex: record.turnIndex },
+          storeContent: false,
+          agent: { name: 'main-chat', id: 'main-chat-demo' },
+          conversationId: record.conversationId,
+        },
+        () => saveTurn(env as any, record, validImages),
+      );
     } catch (err) {
       console.error('[Chat API] history save failed:', (err as Error)?.message ?? err);
     } finally {
