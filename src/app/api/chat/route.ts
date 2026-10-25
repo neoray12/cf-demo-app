@@ -1,18 +1,21 @@
 import { NextRequest } from 'next/server';
 import { stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
-import { getTracedAI } from '@/lib/agents/tracing';
+import { getTracedAI, isTracingActive, setActiveSpanAttributes } from '@/lib/agents/tracing';
+import { runTracedTool, type RunContext } from '@/lib/agents/runtime';
+import type { TraceEvent } from '@/lib/agents/trace-events';
+import { createChatSpanTracker, MAIN_ROOT_SPAN, type GatewayInfo } from '@/lib/chat-spans';
+import { buildGatewayMetadata } from '@/lib/gateway-metadata';
+import { resolveToolPolicy } from '@/lib/tool-policy';
+import { buildDelegateTool } from '@/lib/mcp-subagent';
 import { getRequestUser } from '@/lib/auth';
 import { TurnRecorder, historyConfigured, isValidConversationId, saveTurn, type ModelAttempt } from '@/lib/chat-history';
-import { z } from 'zod';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { cookies } from 'next/headers';
 import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { chatSandboxConfigured, uploadFile as sandboxUploadFile, warmSandbox } from '@/lib/chat-sandbox';
-import { signCodeModeSession, codeModeSecret, describeTools, buildCodeModeModule, RETURN_SHAPE_HINT } from '@/lib/codemode';
 import { parseMcpServerUrls } from '@/lib/mcp-client';
-import { isPortalCodeModeUrl } from '@/lib/portal-catalog';
-import { buildToolSet, safeTool, buildPortalCatalogPrompt, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
+import { buildToolSet, browserRenderingConfigured, listServerTools, buildServerTools, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
 
 const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
 
@@ -74,12 +77,10 @@ const DYNAMIC_WORKER_PROMPT = `
 
 當需要執行 JavaScript 程式碼（快速計算、字串處理、演算法示範）時，優先使用 executeJs 工具——它在毫秒級啟動的 V8 isolate 中執行。需要 Python、pandas、檔案或畫圖時才用 executeCode。executeJs 的沙箱完全禁止網路存取，fetch 會失敗，這是刻意的安全設計。`;
 
-// System prompt override when Code Mode collapses everything into one tool
-const CODE_MODE_PROMPT = `
+// Extra system prompt guidance when an MCP server runs in a subagent
+const DELEGATE_PROMPT = `
 
-目前為 Code Mode：你只有一個 codemode 工具。需要查資料、執行程式、截圖或其他操作時，寫一段 JavaScript async arrow function，在裡面呼叫 codemode 命名空間下的函式（工具描述中列出了可用的函式與型別），一次完成多個步驟後 return 結果。這比多輪工具呼叫更快也更省 token。`;
-
-const CODE_MODE_RETURN_HINT = `\n\n${RETURN_SHAPE_HINT}`;
+部分 MCP server 由專屬 subagent 執行（工具名稱 ask_<server>）：需要該系統的資料或操作時，把完整任務（含所有條件）交給它，不要自己猜資料，也不要把同一個任務拆成很多次呼叫。`;
 
 // Merge consecutive same-role messages (some providers reject them)
 function sanitizeMessages(
@@ -108,10 +109,7 @@ export async function POST(request: NextRequest) {
     messages,
     model: modelIdFromClient,
     provider: rawProvider,
-    toolsEnabled = false,
-    codeMode = false,
     mcpServers: mcpServerIds = [],
-    userName,
     userEmail,
     attachments = [],
     images = [],
@@ -121,10 +119,7 @@ export async function POST(request: NextRequest) {
     messages: Array<{ role: string; content: string }>;
     model?: string;
     provider?: ModelProvider;
-    toolsEnabled?: boolean;
-    codeMode?: boolean;
     mcpServers?: string[];
-    userName?: string;
     userEmail?: string;
     attachments?: Array<{ name: string; contentBase64: string }>;
     /** Pasted screenshots as data URLs, attached to the latest user turn. */
@@ -133,14 +128,20 @@ export async function POST(request: NextRequest) {
     conversationId?: string;
     /** Position of this turn in the conversation; a resend at the same position replaces it in history. */
     turnIndex?: number;
+    /** Code Mode comparison example — the only request-level Code Mode override. */
+    experiment?: { id?: unknown; codeMode?: unknown };
   };
+  const rawExperiment = (body as { experiment?: { id?: unknown; codeMode?: unknown } }).experiment;
+  const experiment =
+    rawExperiment && typeof rawExperiment.id === 'string' && /^[\w-]{1,40}$/.test(rawExperiment.id) && typeof rawExperiment.codeMode === 'boolean'
+      ? { id: rawExperiment.id, codeMode: rawExperiment.codeMode }
+      : undefined;
   const turnIndex = Number.isInteger(rawTurnIndex) && (rawTurnIndex as number) >= 0 ? (rawTurnIndex as number) : 0;
 
   // Verified identity (Access JWT or signed login cookie). The userEmail in the
   // body is only a fallback for gateway analytics, never for history ownership.
   const user = await getRequestUser(request, env as any);
   const analyticsEmail = user?.email ?? userEmail;
-  const analyticsName = user?.name ?? userName;
 
   if (!messages || !Array.isArray(messages)) {
     return new Response(JSON.stringify({ error: 'messages is required' }), {
@@ -170,7 +171,7 @@ export async function POST(request: NextRequest) {
     default: compatModelId = `workers-ai/${modelId}`;
   }
 
-  console.log('[Chat API] provider:', provider, 'model:', modelId, 'compat:', compatModelId, 'messages:', messages.length, 'toolsEnabled:', toolsEnabled);
+  console.log('[Chat API] provider:', provider, 'model:', modelId, 'compat:', compatModelId, 'messages:', messages.length, 'experiment:', experiment?.id ?? 'none');
 
   // AI Gateway /compat — all providers through unified endpoint
   const accountId = (env as any).CF_ACCOUNT_ID || '5efa272dc28e4e3933324c44165b6dbe';
@@ -182,24 +183,9 @@ export async function POST(request: NextRequest) {
   // Workers AI: CF_API_TOKEN as Authorization header
   // External providers: strip Authorization so AI Gateway uses stored credentials
   const isExternal = provider !== 'workers-ai';
-  // usertier: vera & kevin(menghsien) are VIP, others are regular
-  const VIP_EMAILS = new Set(['vera@cloudflare.com', 'menghsien@cloudflare.com']);
-  const usertier = analyticsEmail && VIP_EMAILS.has(analyticsEmail) ? 'VIP' : 'regular';
-
-  // department: neo=技術, others=業務
-  const TECH_EMAILS = new Set(['neo@cloudflare.com']);
-  const department = analyticsEmail && TECH_EMAILS.has(analyticsEmail) ? '技術' : '業務';
-
-  // Build metadata header for AI Gateway analytics
-  // Use \uXXXX escape for non-ASCII chars (e.g. Chinese) to keep header Latin-1/ByteString safe
-  // AI Gateway parses unicode escapes correctly — do NOT encodeURIComponent
-  const metadataJson = JSON.stringify({
-    tools_enabled: toolsEnabled,
-    name: analyticsName ?? 'anonymous',
-    email: analyticsEmail ?? 'unknown',
-    usertier,
-    department,
-  }).replace(/[^\x20-\x7E]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  // AI Gateway metadata (five filterable keys): the main model is never in Code Mode;
+  // a delegated server's subagent sends its own code_mode (see languageModel below).
+  const gatewayMetadata = (codeMode: boolean) => buildGatewayMetadata({ email: analyticsEmail, codeMode, test: experiment?.id });
 
   // Sanitize SSE stream: some Workers AI models (e.g. llama-3.2-3b) return
   // delta.content as a number instead of string, causing AI_TypeValidationError.
@@ -211,12 +197,19 @@ export async function POST(request: NextRequest) {
   let recorder: TurnRecorder | null = null;
   // Which model call the next gateway request belongs to (for the history record).
   let currentAttempt = 'stream-1';
+  // Gateway headers of the main model's latest request (attached to its chat span).
+  let lastMainGateway: GatewayInfo | undefined;
+  // When the main model's latest request went out: its chat span starts there, so
+  // the span covers queueing and time to first token (start-step only arrives with
+  // the first chunk).
+  let mainRequestAt: number | null = null;
 
-  function sanitizeSseFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  function sanitizeSseFetch(url: RequestInfo | URL, init?: RequestInit, label?: string): Promise<Response> {
     const headers = new Headers(init?.headers as HeadersInit);
     if (isExternal) headers.delete('Authorization');
-    const attempt = currentAttempt;
+    const attempt = label ?? currentAttempt;
     const startedMs = recorder?.elapsed() ?? 0;
+    if (!label) mainRequestAt = now();
     return fetch(url, { ...init, headers }).then((res) => {
       const routedModel = res.headers.get('cf-aig-routed-model');
       if (routedModel) routedInfo = { model: routedModel, reason: res.headers.get('cf-aig-routing-reason') };
@@ -229,6 +222,19 @@ export async function POST(request: NextRequest) {
         aigLogId: res.headers.get('cf-aig-log-id'),
         aigCacheStatus: res.headers.get('cf-aig-cache-status'),
         routedModel,
+      });
+      const gateway: GatewayInfo = {
+        logId: res.headers.get('cf-aig-log-id'),
+        cacheStatus: res.headers.get('cf-aig-cache-status'),
+        ray: res.headers.get('cf-ray'),
+        routedModel,
+      };
+      if (!label) lastMainGateway = gateway;
+      // The active span here is the chat span wrapAISDK opened for this request.
+      setActiveSpanAttributes({
+        'aig.log_id': gateway.logId ?? '',
+        'aig.cache_status': gateway.cacheStatus ?? '',
+        'aig.ray': gateway.ray ?? '',
       });
       if (!res.body || !res.headers.get('content-type')?.includes('text/event-stream')) return res;
       const reader = res.body.getReader();
@@ -272,18 +278,22 @@ export async function POST(request: NextRequest) {
     if (allowed) autoRouterHeaders['cf-aig-allowed-providers'] = allowed;
   }
 
-  const openai = createOpenAI({
-    apiKey: isExternal ? 'aig-managed' : (cfApiToken || 'dummy'),
-    baseURL,
-    headers: {
-      ...(aigToken ? { 'cf-aig-authorization': `Bearer ${aigToken}` } : {}),
-      'cf-aig-metadata': metadataJson,
-      ...autoRouterHeaders,
-    },
-    fetch: sanitizeSseFetch,
-  });
+  // `label` set = a subagent's provider: its requests are recorded under that
+  // label and don't overwrite the main model's gateway info.
+  const makeProvider = (metadata: string, label?: string) =>
+    createOpenAI({
+      apiKey: isExternal ? 'aig-managed' : (cfApiToken || 'dummy'),
+      baseURL,
+      headers: {
+        ...(aigToken ? { 'cf-aig-authorization': `Bearer ${aigToken}` } : {}),
+        'cf-aig-metadata': metadata,
+        ...autoRouterHeaders,
+      },
+      fetch: (url, init) => sanitizeSseFetch(url, init, label),
+    });
+  const openai = makeProvider(gatewayMetadata(false));
 
-  const useTools = toolsEnabled && modelSupportsTools(provider, modelId);
+  const useTools = modelSupportsTools(provider, modelId);
   const chatMessages: Array<{ role: string; content: unknown }> = sanitizeMessages(messages);
 
   // Images ride along with the newest user turn. The AI SDK converts these
@@ -325,21 +335,50 @@ export async function POST(request: NextRequest) {
   const maxTokens = needsThinkParsing ? 16384 : 4096;
   const skipMaxTokens = usesMaxCompletionTokens(modelId);
 
-  // Build tools: searchKnowledge + sandbox tools + MCP tools
+  // Cloudflare Agents tracing (production only; plain `ai` in next dev). Payloads
+  // are recorded so the dashboard's session replay shows the whole turn.
+  const ai = await getTracedAI({ storeContent: true });
+  const traceConversationId = isValidConversationId(conversationId) ? conversationId : undefined;
+
+  // Span events for the chat page (calls, tokens, timing). Events emitted before
+  // the response stream starts (MCP connections, uploads) are queued and flushed first.
+  const t0 = Date.now();
+  const now = () => Date.now() - t0;
+  const tracker = createChatSpanTracker({ model: compatModelId, traced: isTracingActive() });
+  const pendingEvents: TraceEvent[] = [...tracker.start(0)];
+  let liveController: ReadableStreamDefaultController | null = null;
+  const emit = (e: TraceEvent) => {
+    if (liveController) send(liveController, e as unknown as Record<string, unknown>);
+    else pendingEvents.push(e);
+  };
+
+  // Harness tool policy: the user never toggles tools — the harness picks them,
+  // the model decides what to call. Delegated servers run in a subagent.
+  const allServers = parseMcpServerUrls((env as any).MCP_SERVER_URLS || '');
+  let policy = resolveToolPolicy({ modelSupportsTools: false, bindings: { sandbox: false, loader: false, browser: false }, hasImages: false, servers: [] });
+  const runCtx: RunContext = {
+    env: env as any,
+    ai,
+    emit,
+    now,
+    conversationId: traceConversationId ?? 'none',
+    storeContent: true,
+    signal: request.signal ?? new AbortController().signal,
+    agent: { name: 'main-chat', id: 'main-chat-demo' },
+    traced: isTracingActive(),
+    // Subagents run on the user's model, with their own code_mode in the gateway metadata.
+    languageModel: (functionId) => {
+      const delegated = policy.delegated.find((d) => `${d.serverId}-agent` === functionId);
+      const provider = makeProvider(gatewayMetadata(delegated?.codeMode ?? false), `subagent:${functionId}`);
+      return { model: provider.chat(compatModelId), label: compatModelId, ...(skipMaxTokens ? {} : { maxOutputTokens: maxTokens }) };
+    },
+  };
+
   let tools: Record<string, any> | undefined;
   let sandboxToolsActive = false;
   let browserToolsActive = false;
   let dynamicWorkerActive = false;
-  let codeModeActive = false;
-  let portalCatalogPrompt = '';
   const uploadedFiles: UploadedFileInfo[] = [];
-  // An MCP Portal connected with ?codemode=search_and_execute already runs the
-  // model's JS on the Portal. Wrapping it in the app's Code Mode as well nests
-  // two code runtimes, hides the Portal's tool catalog from the model, and
-  // ends in guessed tool names — so the app's Code Mode sits that turn out.
-  const portalCodeModeConnected = parseMcpServerUrls((env as any).MCP_SERVER_URLS || '')
-    .some((s) => mcpServerIds.includes(s.id) && isPortalCodeModeUrl(s.url));
-  const appCodeModeSkipped = useTools && codeMode && portalCodeModeConnected;
   if (useTools) {
     const cookieStore = await cookies();
     const sessionId = cookieStore.get('session_id')?.value || 'anonymous';
@@ -358,10 +397,10 @@ export async function POST(request: NextRequest) {
     // executeCode/createWebPreview call then finds it warm instead of paying
     // the full cold start (and risking the tool timeout) itself.
     // Only for prompts that look like they need a sandbox — warming a container
-    // for every tools-enabled chat would burn instance slots on plain Q&A.
+    // for every chat would burn instance slots on plain Q&A.
     const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
     if (chatSandboxConfigured(env as any) && (attachments.length > 0 || SANDBOX_HINT.test(lastUser))) {
-      ctx.waitUntil(warmSandbox(env as any, sandboxSessionId));
+      ctx.waitUntil(runTracedTool(runCtx, MAIN_ROOT_SPAN, 'sandbox.warmup', { sandbox: sandboxSessionId }, () => warmSandbox(env as any, sandboxSessionId)));
     }
 
     // Upload any attached CSV/XLSX into the sandbox before building the
@@ -370,7 +409,9 @@ export async function POST(request: NextRequest) {
     if (chatSandboxConfigured(env as any)) {
       for (const att of attachments) {
         if (!att?.name || !att?.contentBase64) continue;
-        const uploaded = await sandboxUploadFile(env as any, sandboxSessionId, att.name, att.contentBase64);
+        const uploaded = await runTracedTool(runCtx, MAIN_ROOT_SPAN, 'sandbox.upload', { name: att.name }, () =>
+          sandboxUploadFile(env as any, sandboxSessionId, att.name, att.contentBase64),
+        );
         if (uploaded.path) {
           uploadedFiles.push({ name: att.name, path: uploaded.path });
         } else {
@@ -379,78 +420,65 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const toolConfig: ToolSetConfig = { sessionId, sandboxSessionId, edgeColo, uploadedFiles, mcpServerIds };
+    // Connected MCP servers and their tool counts decide direct vs subagent.
+    const connected = allServers.filter((s) => mcpServerIds.includes(s.id));
+    const listed = await Promise.all(
+      connected.map(async (config) => {
+        const list = await runTracedTool(runCtx, MAIN_ROOT_SPAN, `mcp.connect:${config.id}`, { server: config.id }, () =>
+          listServerTools(env as any, sessionId, config),
+        );
+        return list ? { config, toolCount: list.length, toolNames: list.map((t) => t.name) } : null;
+      }),
+    );
+    const servers = listed.filter((x): x is NonNullable<typeof x> => x !== null);
+    policy = resolveToolPolicy({
+      modelSupportsTools: true,
+      bindings: { sandbox: chatSandboxConfigured(env as any), loader: Boolean((env as any).LOADER), browser: browserRenderingConfigured(env as any) },
+      hasImages: validImages.length > 0,
+      servers,
+      experiment,
+    });
+
+    const toolConfig: ToolSetConfig = { sessionId, sandboxSessionId, edgeColo, uploadedFiles, mcpServerIds: policy.directServers };
     const built = await buildToolSet(env as any, toolConfig, validImages);
     tools = built.tools;
     sandboxToolsActive = built.sandboxToolsActive;
     browserToolsActive = built.browserToolsActive;
     dynamicWorkerActive = built.dynamicWorkerActive;
 
-    // Code Mode: collapse the whole tool set into ONE tool — the model writes
-    // a JS script that calls the other tools as functions inside a Dynamic
-    // Worker, instead of stepping through multiple tool-call rounds. This is
-    // the token-saving pattern Cloudflare's codemode SDK implements.
-    if (codeMode && !appCodeModeSkipped && (env as any).LOADER && (env as any).SELF) {
-      // executeJs is redundant inside Code Mode (the script itself IS the JS);
-      // searchKnowledgeByImage depends on this request's images, which the
-      // codemode-exec isolate can't rebuild from the signed session.
-      const { executeJs: _omitted, searchKnowledgeByImage: _omittedImg, ...wrappedTools } = tools;
-      const toolNames = Object.keys(wrappedTools);
-      const token = await signCodeModeSession(codeModeSecret(env as any), { ...toolConfig, toolNames });
-
-      tools = {
-        codemode: {
-          description:
-            '一次執行多個工具：寫一段 JavaScript async 程式碼，在裡面呼叫下列函式並 return 最終結果。這比多輪工具呼叫更快、更省 token。可用函式：\n' +
-            describeTools(wrappedTools as any) +
-            '\n用 await 呼叫（如 const page = await codemode.readWebPage({ url }); ），用 return 回傳結果，可用 console.log() 輸出過程。',
-          inputSchema: z.object({
-            code: z.string().describe('JavaScript 程式碼，呼叫 codemode.<工具名>(args) 並 return 結果'),
-          }),
-          execute: safeTool(async ({ code }: { code: string }) => {
-            console.log('[Chat API] codemode script:', code.length, 'chars');
-            const loader = (env as any).LOADER as {
-              load: (opts: Record<string, unknown>) => { getEntrypoint: () => { fetch: (req: Request) => Promise<Response> } };
-            };
-            const started = Date.now();
-            const worker = loader.load({
-              compatibilityDate: '2026-01-01',
-              mainModule: 'main.js',
-              modules: { 'main.js': buildCodeModeModule(code, token) },
-              // Route the sandbox's egress back to this Worker: codemode.*
-              // calls reach /api/codemode-exec; anything else 404s here and
-              // never touches the real internet.
-              globalOutbound: (env as any).SELF,
-            });
-            const res = await worker
-              .getEntrypoint()
-              .fetch(new Request('https://codemode.internal/', { signal: AbortSignal.timeout(45_000) }));
-            const executionMs = Date.now() - started;
-            const data = (await res.json()) as { logs: string[]; result: unknown; error: string | null };
-            return { code, ...data, engine: 'codemode', executionMs, toolCount: toolNames.length };
-          }),
+    for (const d of policy.delegated) {
+      const entry = servers.find((x) => x.config.id === d.serverId)!;
+      tools[d.toolName] = buildDelegateTool({
+        server: entry.config,
+        toolNames: entry.toolNames,
+        ctx: runCtx,
+        parentSpanId: MAIN_ROOT_SPAN,
+        codeMode: d.codeMode,
+        loadTools: async () => {
+          const loaded = await runTracedTool(
+            runCtx,
+            MAIN_ROOT_SPAN,
+            `mcp.tools:${d.serverId}${d.codeMode ? '#codemode' : ''}`,
+            { server: d.serverId, codeMode: d.codeMode },
+            () => buildServerTools(env as any, sessionId, entry.config, { codeMode: d.codeMode }),
+          );
+          if (!loaded) throw new Error(`${entry.config.name} 尚未連線或授權`);
+          return loaded;
         },
-      };
-      codeModeActive = true;
-      console.log(`[Chat API] Code Mode: wrapped ${toolNames.length} tool(s) into codemode`);
+      });
     }
 
     console.log('[Chat API] Tools registered:', Object.keys(tools).join(', '));
-    if (mcpServerIds.length) portalCatalogPrompt = await buildPortalCatalogPrompt(env as any, sessionId, mcpServerIds);
   }
 
-  const systemPrompt = codeModeActive
-    ? SYSTEM_PROMPT + CODE_MODE_PROMPT + CODE_MODE_RETURN_HINT
-    : SYSTEM_PROMPT +
-      (sandboxToolsActive ? SANDBOX_PROMPT : '') +
-      (browserToolsActive ? BROWSER_PROMPT : '') +
-      (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '') +
-      portalCatalogPrompt;
+  const systemPrompt =
+    SYSTEM_PROMPT +
+    (sandboxToolsActive ? SANDBOX_PROMPT : '') +
+    (browserToolsActive ? BROWSER_PROMPT : '') +
+    (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '') +
+    (policy.delegated.length ? DELEGATE_PROMPT : '');
 
-  // Cloudflare Agents tracing (production only; plain `ai` in next dev). Payloads
-  // are recorded so the dashboard's session replay shows the whole turn.
-  const ai = await getTracedAI({ storeContent: true });
-  const traceConversationId = isValidConversationId(conversationId) ? conversationId : undefined;
+  const codeModeUsed = policy.delegated.some((d) => d.codeMode);
   const telemetry = {
     isEnabled: true,
     functionId: 'main-chat',
@@ -460,8 +488,19 @@ export async function POST(request: NextRequest) {
       model: compatModelId,
       turnIndex,
       ...(user ? { email: user.email } : {}),
+      'app.code_mode': codeModeUsed,
+      'app.experiment': experiment?.id ?? 'none',
+      'app.tool_policy': JSON.stringify(policy),
     },
   };
+  setActiveSpanAttributes({
+    'app.code_mode': codeModeUsed,
+    'app.experiment': experiment?.id ?? 'none',
+    'app.turn_index': turnIndex,
+    'app.user_email': analyticsEmail ?? 'unknown',
+    'app.model': compatModelId,
+    'app.tool_policy': JSON.stringify(policy),
+  });
 
   // Full turn record for the signed-in user's history (D1 index + R2 record).
   if (user && traceConversationId && historyConfigured(env as any)) {
@@ -473,10 +512,8 @@ export async function POST(request: NextRequest) {
         model: modelId,
         provider,
         compatModelId,
-        toolsEnabled,
-        codeMode,
-        codeModeActive,
-        appCodeModeSkipped,
+        toolPolicy: policy,
+        experiment: experiment ?? null,
         mcpServers: mcpServerIds,
         edgeColo,
         country: ((cf as { country?: string } | undefined)?.country as string | undefined) ?? null,
@@ -578,13 +615,28 @@ export async function POST(request: NextRequest) {
   let thinkBuffer = '';
   let routedSent = false;
 
+  let sentError = false;
   function send(controller: ReadableStreamDefaultController, data: Record<string, unknown>) {
     // Every event the browser sees also goes into the history record.
     recorder?.onEvent(data as { type: string });
+    if (data.type === 'error') sentError = true;
     try {
       controller.enqueue(encoder.encode(JSON.stringify(data) + '\n'));
     } catch {
       // Controller already closed — ignore
+    }
+  }
+
+  // Main-model stream parts → span events (step = chat span, tool call = tool span).
+  function traceParts(controller: ReadableStreamDefaultController, part: { type: string }) {
+    const gateway = part.type === 'finish-step' ? lastMainGateway : undefined;
+    let t = now();
+    if (part.type === 'start-step' && mainRequestAt !== null) {
+      t = mainRequestAt;
+      mainRequestAt = null;
+    }
+    for (const e of tracker.onPart(part as { type: string; [k: string]: unknown }, t, gateway)) {
+      send(controller, e as unknown as Record<string, unknown>);
     }
   }
 
@@ -655,6 +707,7 @@ export async function POST(request: NextRequest) {
     try {
     for await (const part of result.fullStream) {
       bump();
+      traceParts(controller, part);
       if (routedInfo && !routedSent) {
         routedSent = true;
         send(controller, { type: 'routed-model', ...(routedInfo as { model: string; reason: string | null }) });
@@ -821,6 +874,7 @@ export async function POST(request: NextRequest) {
     let retryError: unknown = null;
     try {
     for await (const part of retryResult.fullStream) {
+      traceParts(controller, part);
       switch (part.type) {
         case 'text-delta':
           hasText = true;
@@ -877,8 +931,9 @@ export async function POST(request: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      liveController = controller;
+      for (const e of pendingEvents.splice(0)) send(controller, e as unknown as Record<string, unknown>);
       try {
-        if (appCodeModeSkipped) send(controller, { type: 'notice', kind: 'portal-codemode' });
         // Step 1: Normal stream with tools
         insideThink = false;
         thinkBuffer = '';
@@ -991,6 +1046,10 @@ export async function POST(request: NextRequest) {
           userIp,
         });
       } finally {
+        const clientGone = Boolean(request.signal?.aborted || recorder?.clientGone);
+        for (const e of tracker.end(now(), clientGone ? 'aborted' : sentError ? 'error' : 'ok')) {
+          send(controller, e as unknown as Record<string, unknown>);
+        }
         try { controller.close(); } catch { /* already closed */ }
         await saveHistory();
       }

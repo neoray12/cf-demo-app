@@ -3,6 +3,7 @@
 // docs/superpowers/specs/2026-10-25-main-chat-tracing-history-design.md
 import { applyChatEvent, createTurnState, type ChatStreamEvent, type MessagePart, type ToolCallInfo, type TurnState } from './chat-turn';
 import type { TimelineEvent } from './chat-timeline';
+import type { ToolPolicy } from './tool-policy';
 
 export const HISTORY_RECORD_VERSION = 1;
 const CONVERSATION_ID_RE = /^[\w-]{1,100}$/;
@@ -17,10 +18,10 @@ export interface TurnRequestInfo {
   model: string;
   provider: string;
   compatModelId: string;
-  toolsEnabled: boolean;
-  codeMode: boolean;
-  codeModeActive: boolean;
-  appCodeModeSkipped: boolean;
+  /** What the harness gave the model this turn (core tools, direct MCP servers, subagents). */
+  toolPolicy: ToolPolicy;
+  /** Code Mode comparison example, if this turn is one of its runs. */
+  experiment: { id: string; codeMode: boolean } | null;
   mcpServers: string[];
   edgeColo: string | null;
   country: string | null;
