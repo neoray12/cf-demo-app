@@ -4,6 +4,7 @@
 import type { TimelineEvent } from './chat-timeline';
 import { reduceTrace, type RunTrace } from './agents/trace-tree';
 import type { TraceEvent } from './agents/trace-events';
+import type { AutoRouting } from './auto-router';
 
 export interface ToolCallInfo {
   id: string;
@@ -25,7 +26,8 @@ export interface TurnState {
   toolCalls: ToolCallInfo[];
   /** Reasoning / text / tool calls in the order they actually happened. */
   parts: MessagePart[];
-  routedModel?: { model: string; reason: string | null };
+  /** Auto Router decision (model, reason code, IDs, candidate pool). */
+  routedModel?: { model: string; reason: string | null } & Partial<Omit<AutoRouting, 'model' | 'reason'>>;
   notices: string[];
   /** Timestamped steps (ms since the turn started) for the processing timeline. */
   events: TimelineEvent[];
@@ -96,7 +98,16 @@ export function applyChatEvent(s: TurnState, ev: ChatStreamEvent, t: number): Tu
       return { ...next, events: [...next.events, { t, kind: 'tool-end', id: ev.toolCallId, outcome: 'error' }] };
     }
     case 'routed-model':
-      return { ...s, routedModel: { model: ev.model, reason: ev.reason ?? null } };
+      return {
+        ...s,
+        routedModel: {
+          model: ev.model,
+          reason: ev.reason ?? null,
+          ...Object.fromEntries(
+            (['decisionId', 'requestId', 'logId', 'allowedProviders'] as const).filter((k) => ev[k] !== undefined).map((k) => [k, ev[k]]),
+          ),
+        },
+      };
     case 'notice':
       return typeof ev.kind === 'string' && !s.notices.includes(ev.kind) ? { ...s, notices: [...s.notices, ev.kind] } : s;
     default:

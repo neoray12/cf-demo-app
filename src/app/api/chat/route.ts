@@ -9,6 +9,8 @@ import { buildGatewayMetadata } from '@/lib/gateway-metadata';
 import { resolveToolPolicy, turnCodeMode } from '@/lib/tool-policy';
 import { buildDelegateTool } from '@/lib/mcp-subagent';
 import { createIdleGuard } from '@/lib/idle-guard';
+import { parseRoutingHeaders, type AutoRouting } from '@/lib/auto-router';
+import { DEFAULT_SYSTEM_PROMPT, composeSystemPrompt, systemPromptKey } from '@/lib/system-prompt';
 import { getRequestUser } from '@/lib/auth';
 import { TurnRecorder, historyConfigured, isValidConversationId, saveTurn, type ModelAttempt } from '@/lib/chat-history';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
@@ -17,12 +19,6 @@ import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
 import { chatSandboxConfigured, uploadFile as sandboxUploadFile, warmSandbox } from '@/lib/chat-sandbox';
 import { parseMcpServerUrls } from '@/lib/mcp-client';
 import { buildToolSet, browserRenderingConfigured, listServerTools, buildServerTools, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';
-
-const SYSTEM_PROMPT = `你是一個由 Cloudflare AI 驅動的智慧助理。你可以回答一般性問題，並提供有關 Cloudflare 產品與功能的資訊。
-
-回答時請使用繁體中文，除非使用者使用其他語言提問。回答要精確、簡潔、直接，避免冗長的鋪陳和重複說明。優先給出結論，再補充必要細節。
-
-如果工具結果含有 "blocked": true，代表該動作被組織的資安政策攔截：不要重試、不要改用其他工具繞過，直接告訴使用者哪個動作被攔截。`;
 
 const TOOL_CAPABLE_WORKERS_AI = [
   /llama.*instruct/i,
@@ -62,26 +58,6 @@ function extractFirewallFromHtml(html: string): { isFirewall: boolean; rayId: st
 
 // Prompts that probably want the Python sandbox / web preview (used to pre-warm it)
 const SANDBOX_HINT = /計算|階乘|費氏|統計|算出|程式|python|pandas|csv|xlsx|圖表|畫圖|網頁|預覽|倒數|html|容器|sandbox|executeCode|calculate|factorial|fibonacci|chart|plot|preview/i;
-
-// Extra system prompt guidance when the sandbox tools are available
-const SANDBOX_PROMPT = `
-
-當問題需要精確計算（數學、統計、日期、資料處理）時，使用 executeCode 工具執行 Python 程式碼取得真實結果，不要憑空心算。當使用者要求製作或展示網頁時，使用 createWebPreview 工具產生預覽網址，並在回覆中附上該網址。當使用者上傳 CSV/XLSX 檔案時，使用 executeCode 搭配 pandas 讀取分析，沙箱已安裝 pandas、openpyxl、matplotlib；若適合可用 matplotlib 畫圖，圖表會直接顯示給使用者。`;
-
-// Extra system prompt guidance when the Browser Rendering tools are available
-const BROWSER_PROMPT = `
-
-當使用者要求截圖某個網頁時，使用 captureScreenshot 工具，截圖會直接顯示在對話中。當使用者要求閱讀、摘要或分析某個網址的內容時，使用 readWebPage 工具取得網頁的 Markdown 內容再回答。網址必須包含 http:// 或 https:// 開頭。`;
-
-// Extra system prompt guidance when the Dynamic Worker executeJs tool is available
-const DYNAMIC_WORKER_PROMPT = `
-
-當需要執行 JavaScript 程式碼（快速計算、字串處理、演算法示範）時，優先使用 executeJs 工具——它在毫秒級啟動的 V8 isolate 中執行。需要 Python、pandas、檔案或畫圖時才用 executeCode。executeJs 的沙箱完全禁止網路存取，fetch 會失敗，這是刻意的安全設計。`;
-
-// Extra system prompt guidance when an MCP server runs in a subagent
-const DELEGATE_PROMPT = `
-
-部分 MCP server 由專屬 subagent 執行（工具名稱 ask_<server>）：需要該系統的資料或操作時，把完整任務（含所有條件）交給它，不要自己猜資料，也不要把同一個任務拆成很多次呼叫。`;
 
 // Merge consecutive same-role messages (some providers reject them)
 function sanitizeMessages(
@@ -193,7 +169,7 @@ export async function POST(request: NextRequest) {
   // This wrapper intercepts the response body and coerces content to string.
   // Auto Router reports the model it picked in response headers; captured here
   // and forwarded to the client as a `routed-model` event.
-  let routedInfo: { model: string; reason: string | null } | null = null;
+  let routedInfo: AutoRouting | null = null;
   // History: set once the request is fully parsed (only for a verified user).
   let recorder: TurnRecorder | null = null;
   // Which model call the next gateway request belongs to (for the history record).
@@ -213,7 +189,8 @@ export async function POST(request: NextRequest) {
     if (!label) mainRequestAt = now();
     return fetch(url, { ...init, headers }).then((res) => {
       const routedModel = res.headers.get('cf-aig-routed-model');
-      if (routedModel) routedInfo = { model: routedModel, reason: res.headers.get('cf-aig-routing-reason') };
+      // Only the main model's routing is shown on the answer (subagents route on their own).
+      if (routedModel && !label) routedInfo = parseRoutingHeaders(res.headers, (env as any).AUTO_ROUTER_ALLOWED_PROVIDERS);
       recorder?.noteGatewayCall({
         attempt,
         path: new URL(String(url instanceof Request ? url.url : url)).pathname,
@@ -486,12 +463,15 @@ export async function POST(request: NextRequest) {
     console.log('[Chat API] Tools registered:', Object.keys(tools).join(', '));
   }
 
-  const systemPrompt =
-    SYSTEM_PROMPT +
-    (sandboxToolsActive ? SANDBOX_PROMPT : '') +
-    (browserToolsActive ? BROWSER_PROMPT : '') +
-    (dynamicWorkerActive ? DYNAMIC_WORKER_PROMPT : '') +
-    (policy.delegated.length ? DELEGATE_PROMPT : '');
+  // The user's own base prompt (edited in the chat page) or the default; the
+  // harness appends the safety rule and guidance for the tools it gave the model.
+  const basePrompt = (user ? await (env as any).KV.get(systemPromptKey(user.email)).catch(() => null) : null) || DEFAULT_SYSTEM_PROMPT;
+  const systemPrompt = composeSystemPrompt(basePrompt, {
+    sandbox: sandboxToolsActive,
+    browser: browserToolsActive,
+    dynamicWorker: dynamicWorkerActive,
+    delegate: policy.delegated.length > 0,
+  });
 
   const codeModeUsed = turnCodeMode(policy);
   openai = makeProvider(gatewayMetadata(codeModeUsed));
@@ -728,7 +708,7 @@ export async function POST(request: NextRequest) {
       traceParts(controller, part);
       if (routedInfo && !routedSent) {
         routedSent = true;
-        send(controller, { type: 'routed-model', ...(routedInfo as { model: string; reason: string | null }) });
+        send(controller, { type: 'routed-model', ...(routedInfo as AutoRouting) });
       }
       switch (part.type) {
         case 'text-delta':
@@ -876,7 +856,7 @@ export async function POST(request: NextRequest) {
     const tracked = trackAttempt(currentAttempt);
     const retryResult = ai.streamText({
       model: openai.chat(compatModelId),
-      system: SYSTEM_PROMPT,
+      system: composeSystemPrompt(basePrompt, { sandbox: false, browser: false, dynamicWorker: false, delegate: false }),
       messages: retryMessages as any,
       // No tools — force text generation
       ...(skipMaxTokens ? {} : { maxOutputTokens: maxTokens }),

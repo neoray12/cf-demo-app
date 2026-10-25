@@ -96,3 +96,19 @@ describe('applyChatEvent with span events', () => {
     expect(s.trace).toBeNull();
   });
 });
+
+describe('applyChatEvent routed-model', () => {
+  it('keeps every Auto Router detail the server sends', () => {
+    const s = fold([
+      [1, { type: 'routed-model', model: 'anthropic/claude-haiku-5.5', reason: 'pinned_by_turn', decisionId: 'd1', requestId: 'r1', logId: 'l1', allowedProviders: ['anthropic', 'workers-ai'] }],
+    ]);
+    expect(s.routedModel).toEqual({
+      model: 'anthropic/claude-haiku-5.5',
+      reason: 'pinned_by_turn',
+      decisionId: 'd1',
+      requestId: 'r1',
+      logId: 'l1',
+      allowedProviders: ['anthropic', 'workers-ai'],
+    });
+  });
+});

@@ -15,14 +15,16 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AI_MODELS, DEFAULT_MODEL_ID } from "@/lib/types";
-import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Database, Route, PanelLeftOpen } from "lucide-react";
+import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, Brain, Bug, ThumbsUp, ThumbsDown, Volume2, VolumeX, Globe, ExternalLink, Terminal, Paperclip, X, FileSpreadsheet, Camera, Braces, Database, Route, PanelLeftOpen, ScrollText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
 import { ProcessTimeline, type ChatTimeline } from "../components/chat/process-timeline";
 import { GatewayBlockCard } from "../components/chat/gateway-block-card";
 import { SuggestionCategories, type SuggestionSendOpts } from "../components/chat/suggestion-categories";
-import { applyChatEvent, createTurnState, type MessagePart, type ToolCallInfo } from "@/lib/chat-turn";
+import { applyChatEvent, createTurnState, type MessagePart, type ToolCallInfo, type TurnState } from "@/lib/chat-turn";
+import { AutoRouterCard } from "../components/chat/auto-router-card";
+import { SystemPromptDialog } from "../components/chat/system-prompt-dialog";
 import type { HistoryTurn } from "@/lib/chat-history";
 import { HistoryPanel } from "../components/chat/history-panel";
 import { SubagentCard } from "../components/chat/subagent-card";
@@ -44,7 +46,7 @@ interface ChatMessage {
   /** Reasoning / text / tool calls in the order they actually happened. */
   parts?: MessagePart[];
   /** Auto Router: the model AI Gateway actually routed this turn to. */
-  routedModel?: { model: string; reason: string | null };
+  routedModel?: TurnState["routedModel"];
   /** Server notices for this turn, e.g. the app's Code Mode was skipped. */
   notices?: string[];
   /** Per-turn processing timeline — front-end only, never sent to the server. */
@@ -855,17 +857,7 @@ function AssistantMessage({
 
   return (
     <div className="max-w-full">
-      {message.routedModel && (
-        <div className="mb-1.5">
-          <span
-            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 border border-orange-200/60 dark:border-orange-800/40"
-            title={message.routedModel.reason ?? undefined}
-          >
-            <Route className="size-3" />
-            Auto Router → <span className="font-mono">{message.routedModel.model}</span>
-          </span>
-        </div>
-      )}
+      {message.routedModel && <AutoRouterCard routed={message.routedModel} />}
 
       {parts.length === 0 && (
         <>
@@ -1138,6 +1130,7 @@ export function ChatPage() {
     error: null,
   });
   const [showMcpPanel, setShowMcpPanel] = useState(false);
+  const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   // ChatGPT-style history column on the left: open by default on desktop
   // (remembered per browser), a slide-over sheet on mobile.
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -1825,6 +1818,14 @@ export function ChatPage() {
                 <span className="size-4 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[10px] flex items-center justify-center">{connectedMcpServers.length}</span>
               )}
             </button>
+            <button
+              onClick={() => setShowSystemPrompt(true)}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted/60 transition-colors"
+              title={t("chat.systemPrompt.title")}
+            >
+              <ScrollText className="size-3.5" />
+              <span className="hidden md:inline">{t("chat.systemPrompt.button")}</span>
+            </button>
             {isDev && (
               <button
                 onClick={() => setDebugOpen((v) => !v)}
@@ -2065,6 +2066,8 @@ export function ChatPage() {
           </SheetContent>
         </Sheet>
       )}
+
+      <SystemPromptDialog open={showSystemPrompt} onOpenChange={setShowSystemPrompt} />
 
       <ErrorDialog
         open={errorDialog.open}

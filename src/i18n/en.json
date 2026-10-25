@@ -374,6 +374,77 @@
         "ttftMs": "Time to first token"
       },
       "running": "Comparison run {{n}} ({{mode}})"
+    },
+    "autoRouter": {
+      "model": "Selected model",
+      "reason": "Reason",
+      "pool": "Candidate pool",
+      "decisionId": "Decision ID",
+      "logId": "Log ID",
+      "defaultPool": "Cloudflare's default model pool",
+      "noReason": "No reason given",
+      "noScores": "Auto Router classifies the task's type and difficulty, then ranks the candidates by expected quality against cost; the per-model scores stay inside AI Gateway and are not returned in responses, logs or the API.",
+      "reasons": {
+        "cost_optimal_within_pool": {
+          "label": "Best quality for the cost",
+          "desc": "The best balance of expected quality and cost among the candidates."
+        },
+        "forced_by_candidate_pool": {
+          "label": "Only one candidate",
+          "desc": "Only one model was eligible, so no selection was needed."
+        },
+        "pinned_by_turn": {
+          "label": "Kept for this turn",
+          "desc": "Reused the model selected earlier in the turn (user message plus tool calls) to keep the prompt cache."
+        },
+        "fallback_candidate_unavailable": {
+          "label": "Fallback: candidate unavailable",
+          "desc": "The selected model could not serve the request, so AI Gateway used another eligible model."
+        },
+        "fallback_key_not_in_candidates": {
+          "label": "Fallback: invalid decision",
+          "desc": "The routing decision was not valid, so AI Gateway selected a model without it."
+        },
+        "fallback_router_error": {
+          "label": "Fallback: router error",
+          "desc": "The router was unavailable, so AI Gateway selected a model without it."
+        },
+        "fallback_router_timeout": {
+          "label": "Fallback: router timeout",
+          "desc": "The router did not respond in time, so AI Gateway selected a model without it."
+        },
+        "fallback_unsupported_input": {
+          "label": "Fallback: nothing to classify",
+          "desc": "The request had no text to classify, so AI Gateway selected a model without the router."
+        }
+      }
+    },
+    "systemPrompt": {
+      "button": "System Prompt",
+      "title": "System Prompt",
+      "description": "The main chat's base instructions. Saved for your account only and used from your next message. The harness still decides which tools exist; this says when to use which tool and how to answer.",
+      "custom": "Custom",
+      "default": "Default",
+      "signInToSave": "Sign in to save",
+      "save": "Save",
+      "reset": "Reset to default",
+      "saved": "Saved — used from your next message",
+      "loadError": "Couldn't load the system prompt",
+      "harnessTitle": "Sections the harness appends (read-only)",
+      "harnessHint": "On every turn the harness appends these after your system prompt: the safety rule always, the others only when that tool was given to the model this turn.",
+      "harness": {
+        "safety": "Security block rule (always)",
+        "sandbox": "Python sandbox (executeCode / createWebPreview)",
+        "browser": "Browser tools (readWebPage / captureScreenshot)",
+        "dynamicWorker": "Dynamic Worker (executeJs)",
+        "delegate": "MCP subagent (ask_<server>)"
+      },
+      "errors": {
+        "empty": "The system prompt can't be empty",
+        "too_long": "The system prompt is longer than {{max}} characters",
+        "unauthenticated": "Please sign in first",
+        "save": "Couldn't save, please try again"
+      }
     }
   },
   "crawler": {

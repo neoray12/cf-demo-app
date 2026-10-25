@@ -262,6 +262,12 @@
 - **Tracing**：subagent 也走 traced AI SDK（`RunContext.languageModel` hook，runtime 以 `functionId` 取模型），Dashboard 同一個 session 會看到 `main-chat` 與 `saas-agent`；`app.code_mode` / `app.experiment` / `app.tool_policy` 等寫進 telemetry metadata 與 active span 屬性
 - **歷史**：D1 `turns` 新增 `code_mode`、`experiment`（migration `0002_code_mode.sql`），`input_tokens` / `output_tokens` 改為主 + subagent 加總；還原對話會帶回 span 樹（waterfall）與實驗標記
 
+### 11. Auto Router 決策顯示、System Prompt 編輯（2026-10-25）
+
+- **Auto Router**：回應只會帶 `cf-aig-routed-model`、`cf-aig-routing-reason`（8 種代碼）、`cf-aig-routing-decision-id`、`cf-aig-request-id`；**AI Gateway 不提供各候選模型的分數**（不在 header、body、Logs API；Log 的 `score` 是人工評分欄位）。`parseRoutingHeaders()`（`src/lib/auto-router.ts`）解析後以 `routed-model` 事件送出（只取主模型的請求），回答上方的 `AutoRouterCard` 顯示模型、原因與說明、候選範圍（`AUTO_ROUTER_ALLOWED_PROVIDERS`）、Decision ID、Log ID
+- **Auto Router 的 token 會少算**：Auto Router 自動啟用 prompt 快取，串流回傳的 usage 只含未快取的輸入（實測 4 vs Log 的 2,854，其中 2,850 是 cache write）。直接呼叫模型時沒有這個問題。正確數字要從 AI Gateway Logs API（`usage_metadata`）取
+- **System Prompt**：基本提示詞每個使用者一份，存 KV `system-prompt:{email}`，預設為 `DEFAULT_SYSTEM_PROMPT`（`src/lib/system-prompt.ts`，demo 用、含工具選擇指引）。Harness 依這一輪實際提供的工具附加段落（`HARNESS_SECTIONS`）：資安攔截規則一律附加（使用者改不掉），其餘只在該工具有提供時附加。API `GET/PUT/DELETE /api/chat/system-prompt`（上限 8,000 字）；工具列「System Prompt」按鈕開編輯視窗，可看唯讀的 Harness 段落、還原預設
+
 ## 技術棧
 
 - **前端**: React 19 + Vite + Tailwind CSS 4 + shadcn (new-york style)

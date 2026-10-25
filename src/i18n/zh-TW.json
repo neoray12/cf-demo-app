@@ -374,6 +374,77 @@
         "ttftMs": "首字時間"
       },
       "running": "對照實驗：第 {{n}} 輪（{{mode}}）"
+    },
+    "autoRouter": {
+      "model": "選中的模型",
+      "reason": "選擇原因",
+      "pool": "候選範圍",
+      "decisionId": "Decision ID",
+      "logId": "Log ID",
+      "defaultPool": "Cloudflare 預設模型池",
+      "noReason": "未提供原因",
+      "noScores": "Auto Router 先分析問題的類型與難度，再權衡各候選模型的預期品質與成本後排序；各模型的分數只在 AI Gateway 內部使用，不會出現在回應、Log 或 API 中。",
+      "reasons": {
+        "cost_optimal_within_pool": {
+          "label": "品質與成本最佳",
+          "desc": "在候選模型中，預期品質與成本的平衡最好。"
+        },
+        "forced_by_candidate_pool": {
+          "label": "只有一個候選",
+          "desc": "只有一個模型符合條件，不需要選擇。"
+        },
+        "pinned_by_turn": {
+          "label": "沿用本輪模型",
+          "desc": "同一輪（使用者訊息與後續工具呼叫）沿用先前選定的模型，以利用 prompt 快取。"
+        },
+        "fallback_candidate_unavailable": {
+          "label": "首選不可用，改用備選",
+          "desc": "選中的模型無法服務這個請求，AI Gateway 改用另一個符合條件的模型。"
+        },
+        "fallback_key_not_in_candidates": {
+          "label": "決策無效，改用備選",
+          "desc": "路由決策無效，AI Gateway 不依決策另選模型。"
+        },
+        "fallback_router_error": {
+          "label": "路由器錯誤，改用備選",
+          "desc": "路由器無法使用，AI Gateway 不經路由器另選模型。"
+        },
+        "fallback_router_timeout": {
+          "label": "路由器逾時，改用備選",
+          "desc": "路由器沒有及時回應，AI Gateway 不經路由器另選模型。"
+        },
+        "fallback_unsupported_input": {
+          "label": "無法分類，改用備選",
+          "desc": "請求沒有可分類的文字，AI Gateway 不經路由器另選模型。"
+        }
+      }
+    },
+    "systemPrompt": {
+      "button": "System Prompt",
+      "title": "System Prompt",
+      "description": "主聊天的基本指示，只影響你自己的帳號，下一則訊息開始生效。工具清單仍由 Harness 決定；這裡寫的是「什麼情況用哪個工具、怎麼回答」。",
+      "custom": "自訂",
+      "default": "預設",
+      "signInToSave": "登入後才能儲存",
+      "save": "儲存",
+      "reset": "還原預設",
+      "saved": "已儲存，下一則訊息開始生效",
+      "loadError": "無法載入 System Prompt",
+      "harnessTitle": "Harness 自動附加的段落（唯讀）",
+      "harnessHint": "每一輪送出時，Harness 會在你的 System Prompt 後面附加以下段落：資安規則一律附加，其餘只在該工具這一輪有提供給模型時才附加。",
+      "harness": {
+        "safety": "資安攔截規則（一律附加）",
+        "sandbox": "Python Sandbox（executeCode / createWebPreview）",
+        "browser": "瀏覽器工具（readWebPage / captureScreenshot）",
+        "dynamicWorker": "Dynamic Worker（executeJs）",
+        "delegate": "MCP subagent（ask_<server>）"
+      },
+      "errors": {
+        "empty": "System Prompt 不能是空的",
+        "too_long": "System Prompt 超過 {{max}} 字",
+        "unauthenticated": "請先登入",
+        "save": "儲存失敗，請再試一次"
+      }
     }
   },
   "crawler": {
