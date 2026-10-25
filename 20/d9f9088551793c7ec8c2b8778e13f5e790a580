@@ -1,0 +1,47 @@
+agents.md
+  s_35f257df545d16::t_7025ee297671ae 268
+src/app/api/chat/route.ts
+  s_35f257df545d16::t_5c502c45a3c2ac 14,194,253,259-262
+src/app/components/chat/auto-router-card.tsx
+  s_35f257df545d16::t_7cde9899f382b8 7-9,59-76
+src/app/pages/chat.tsx
+  s_35f257df545d16::t_515a370adce4b9 18,28,1135,1808-1817,2083
+src/i18n/en.json
+  s_35f257df545d16::t_faeb640feaa925 420-422,450-470
+src/i18n/zh-TW.json
+  s_35f257df545d16::t_ea5c3617c930b9 420-422,448-468
+src/lib/auto-router.test.ts
+  s_35f257df545d16::t_a8abe91b54c700 13,20,36
+src/lib/auto-router.ts
+  s_35f257df545d16::t_8fba8d1046d7f1 15-16,31,45
+src/lib/chat-turn.ts
+  s_35f257df545d16::t_dcc190ec702917 107
+wrangler.dev.toml
+  s_35f257df545d16::t_336664d35fe294 45-47
+wrangler.toml
+  s_35f257df545d16::t_6b52a4405c42e6 71-73
+src/app/api/chat/auto-router-models/route.ts
+  s_35f257df545d16::t_455e3f95ed18f2 1-59
+src/app/components/chat/auto-router-models-dialog.tsx
+  s_35f257df545d16::t_487f66ee10f1bb 1-178
+src/lib/auto-router-models.test.ts
+  s_35f257df545d16::t_9ae77d545f7de4 1-69
+src/lib/auto-router-models.ts
+  s_35f257df545d16::t_0b1d7bdd7331fe 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "20d9f9088551793c7ec8c2b8778e13f5e790a580",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
