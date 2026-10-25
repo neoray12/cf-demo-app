@@ -1,0 +1,25 @@
+src/lib/chat-turn.test.ts
+  s_35f257df545d16::t_1cd5bdde3b8ed8 68-98
+src/lib/chat-turn.ts
+  s_35f257df545d16::t_072bd58eb61183 5-6,32-33,39,63-64,67-72
+src/lib/trace-summary.test.ts
+  s_35f257df545d16::t_70ea0338c2b818 1-69
+src/lib/trace-summary.ts
+  s_35f257df545d16::t_acf6924909f40a 1-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0274a074066ba688866782e60848b79d9701d5df",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
