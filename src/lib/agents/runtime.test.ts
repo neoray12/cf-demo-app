@@ -656,6 +656,38 @@ describe("runSubagent", () => {
     expect(args.stopWhen).toBeTypeOf("function");
   });
 
+  it("uses the context's languageModel hook instead of the Workers AI catalog", async () => {
+    const { ctx, events, clock } = makeCtx();
+    const { ai, calls } = fakeAI(
+      [
+        (c) =>
+          fakeStream(c, [
+            { at: 100, part: p({ type: "start-step", request: {}, warnings: [] }) },
+            { at: 150, part: p({ type: "text-delta", id: "t", text: "ok" }) },
+            { at: 200, part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" }) },
+          ]),
+      ],
+      clock,
+    );
+    const sentinel = { modelId: "anthropic/claude-haiku-5-5" };
+    const requested: string[] = [];
+    const languageModel = (functionId: string) => {
+      requested.push(functionId);
+      return { model: sentinel as never, label: "claude-haiku-5-5", maxOutputTokens: 2048 };
+    };
+    await runSubagent(def, { q: "x" }, { ...ctx, ai, languageModel }, "P", 0);
+
+    const args = calls[0]!;
+    expect(requested).toEqual(["docs-researcher"]);
+    expect(args.model).toBe(sentinel);
+    expect(args.maxOutputTokens).toBe(2048);
+    expect(args.experimental_telemetry).toMatchObject({
+      functionId: "docs-researcher",
+      metadata: { model: "claude-haiku-5-5" },
+    });
+    expect(events.find((e) => e.type === "span-start" && e.kind === "chat")).toMatchObject({ name: expect.stringContaining("claude-haiku-5-5") });
+  });
+
   it("uses toDetail when provided", async () => {
     const { ctx, events, clock } = makeCtx();
     const { ai } = fakeAI(

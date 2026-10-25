@@ -1,7 +1,7 @@
 // Traced agent runtime: main agent + subagents + parallel fan-out, mirrored to the
 // browser as NDJSON span events (TraceEvent). Cloudflare-side spans come from the
 // `ai` namespace in RunContext (wrapped by getTracedAI()).
-import { stepCountIs, type ModelMessage, type TextStreamPart, type ToolSet } from "ai";
+import { stepCountIs, type LanguageModel, type ModelMessage, type TextStreamPart, type ToolSet } from "ai";
 import type { AgentEnv } from "./env";
 import { createAgentModel } from "./gateway";
 import type { AgentId } from "./ids";
@@ -57,6 +57,11 @@ export interface RunContext {
   agent?: { name: string; id: string };
   /** The last user message of the run (set by runAgent); subagents derive their output language from it. */
   userText?: string;
+  /**
+   * Model for a subagent (by its functionId), when the caller isn't on the Workers AI catalog — the main chat runs
+   * its subagents on whatever model the user picked. Unset: AGENT_MODELS + createAgentModel, as in the Agents demo.
+   */
+  languageModel?: (functionId: string) => { model: LanguageModel; label: string; maxOutputTokens?: number };
 }
 
 /** Language of the run's user question (subagent findings are written in it). */
@@ -259,7 +264,7 @@ function spanInputValue(value: unknown): unknown {
 }
 
 /** experimental_telemetry for a streamText call (spec §6.4): agentId, conversationId, model key, workspace when set. */
-function telemetry(functionId: string, ctx: RunContext, modelKey: ModelKey) {
+function telemetry(functionId: string, ctx: RunContext, modelKey: string) {
   return {
     isEnabled: true,
     functionId,
@@ -710,6 +715,20 @@ export async function runSubagent<I>(
   }
 }
 
+function resolveSubagentModel<I>(
+  def: SubagentDef<I>,
+  ctx: RunContext,
+): { model: LanguageModel; label: string; maxOutputTokens?: number } {
+  if (ctx.languageModel) return ctx.languageModel(def.functionId);
+  // Subagents never think: the menu's thinking choice applies to the root only.
+  const model = AGENT_MODELS[noThink(ctx.modelKey ?? def.model)];
+  return {
+    model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
+    label: model.key,
+    maxOutputTokens: model.maxTokens,
+  };
+}
+
 async function runSubagentAttempt<I>(
   def: SubagentDef<I>,
   input: I,
@@ -728,27 +747,25 @@ async function runSubagentAttempt<I>(
   const inputToolSpans = new Set<string>();
   ctx.emit({ type: "span-start", id, parentId: parentSpanId, kind: "invoke_agent", name: def.functionId, t: ctx.now() });
   try {
-    // Subagents never think: the menu's thinking choice applies to the root only.
-    const modelKey = noThink(ctx.modelKey ?? def.model);
-    const model = AGENT_MODELS[modelKey];
+    const resolved = resolveSubagentModel(def, ctx);
     const prepared = def.prepare ? await def.prepare(input, subCtx, id) : "";
     if (subCtx.signal.aborted) throw abortError();
     const prompt = prepared ? `${def.prompt(input)}\n\n${prepared}` : def.prompt(input);
-    const chatSpans = createChatSpans(subCtx, id, model.key);
+    const chatSpans = createChatSpans(subCtx, id, resolved.label);
     const result = ctx.ai.streamText({
-      model: createAgentModel(ctx.env, model, { functionId: def.functionId, conversationId: ctx.conversationId }),
+      model: resolved.model,
       system: def.system,
       prompt,
       tools: traceToolExecutions(def.tools(subCtx), subCtx, id, startedToolSpans, inputToolSpans),
       prepareStep: stepPreparer(chatSpans, def.maxSteps, SUBAGENT_FINAL_STEP_NOTE),
       stopWhen: stepCountIs(def.maxSteps),
-      maxOutputTokens: model.maxTokens,
+      ...(resolved.maxOutputTokens ? { maxOutputTokens: resolved.maxOutputTokens } : {}),
       abortSignal: subCtx.signal,
-      experimental_telemetry: telemetry(def.functionId, ctx, modelKey),
+      experimental_telemetry: telemetry(def.functionId, ctx, resolved.label),
     });
     const { text } = await pipeStepStream(result.fullStream, subCtx, {
       parentSpanId: id,
-      modelLabel: model.key,
+      modelLabel: resolved.label,
       forwardText: true,
       startedToolSpans,
       inputToolSpans,
