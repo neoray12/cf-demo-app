@@ -1,0 +1,21 @@
+src/lib/chat-spans.test.ts
+  s_35f257df545d16::t_891ed404907c02 1-87
+src/lib/chat-spans.ts
+  s_35f257df545d16::t_84edcfa4b522a3 1-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "bbcb4d75d3dbeaaa3552f2fe29b4ff2b9dd6a971",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
