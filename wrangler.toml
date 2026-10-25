@@ -76,7 +76,7 @@ AGENTS_HEDGE_AFTER_MS = "2500"
 AUTORAG_NAME = "cf-demo-ai-search-mm"
 # Auto Router candidate pool — only providers this gateway has credentials/credits for
 AUTO_ROUTER_ALLOWED_PROVIDERS = "anthropic,workers-ai"
-MCP_SERVER_URLS = "cf-docs=https://docs.mcp.cloudflare.com/mcp,cf-observability=https://observability.mcp.cloudflare.com/mcp:oauth,cf-radar=https://radar.mcp.cloudflare.com/mcp:oauth,saas=https://saasmcp.neokung.work/mcp:oauth,saas-cm=https://saasmcp.neokung.work/mcp?codemode=search_and_execute:oauth"
+MCP_SERVER_URLS = "cf-docs=https://docs.mcp.cloudflare.com/mcp,cf-observability=https://observability.mcp.cloudflare.com/mcp:oauth,cf-radar=https://radar.mcp.cloudflare.com/mcp:oauth,saas=https://saasmcp.neokung.work/mcp:oauth:agent:codemode"
 KB_AI_SEARCH = "cf-demo-kb"
 KB_BUCKET_NAME = "cf-demo-kb"
 # Cloudflare Access identity (optional): set both once the site sits behind an

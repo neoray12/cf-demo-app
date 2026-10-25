@@ -19,7 +19,6 @@ const SERVER_ICONS: Record<string, React.ReactNode> = {
   'cf-observability': <CfLogo />,
   'cf-radar': <CfLogo />,
   'saas': <SaasLogos />,
-  'saas-cm': <SaasLogos />,
 };
 
 interface McpServer {

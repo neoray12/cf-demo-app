@@ -13,6 +13,15 @@ export interface McpServerConfig {
   name: string;
   description: string;
   authType: 'none' | 'oauth';
+  /** `:agent` — always run this server's tools in a subagent (the harness also does it for big servers). */
+  delegate: boolean;
+  /** `:codemode` — the developer chose the Portal's Code Mode interface (?codemode=search_and_execute). */
+  codeMode: boolean;
+}
+
+/** A portal URL switched to its Code Mode interface (search + execute tools only). */
+export function portalCodeModeUrl(url: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}codemode=search_and_execute`;
 }
 
 export interface McpToolInfo {
@@ -30,8 +39,10 @@ export interface McpConnectionResult {
   requiresAuth?: boolean;
 }
 
+const URL_FLAGS = [':oauth', ':agent', ':codemode'] as const;
+
 // Parse MCP_SERVER_URLS env var
-// Format: id=url or id=url:oauth
+// Format: id=url[:oauth][:agent][:codemode] (flags in any order)
 // Display name and description from optional SERVER_LABELS
 export function parseMcpServerUrls(raw: string): McpServerConfig[] {
   if (!raw) return [];
@@ -44,14 +55,22 @@ export function parseMcpServerUrls(raw: string): McpServerConfig[] {
       if (eq === -1) return null;
       const id = entry.slice(0, eq).trim();
       let url = entry.slice(eq + 1).trim();
-      let authType: 'none' | 'oauth' = 'none';
-      if (url.endsWith(':oauth')) {
-        authType = 'oauth';
-        url = url.slice(0, -6);
+      const flags = new Set<string>();
+      for (let flag = URL_FLAGS.find((f) => url.endsWith(f)); flag; flag = URL_FLAGS.find((f) => url.endsWith(f))) {
+        flags.add(flag);
+        url = url.slice(0, -flag.length);
       }
       const name = SERVER_LABELS[id]?.name ?? id;
       const description = SERVER_LABELS[id]?.description ?? '';
-      return { id, url, name, description, authType };
+      return {
+        id,
+        url,
+        name,
+        description,
+        authType: flags.has(':oauth') ? 'oauth' : 'none',
+        delegate: flags.has(':agent'),
+        codeMode: flags.has(':codemode'),
+      };
     })
     .filter(Boolean) as McpServerConfig[];
 }
@@ -61,8 +80,7 @@ const SERVER_LABELS: Record<string, { name: string; description: string }> = {
   'cf-docs': { name: 'Cloudflare Docs', description: '取得 Cloudflare 最新的技術文件與參考資料' },
   'cf-observability': { name: 'Workers Observability', description: '偵錯並取得應用程式日誌與分析' },
   'cf-radar': { name: 'Radar', description: '取得全球網路流量洞察與趨勢' },
-  'saas': { name: 'SAP & Salesforce', description: '透過 MCP Server Portal 連接 SAP 與 Salesforce，查詢業務資料與執行操作' },
-  'saas-cm': { name: 'SAP & Salesforce (Code Mode)', description: '同一個 MCP Server Portal 開啟 Code Mode：只提供 search / execute 兩個工具，模型寫 JS 一次呼叫多個工具' },
+  'saas': { name: 'SAP & Salesforce', description: '透過 MCP Server Portal 連接 SAP 與 Salesforce（由專屬 subagent 執行）' },
 };
 
 /**

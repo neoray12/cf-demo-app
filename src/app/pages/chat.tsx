@@ -117,7 +117,6 @@ const MCP_SERVER_LABELS: Record<string, string> = {
   "cf-observability": "Workers Observability",
   "cf-radar": "Radar",
   saas: "SAP & Salesforce",
-  "saas-cm": "SAP & Salesforce (Code Mode)",
 };
 
 // MCP tool display name keys
