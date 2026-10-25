@@ -66,3 +66,19 @@ describe('buildDelegateTool', () => {
     expect(parents).toEqual(['main/c9']);
   });
 });
+
+describe('buildDelegateTool abort', () => {
+  it("stops the subagent when the main stream is aborted (tool abortSignal)", async () => {
+    const signals: AbortSignal[] = [];
+    const tool = buildDelegateTool({
+      server: saas!, toolNames: [], ctx, parentSpanId: 'main', codeMode: false,
+      run: async (_def, _input, subCtx) => { signals.push(subCtx.signal); return { text: 'ok' }; },
+      loadTools: async () => ({ tools: {}, catalogPrompt: '' }),
+    });
+    const stream = new AbortController();
+    stream.abort(new Error('idle'));
+    await tool.execute!({ task: 'x' }, { toolCallId: 'c1', messages: [], abortSignal: stream.signal });
+    expect(signals[0]!.aborted).toBe(true);
+    expect(ctx.signal.aborted).toBe(false);
+  });
+});

@@ -70,7 +70,9 @@ export function buildDelegateTool(args: {
             : t;
         }
         const def = subagentDef(server, tools, loaded.catalogPrompt, codeMode);
-        const { text } = await run(def, { task }, ctx, toolSpanId(parentSpanId, options.toolCallId), 0);
+        // The main stream's abort (stop button, idle, hard cap) also stops the subagent.
+        const signal = options.abortSignal ? AbortSignal.any([ctx.signal, options.abortSignal]) : ctx.signal;
+        const { text } = await run(def, { task }, { ...ctx, signal }, toolSpanId(parentSpanId, options.toolCallId), 0);
         return block ? { ...(block as object), result: text, blocked: true, codeMode } : { result: text, codeMode };
       } catch (err) {
         return { error: errorMessage(err) };

@@ -8,6 +8,7 @@ import { createChatSpanTracker, MAIN_ROOT_SPAN, type GatewayInfo } from '@/lib/c
 import { buildGatewayMetadata } from '@/lib/gateway-metadata';
 import { resolveToolPolicy } from '@/lib/tool-policy';
 import { buildDelegateTool } from '@/lib/mcp-subagent';
+import { createIdleGuard } from '@/lib/idle-guard';
 import { getRequestUser } from '@/lib/auth';
 import { TurnRecorder, historyConfigured, isValidConversationId, saveTurn, type ModelAttempt } from '@/lib/chat-history';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
@@ -400,7 +401,21 @@ export async function POST(request: NextRequest) {
     // for every chat would burn instance slots on plain Q&A.
     const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
     if (chatSandboxConfigured(env as any) && (attachments.length > 0 || SANDBOX_HINT.test(lastUser))) {
-      ctx.waitUntil(runTracedTool(runCtx, MAIN_ROOT_SPAN, 'sandbox.warmup', { sandbox: sandboxSessionId }, () => warmSandbox(env as any, sandboxSessionId)));
+      // Background work that can outlive the response: a Cloudflare trace span only,
+      // never an in-app span (it could end after the stream closed and stay open).
+      ctx.waitUntil(
+        withToolSpan(
+          {
+            name: 'sandbox.warmup',
+            callId: `warmup-${sandboxSessionId}`,
+            input: { sandbox: sandboxSessionId },
+            storeContent: false,
+            agent: { name: 'main-chat', id: 'main-chat-demo' },
+            ...(traceConversationId ? { conversationId: traceConversationId } : {}),
+          },
+          () => warmSandbox(env as any, sandboxSessionId),
+        ),
+      );
     }
 
     // Upload any attached CSV/XLSX into the sandbox before building the
@@ -581,16 +596,18 @@ export async function POST(request: NextRequest) {
   function createStream(attempt: number) {
     const ac = new AbortController();
     const hardCap = setTimeout(() => ac.abort(new Error('hard cap')), HARD_CAP_MS);
-    let idle: ReturnType<typeof setTimeout> | null = null;
-    const bump = () => {
-      if (idle) clearTimeout(idle);
-      idle = setTimeout(() => ac.abort(new Error('idle')), IDLE_MS);
-    };
+    // Paused while tools execute: a delegate tool's subagent can take minutes
+    // without the main stream sending a single part.
+    const idle = createIdleGuard(IDLE_MS, () => ac.abort(new Error('idle')));
+    // Stop / closed tab: stop the model too (and through the tools' abortSignal, any subagent).
+    const onClientAbort = () => ac.abort(new Error('client aborted'));
+    request.signal?.addEventListener('abort', onClientAbort, { once: true });
+    const bump = (part: { type: string; toolCallId?: unknown }) => idle.onPart(part);
     const done = () => {
       clearTimeout(hardCap);
-      if (idle) clearTimeout(idle);
+      idle.stop();
+      request.signal?.removeEventListener('abort', onClientAbort);
     };
-    bump();
     currentAttempt = `stream-${attempt}`;
     const tracked = trackAttempt(currentAttempt);
     const result = ai.streamText({
@@ -706,7 +723,7 @@ export async function POST(request: NextRequest) {
 
     try {
     for await (const part of result.fullStream) {
-      bump();
+      bump(part as { type: string; toolCallId?: unknown });
       traceParts(controller, part);
       if (routedInfo && !routedSent) {
         routedSent = true;
@@ -951,7 +968,8 @@ export async function POST(request: NextRequest) {
         thinkBuffer = '';
         const firstResult = await processStream(controller, 1);
 
-        let resolved = firstResult.hasTextContent || firstResult.hasError;
+        // A client that went away gets no retries (nobody would see them).
+        let resolved = firstResult.hasTextContent || firstResult.hasError || Boolean(request.signal?.aborted);
 
         // Step 2: Smart retry — inject tool results as context, no tools
         if (!resolved && firstResult.hasToolCalls && firstResult.toolResults.length > 0) {

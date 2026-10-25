@@ -264,21 +264,22 @@ export async function saveTurn(env: Required<HistoryEnv>, record: TurnRecord, im
   // Turns with span events count subagent tokens too; older records only have attempt totals.
   const spanUsage = record.events.some((e) => e.type === 'span-end' && e.usage) ? turnUsage(record) : null;
 
-  await db.batch([
+  // `withExperiment` = the code_mode / experiment columns of migration 0002; a
+  // database that hasn't been migrated yet still gets every turn (without them).
+  const statements = (withExperiment: boolean) => [
     db
       .prepare(
         `INSERT INTO turns (conversation_id, turn_index, email, started_at, ended_at, duration_ms, ttft_ms, status, model, provider,
            compat_model, routed_model, finish_reason, input_tokens, output_tokens, reasoning_tokens, tool_calls, tool_names, error_type,
-           user_text, assistant_text, r2_key, code_mode, experiment)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+           user_text, assistant_text, r2_key${withExperiment ? ', code_mode, experiment' : ''})
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22${withExperiment ? ', ?23, ?24' : ''})
          ON CONFLICT (conversation_id, turn_index) DO UPDATE SET
            started_at = excluded.started_at, ended_at = excluded.ended_at, duration_ms = excluded.duration_ms, ttft_ms = excluded.ttft_ms,
            status = excluded.status, model = excluded.model, provider = excluded.provider, compat_model = excluded.compat_model,
            routed_model = excluded.routed_model, finish_reason = excluded.finish_reason, input_tokens = excluded.input_tokens,
            output_tokens = excluded.output_tokens, reasoning_tokens = excluded.reasoning_tokens, tool_calls = excluded.tool_calls,
            tool_names = excluded.tool_names, error_type = excluded.error_type, user_text = excluded.user_text,
-           assistant_text = excluded.assistant_text, r2_key = excluded.r2_key,
-           code_mode = excluded.code_mode, experiment = excluded.experiment
+           assistant_text = excluded.assistant_text, r2_key = excluded.r2_key${withExperiment ? ', code_mode = excluded.code_mode, experiment = excluded.experiment' : ''}
          WHERE turns.email = excluded.email`,
       )
       .bind(
@@ -304,8 +305,9 @@ export async function saveTurn(env: Required<HistoryEnv>, record: TurnRecord, im
         record.request.userText.slice(0, INDEX_TEXT_MAX),
         assistant.content.slice(0, INDEX_TEXT_MAX),
         key,
-        record.request.toolPolicy?.delegated.some((d) => d.codeMode) ? 1 : 0,
-        record.request.experiment?.id ?? null,
+        ...(withExperiment
+          ? [record.request.toolPolicy?.delegated.some((d) => d.codeMode) ? 1 : 0, record.request.experiment?.id ?? null]
+          : []),
       ),
     db
       .prepare(
@@ -325,7 +327,14 @@ export async function saveTurn(env: Required<HistoryEnv>, record: TurnRecord, im
          WHERE id = ?1 AND email = ?2`,
       )
       .bind(record.conversationId, record.email),
-  ]);
+  ];
+  try {
+    await db.batch(statements(true));
+  } catch (err) {
+    if (!/no (such )?column|has no column named/i.test(String((err as Error)?.message ?? err))) throw err;
+    console.warn('[history] turns.code_mode/experiment missing — run migration 0002; saved without them');
+    await db.batch(statements(false));
+  }
 }
 
 export interface ConversationSummary {

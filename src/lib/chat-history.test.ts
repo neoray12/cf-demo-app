@@ -7,6 +7,7 @@ import {
   ownsAssetKey,
   toHistoryTurn,
   turnUsage,
+  saveTurn,
   turnKey,
   userPrefix,
   type TurnRequestInfo,
@@ -143,5 +144,30 @@ describe('toHistoryTurn with spans', () => {
     const turn = toHistoryTurn({ ...record, request: { ...record.request, experiment: { id: 'sf-agg', codeMode: true } } });
     expect(turn.assistant.trace?.rootIds).toEqual(['main']);
     expect(turn.assistant.experiment).toEqual({ id: 'sf-agg', codeMode: true });
+  });
+});
+
+describe('saveTurn before migration 0002', () => {
+  it('falls back to the legacy columns when code_mode/experiment do not exist yet', async () => {
+    const batches: string[][] = [];
+    const stmt = (sql: string) => ({
+      bind: () => ({ sql, first: async () => null }),
+    });
+    const db = {
+      prepare: stmt,
+      batch: async (stmts: Array<{ sql: string }>) => {
+        batches.push(stmts.map((s) => s.sql));
+        if (stmts.some((s) => s.sql.includes('code_mode'))) throw new Error('D1_ERROR: table turns has no column named code_mode: SQLITE_ERROR');
+        return [];
+      },
+    };
+    const puts: string[] = [];
+    const bucket = { put: async (key: string) => { puts.push(key); } };
+    const { rec } = recorder();
+    rec.onEvent({ type: 'text-delta', text: 'hi' });
+    await saveTurn({ HISTORY_DB: db as never, HISTORY_BUCKET: bucket as never }, rec.finish(), []);
+    expect(batches).toHaveLength(2);
+    expect(batches[1]!.some((sql) => sql.includes('code_mode'))).toBe(false);
+    expect(puts).toHaveLength(1);
   });
 });

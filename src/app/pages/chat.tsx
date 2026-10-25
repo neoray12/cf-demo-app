@@ -1468,7 +1468,7 @@ export function ChatPage() {
         } else if (lastMsg && !lastMsg.content && !lastMsg.reasoning) {
           setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
         }
-        return;
+        return { aborted: true };
       }
       console.error("[Chat] Stream error:", err);
       const errMsg = (err as Error).message || "發生錯誤";
@@ -1520,12 +1520,13 @@ export function ChatPage() {
         toolCallNames: debugToolNames,
       });
     }
+    return { aborted: controller.signal.aborted };
   }, [selectedModel, connectedMcpServers]);
 
   const handleSend = useCallback(async (text: string, mcpServers?: string[], opts?: { isolated?: boolean }) => {
     const images = pendingImages;
     // An image on its own is a valid message — no text required.
-    if ((!text.trim() && images.length === 0) || isLoading) return;
+    if ((!text.trim() && images.length === 0) || isLoading) return { aborted: false };
     turnMcpServersRef.current = mcpServers ?? null;
     isNearBottomRef.current = true;
     if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -1547,8 +1548,11 @@ export function ChatPage() {
     // Use messagesRef to avoid stale closure
     const allMessages = [...messagesRef.current, userMsg];
     messagesRef.current = allMessages;
-    setMessages(allMessages);
-    await streamChat(
+    // Functional update: a previous turn's last flush may still be queued (the
+    // comparison example sends right after the first run), and a plain
+    // setMessages(allMessages) would overwrite it with this older snapshot.
+    setMessages((prev) => [...prev, userMsg]);
+    return streamChat(
       allMessages,
       attachment ? [{ name: attachment.name, contentBase64: attachment.contentBase64 }] : undefined,
       images.length ? images.map((i) => i.dataUrl) : undefined,
@@ -1738,7 +1742,9 @@ export function ChatPage() {
     handleNewChat();
     try {
       experimentRef.current = { id, codeMode: false };
-      await handleSend(prompt, mcpServers);
+      const first = await handleSend(prompt, mcpServers);
+      // The user pressed stop: the whole comparison stops (a failed run still continues).
+      if (first.aborted) return;
       experimentRef.current = { id, codeMode: true };
       await handleSend(prompt, mcpServers, { isolated: true });
     } finally {
