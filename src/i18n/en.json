@@ -277,7 +277,7 @@
       "count": "{{count}} examples",
       "codemode": {
         "title": "Code Mode demos",
-        "desc": "Run the same question with the app's Code Mode and with the MCP Portal's Code Mode"
+        "desc": "Run the same question without and with Code Mode and compare tokens and time"
       }
     },
     "guardrailSuggestions": {
@@ -287,25 +287,10 @@
       "viewPolicyDesc": "Gateway policies, DLP rules and demo flow for the four scenarios"
     },
     "codeModeSuggestions": {
-      "appList": {
-        "title": "App Code Mode · First 10 customers"
-      },
-      "appAgg": {
-        "title": "App Code Mode · Cross-object rollup"
-      },
-      "appCases": {
-        "title": "App Code Mode · Case stats"
-      },
-      "portalAgg": {
-        "title": "Portal Code Mode · Cross-object rollup"
-      },
-      "portalCompare": {
-        "title": "Portal Code Mode · SAP × Salesforce match"
-      },
       "agg": "List the first 5 Salesforce Accounts, then for each one find its number of opportunities and their total amount, and put it all in one table",
-      "cases": "List all Salesforce support cases, count them by status and priority, and show the 3 newest",
-      "compare": "List the first 5 SAP customers and the first 5 Salesforce Accounts, find companies with similar names, and show both IDs",
-      "list": "List the first 10 Salesforce customers (Accounts) as a table"
+      "compareCard": {
+        "title": "Code Mode comparison: cross-object rollup"
+      }
     },
     "mcpPanelResize": "Drag to resize the MCP panel (double-click to reset)",
     "history": {
@@ -372,6 +357,23 @@
         "sandbox_upload": "Upload attachment to the sandbox",
         "history_save": "Save chat history"
       }
+    },
+    "compare": {
+      "title": "Code Mode comparison ({{id}})",
+      "metric": "Metric",
+      "off": "Without Code Mode",
+      "on": "With Code Mode",
+      "delta": "Change",
+      "failed": "failed",
+      "rows": {
+        "inputTokens": "Input tokens (main + subagent)",
+        "outputTokens": "Output tokens",
+        "modelCalls": "Model calls",
+        "toolCalls": "Tool calls",
+        "totalMs": "Total time",
+        "ttftMs": "Time to first token"
+      },
+      "running": "Comparison run {{n}} ({{mode}})"
     }
   },
   "crawler": {

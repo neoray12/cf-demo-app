@@ -277,7 +277,7 @@
       "count": "{{count}} 個範例",
       "codemode": {
         "title": "Code Mode 示範",
-        "desc": "同一題分別用 App 端與 MCP Portal 端的 Code Mode 執行"
+        "desc": "同一題各跑一次不開 / 開 Code Mode，比較 token 與時間"
       }
     },
     "guardrailSuggestions": {
@@ -287,25 +287,10 @@
       "viewPolicyDesc": "四個卡控場景的 Gateway 政策、DLP 規則與示範流程"
     },
     "codeModeSuggestions": {
-      "appList": {
-        "title": "App Code Mode · 前 10 筆客戶"
-      },
-      "appAgg": {
-        "title": "App Code Mode · 跨物件彙總"
-      },
-      "appCases": {
-        "title": "App Code Mode · 案件統計"
-      },
-      "portalAgg": {
-        "title": "Portal Code Mode · 跨物件彙總"
-      },
-      "portalCompare": {
-        "title": "Portal Code Mode · SAP × Salesforce 比對"
-      },
       "agg": "列出 Salesforce 前 5 個 Account，再分別查出每個 Account 的商機數量與總金額，整理成一張表",
-      "cases": "列出 Salesforce 所有客服案件，依狀態與優先順序統計數量，並列出最新的 3 筆",
-      "compare": "同時列出 SAP 前 5 個客戶與 Salesforce 前 5 個 Account，找出名稱相近的公司並列出兩邊的 ID",
-      "list": "列出 Salesforce 前 10 筆客戶（Account），整理成表格"
+      "compareCard": {
+        "title": "Code Mode 對照：跨物件彙總"
+      }
     },
     "mcpPanelResize": "拖曳調整 MCP 面板寬度（雙擊恢復預設）",
     "history": {
@@ -372,6 +357,23 @@
         "sandbox_upload": "上傳附件到 Sandbox",
         "history_save": "儲存對話紀錄"
       }
+    },
+    "compare": {
+      "title": "Code Mode 對照（{{id}}）",
+      "metric": "指標",
+      "off": "不開 Code Mode",
+      "on": "開 Code Mode",
+      "delta": "差異",
+      "failed": "失敗",
+      "rows": {
+        "inputTokens": "輸入 tokens（主 + subagent）",
+        "outputTokens": "輸出 tokens",
+        "modelCalls": "模型呼叫次數",
+        "toolCalls": "工具呼叫次數",
+        "totalMs": "總時間",
+        "ttftMs": "首字時間"
+      },
+      "running": "對照實驗：第 {{n}} 輪（{{mode}}）"
     }
   },
   "crawler": {

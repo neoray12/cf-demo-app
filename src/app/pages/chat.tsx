@@ -27,7 +27,9 @@ import type { HistoryTurn } from "@/lib/chat-history";
 import { HistoryPanel } from "../components/chat/history-panel";
 import { SubagentCard } from "../components/chat/subagent-card";
 import type { RunTrace, SpanNode } from "@/lib/agents/trace-tree";
-import { MAIN_ROOT_SPAN } from "@/lib/trace-summary";
+import { MAIN_ROOT_SPAN, summarizeTrace } from "@/lib/trace-summary";
+import { CompareTable } from "../components/chat/compare-table";
+import { suggestionAction } from "@/lib/suggestion-action";
 import type { GatewayBlock } from "@/lib/mcp-guardrails";
 
 // ── Types ──
@@ -49,6 +51,8 @@ interface ChatMessage {
   timeline?: ChatTimeline;
   /** Span tree of the turn (model calls, tools, subagents with time and tokens). */
   trace?: RunTrace | null;
+  /** Code Mode comparison example run this answer belongs to. */
+  experiment?: { id: string; codeMode: boolean };
 }
 
 interface PendingImage {
@@ -812,12 +816,15 @@ function AssistantMessage({
   isLastAssistant,
   isLoading,
   onRetry,
+  compareOff,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
   isLastAssistant: boolean;
   isLoading: boolean;
   onRetry: () => void;
+  /** The "without Code Mode" run this answer (with Code Mode) is compared against. */
+  compareOff?: ChatMessage;
 }) {
   const { t } = useTranslation();
   const deferredContent = useDeferredValue(message.content);
@@ -910,6 +917,14 @@ function AssistantMessage({
           toolLabel={toolLabel}
           trace={message.trace}
           spanLabel={(node) => chatSpanLabel(node, t)}
+        />
+      )}
+
+      {compareOff && message.experiment && !isStreaming && message.trace?.status !== "running" && (
+        <CompareTable
+          id={message.experiment.id}
+          off={compareOff.trace && compareOff.trace.status === "ok" ? summarizeTrace(compareOff.trace) : null}
+          on={message.trace && message.trace.status === "ok" ? summarizeTrace(message.trace) : null}
         />
       )}
 
@@ -1113,6 +1128,8 @@ export function ChatPage() {
   // connected servers' tools. null = every connected server.
   const turnMcpServersRef = useRef<string[] | null>(null);
   const pendingSuggestionRef = useRef<{ prompt: string; opts: SuggestionSendOpts } | null>(null);
+  // Set only while the Code Mode comparison example sends its two runs.
+  const experimentRef = useRef<{ id: string; codeMode: boolean } | null>(null);
   // Auto Router session-affinity key; a new chat starts a new conversation
   const conversationIdRef = useRef<string>(crypto.randomUUID());
 
@@ -1212,7 +1229,13 @@ export function ChatPage() {
   }, [isLoading]);
 
   // ── Stream NDJSON from /api/chat ──
-  const streamChat = useCallback(async (allMessages: ChatMessage[], attachments?: Array<{ name: string; contentBase64: string }>, images?: string[]) => {
+  const streamChat = useCallback(async (
+    allMessages: ChatMessage[],
+    attachments?: Array<{ name: string; contentBase64: string }>,
+    images?: string[],
+    opts?: { isolated?: boolean },
+  ) => {
+    const experiment = experimentRef.current ?? undefined;
     const aiModel = AI_MODELS.find((m) => m.id === selectedModel);
     const modelId = aiModel?.workersAiModel ?? aiModel?.providerModelId ?? "@cf/openai/gpt-oss-120b";
     const provider = aiModel?.provider ?? "workers-ai";
@@ -1223,7 +1246,7 @@ export function ChatPage() {
     // Add assistant placeholder
     const assistantMsgId = genId();
     streamingMsgIdRef.current = assistantMsgId;
-    const assistantMsg: ChatMessage = { id: assistantMsgId, role: "assistant", content: "", reasoning: "", toolCalls: [] };
+    const assistantMsg: ChatMessage = { id: assistantMsgId, role: "assistant", content: "", reasoning: "", toolCalls: [], ...(experiment ? { experiment } : {}) };
 
     setMessages((prev) => [...prev, assistantMsg]);
     setIsLoading(true);
@@ -1233,7 +1256,8 @@ export function ChatPage() {
     let debugFirstToken: number | null = null;
     const debugEvents: string[] = [];
     const debugToolNames: string[] = [];
-    const debugReqMsgs = allMessages.map((m) => ({ role: m.role, content: m.content }));
+    // An isolated turn (second comparison run) sends only its own question.
+    const debugReqMsgs = (opts?.isolated ? allMessages.slice(-1) : allMessages).map((m) => ({ role: m.role, content: m.content }));
 
     // doFetch: single streaming fetch attempt, returns flags
     const doFetch = async (): Promise<{ gotTextContent: boolean; gotError: boolean; hasToolResults: boolean }> => {
@@ -1265,6 +1289,7 @@ export function ChatPage() {
           // Earlier user turns; a resend of the same turn overwrites it in history.
           turnIndex: Math.max(allMessages.filter((m) => m.role === "user").length - 1, 0),
           mcpServers: turnMcpServersRef.current ?? connectedMcpServers,
+          ...(experiment ? { experiment } : {}),
           userName,
           userEmail,
           attachments,
@@ -1497,7 +1522,7 @@ export function ChatPage() {
     }
   }, [selectedModel, connectedMcpServers]);
 
-  const handleSend = useCallback(async (text: string, mcpServers?: string[]) => {
+  const handleSend = useCallback(async (text: string, mcpServers?: string[], opts?: { isolated?: boolean }) => {
     const images = pendingImages;
     // An image on its own is a valid message — no text required.
     if ((!text.trim() && images.length === 0) || isLoading) return;
@@ -1521,11 +1546,13 @@ export function ChatPage() {
     };
     // Use messagesRef to avoid stale closure
     const allMessages = [...messagesRef.current, userMsg];
+    messagesRef.current = allMessages;
     setMessages(allMessages);
     await streamChat(
       allMessages,
       attachment ? [{ name: attachment.name, contentBase64: attachment.contentBase64 }] : undefined,
       images.length ? images.map((i) => i.dataUrl) : undefined,
+      opts,
     );
   }, [isLoading, streamChat, pendingAttachment, pendingImages]);
 
@@ -1644,6 +1671,7 @@ export function ChatPage() {
 
   const handleNewChat = useCallback(() => {
     if (isLoading) handleStop();
+    messagesRef.current = [];
     setMessages([]);
     setInput("");
     conversationIdRef.current = crypto.randomUUID();
@@ -1685,17 +1713,37 @@ export function ChatPage() {
   // Suggestion cards: the harness picks the tools; a card only pins which MCP
   // server the turn needs.
   const handleSuggestion = (prompt: string, opts: SuggestionSendOpts) => {
-    if (opts.mcp && !connectedMcpServers.includes(opts.mcp)) {
+    const action = suggestionAction(opts, connectedMcpServers);
+    if (action === "connect") {
       // Its MCP server isn't connected: fill the input instead of sending.
       // Sending this exact prompt later re-runs this check.
       pendingSuggestionRef.current = { prompt, opts };
-      setMcpConnectHint(opts.mcp);
+      setMcpConnectHint(opts.mcp!);
       setInput(prompt);
       setShowMcpPanel(true);
       return;
     }
     pendingSuggestionRef.current = null;
+    if (action === "compare") {
+      void runComparison(prompt, opts.experiment!, opts.mcp ? [opts.mcp] : undefined);
+      return;
+    }
     handleSend(prompt, opts.mcp ? [opts.mcp] : undefined);
+  };
+
+  // Code Mode comparison: a fresh conversation, the question without Code Mode,
+  // then the same question alone with Code Mode; the table renders under the
+  // second answer once both have finished.
+  const runComparison = async (prompt: string, id: string, mcpServers?: string[]) => {
+    handleNewChat();
+    try {
+      experimentRef.current = { id, codeMode: false };
+      await handleSend(prompt, mcpServers);
+      experimentRef.current = { id, codeMode: true };
+      await handleSend(prompt, mcpServers, { isolated: true });
+    } finally {
+      experimentRef.current = null;
+    }
   };
 
   // Send button / Enter. A prompt that a suggestion filled in (while its MCP
@@ -1838,6 +1886,11 @@ export function ChatPage() {
                       ) : (
                         <AssistantMessage
                           message={msg}
+                          compareOff={
+                            msg.experiment?.codeMode
+                              ? messages.find((m) => m.role === "assistant" && m.experiment?.id === msg.experiment!.id && !m.experiment.codeMode)
+                              : undefined
+                          }
                           isStreaming={isStreamingThis}
                           isLastAssistant={isLast}
                           isLoading={isLoading}
