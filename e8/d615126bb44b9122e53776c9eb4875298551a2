@@ -1,0 +1,31 @@
+agents.md
+  s_35f257df545d16::t_8c955542fc52c9 105,123
+docs/superpowers/specs/2026-10-25-main-chat-tracing-history-design.md
+  s_35f257df545d16::t_b7aa73a6cb26e2 46
+src/i18n/en.json
+  s_35f257df545d16::t_1e82cc262fc0e3 204,267
+src/i18n/zh-TW.json
+  s_35f257df545d16::t_eec19af5014a41 204,267
+src/app/api/chat/route.ts
+  s_35f257df545d16::t_d95d6487e243a3 15,382
+src/app/pages/chat.tsx
+  s_35f257df545d16::t_458a35135c9d26 18,1432,1687
+src/lib/chat-tools.ts
+  s_35f257df545d16::t_b2c392cc772610 543
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e8d615126bb44b9122e53776c9eb4875298551a2",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
