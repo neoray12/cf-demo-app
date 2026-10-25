@@ -4,6 +4,7 @@
 import { applyChatEvent, createTurnState, type ChatStreamEvent, type MessagePart, type ToolCallInfo, type TurnState } from './chat-turn';
 import type { TimelineEvent } from './chat-timeline';
 import type { ToolPolicy } from './tool-policy';
+import type { RunTrace } from './agents/trace-tree';
 
 export const HISTORY_RECORD_VERSION = 1;
 const CONVERSATION_ID_RE = /^[\w-]{1,100}$/;
@@ -199,12 +200,23 @@ function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-/** Sum of a usage field across the turn's model calls. */
+/** Sum of a usage field across the turn's main-model calls (attempt totals). */
 function usageTotal(record: TurnRecord, field: string): number | null {
   let total: number | null = null;
   for (const a of record.attempts) {
     const v = num(a.usage?.[field]);
     if (v !== null) total = (total ?? 0) + v;
+  }
+  return total;
+}
+
+/** Tokens of every model call in the turn — main agent and subagents — from the chat spans. */
+export function turnUsage(record: TurnRecord): { input: number; output: number } {
+  const total = { input: 0, output: 0 };
+  for (const e of record.events) {
+    if (e.type !== 'span-end' || !e.usage) continue;
+    total.input += num(e.usage.input) ?? 0;
+    total.output += num(e.usage.output) ?? 0;
   }
   return total;
 }
@@ -249,21 +261,24 @@ export async function saveTurn(env: Required<HistoryEnv>, record: TurnRecord, im
   const assistant = record.response.assistant;
   const lastAttempt = record.attempts[record.attempts.length - 1];
   const toolNames = [...new Set(assistant.toolCalls.map((tc) => tc.name))];
+  // Turns with span events count subagent tokens too; older records only have attempt totals.
+  const spanUsage = record.events.some((e) => e.type === 'span-end' && e.usage) ? turnUsage(record) : null;
 
   await db.batch([
     db
       .prepare(
         `INSERT INTO turns (conversation_id, turn_index, email, started_at, ended_at, duration_ms, ttft_ms, status, model, provider,
            compat_model, routed_model, finish_reason, input_tokens, output_tokens, reasoning_tokens, tool_calls, tool_names, error_type,
-           user_text, assistant_text, r2_key)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+           user_text, assistant_text, r2_key, code_mode, experiment)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
          ON CONFLICT (conversation_id, turn_index) DO UPDATE SET
            started_at = excluded.started_at, ended_at = excluded.ended_at, duration_ms = excluded.duration_ms, ttft_ms = excluded.ttft_ms,
            status = excluded.status, model = excluded.model, provider = excluded.provider, compat_model = excluded.compat_model,
            routed_model = excluded.routed_model, finish_reason = excluded.finish_reason, input_tokens = excluded.input_tokens,
            output_tokens = excluded.output_tokens, reasoning_tokens = excluded.reasoning_tokens, tool_calls = excluded.tool_calls,
            tool_names = excluded.tool_names, error_type = excluded.error_type, user_text = excluded.user_text,
-           assistant_text = excluded.assistant_text, r2_key = excluded.r2_key
+           assistant_text = excluded.assistant_text, r2_key = excluded.r2_key,
+           code_mode = excluded.code_mode, experiment = excluded.experiment
          WHERE turns.email = excluded.email`,
       )
       .bind(
@@ -280,8 +295,8 @@ export async function saveTurn(env: Required<HistoryEnv>, record: TurnRecord, im
         record.request.compatModelId,
         assistant.routedModel?.model ?? null,
         lastAttempt?.finishReason ?? null,
-        usageTotal(record, 'inputTokens'),
-        usageTotal(record, 'outputTokens'),
+        spanUsage ? spanUsage.input : usageTotal(record, 'inputTokens'),
+        spanUsage ? spanUsage.output : usageTotal(record, 'outputTokens'),
         usageTotal(record, 'reasoningTokens'),
         assistant.toolCalls.length,
         toolNames.length ? JSON.stringify(toolNames) : null,
@@ -289,6 +304,8 @@ export async function saveTurn(env: Required<HistoryEnv>, record: TurnRecord, im
         record.request.userText.slice(0, INDEX_TEXT_MAX),
         assistant.content.slice(0, INDEX_TEXT_MAX),
         key,
+        record.request.toolPolicy?.delegated.some((d) => d.codeMode) ? 1 : 0,
+        record.request.experiment?.id ?? null,
       ),
     db
       .prepare(
@@ -422,6 +439,8 @@ export interface HistoryTurn {
     routedModel?: { model: string; reason: string | null };
     notices: string[];
     timeline: { events: TimelineEvent[]; endAt: number; startedAt: number };
+    trace: RunTrace | null;
+    experiment?: { id: string; codeMode: boolean };
   };
 }
 
@@ -447,6 +466,8 @@ export function toHistoryTurn(record: TurnRecord): HistoryTurn {
       ...(a.routedModel ? { routedModel: a.routedModel } : {}),
       notices: a.notices,
       timeline: { events: record.response.timeline.events, endAt: record.response.timeline.endAt, startedAt: 0 },
+      trace: a.trace ?? null,
+      ...(record.request.experiment ? { experiment: record.request.experiment } : {}),
     },
   };
 }

@@ -6,6 +6,7 @@ import {
   likePattern,
   ownsAssetKey,
   toHistoryTurn,
+  turnUsage,
   turnKey,
   userPrefix,
   type TurnRequestInfo,
@@ -116,5 +117,31 @@ describe('helpers', () => {
 
   it('escapes LIKE wildcards', () => {
     expect(likePattern('50%_off\\')).toBe('%50\\%\\_off\\\\%');
+  });
+});
+
+describe('turnUsage', () => {
+  it('adds up every model call, main agent and subagents', () => {
+    const { rec } = recorder();
+    rec.onEvent({ type: 'run-start', runId: 'main', agent: 'main-chat', model: 'm', t: 0 });
+    rec.onEvent({ type: 'span-start', id: 'main', kind: 'invoke_agent', name: 'main-chat', t: 0 });
+    rec.onEvent({ type: 'span-start', id: 'main/step-1', parentId: 'main', kind: 'chat', name: 'chat m', t: 1 });
+    rec.onEvent({ type: 'span-end', id: 'main/step-1', t: 5, status: 'ok', usage: { input: 100, output: 10 } });
+    rec.onEvent({ type: 'span-start', id: 'sub', parentId: 'main/c', kind: 'chat', name: 'chat m', t: 6 });
+    rec.onEvent({ type: 'span-end', id: 'sub', t: 9, status: 'ok', usage: { input: 400, output: 40 } });
+    expect(turnUsage(rec.finish())).toEqual({ input: 500, output: 50 });
+  });
+});
+
+describe('toHistoryTurn with spans', () => {
+  it('brings back the span tree and the experiment run', () => {
+    const { rec } = recorder();
+    rec.onEvent({ type: 'run-start', runId: 'main', agent: 'main-chat', model: 'm', t: 0 });
+    rec.onEvent({ type: 'span-start', id: 'main', kind: 'invoke_agent', name: 'main-chat', t: 0 });
+    rec.onEvent({ type: 'text-delta', text: 'hi' });
+    const record = rec.finish();
+    const turn = toHistoryTurn({ ...record, request: { ...record.request, experiment: { id: 'sf-agg', codeMode: true } } });
+    expect(turn.assistant.trace?.rootIds).toEqual(['main']);
+    expect(turn.assistant.experiment).toEqual({ id: 'sf-agg', codeMode: true });
   });
 });
