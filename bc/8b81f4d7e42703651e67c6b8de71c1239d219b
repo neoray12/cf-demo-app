@@ -1,0 +1,29 @@
+agents.md
+  s_35f257df545d16::t_be399f0146f19d 260-261
+src/app/components/chat/suggestion-categories.tsx
+  s_35f257df545d16::t_6310bf5ddbdc16 21,175-176,179-185
+src/i18n/en.json
+  s_35f257df545d16::t_34ab64a28b3e44 290-318
+src/i18n/zh-TW.json
+  s_35f257df545d16::t_5b89b42ab99797 290-318
+src/lib/experiment-compare.test.ts
+  s_35f257df545d16::t_1f0c711cd012c7 2-4,41-60
+src/lib/experiment-compare.ts
+  s_35f257df545d16::t_305f05c7d00ebc 34-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "bc8b81f4d7e42703651e67c6b8de71c1239d219b",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
