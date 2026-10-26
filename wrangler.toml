@@ -60,8 +60,11 @@ binding = "LOADER"
 # - CHAT_SANDBOX_SECRET: shared secret, same value as SANDBOX_API_SECRET on cf-chat-sandbox
 # - LOGIN_USERS: JSON [{"email","name","password"}] — app login accounts
 # - AUTH_SECRET: HMAC key for the cf_demo_user login cookie (falls back to CHAT_SANDBOX_SECRET)
+# - APPROVAL_SECRET: shared with workers/approval-workflow (x-approval-secret, signed approval links)
 [vars]
 CF_ACCOUNT_ID = "5efa272dc28e4e3933324c44165b6dbe"
+# Human-in-the-loop approval Workflow worker (workers/approval-workflow)
+APPROVAL_WORKER_URL = "https://cf-approval-workflow.neo-cloudflare.workers.dev"
 AI_GATEWAY_ID = "nkcf-gateway-01"
 # Model-request hedge delay in ms; "0" turns hedging off
 AGENTS_HEDGE_AFTER_MS = "2500"

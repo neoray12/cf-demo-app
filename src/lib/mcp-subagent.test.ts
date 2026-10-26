@@ -82,3 +82,53 @@ describe('buildDelegateTool abort', () => {
     expect(ctx.signal.aborted).toBe(false);
   });
 });
+
+describe('buildDelegateTool approvals', () => {
+  it('turns a write into an approval request instead of calling it, and lets reads through', async () => {
+    const called: string[] = [];
+    const requested: Array<{ toolName: string; args: unknown }> = [];
+    const mk = (name: string) => ({ description: name, execute: async () => { called.push(name); return { ok: name }; } });
+    const run = async (def: SubagentDef<{ task: string }>) => {
+      const tools = def.tools(ctx) as Record<string, { execute: (a: unknown, o: unknown) => Promise<unknown> }>;
+      await tools['tool_saas_salesforce-mcp_sf_list_opportunities']!.execute({ top: 3 }, { toolCallId: 'r' });
+      const pending = await tools['tool_saas_salesforce-mcp_sf_update_opportunity']!.execute({ opportunity_id: '006', stage: 'Closed Won' }, { toolCallId: 'w' });
+      expect(pending).toMatchObject({ pendingApproval: true, approvalId: 'apr_1', risk: 'high' });
+      return { text: '已送出審批' };
+    };
+    const tool = buildDelegateTool({
+      server: saas!, toolNames: [], ctx, parentSpanId: 'main', codeMode: false, run,
+      loadTools: async () => ({
+        tools: {
+          'tool_saas_salesforce-mcp_sf_list_opportunities': mk('list'),
+          'tool_saas_salesforce-mcp_sf_update_opportunity': mk('update'),
+        },
+        catalogPrompt: '',
+      }),
+      requestApproval: async (call) => {
+        requested.push({ toolName: call.toolName, args: call.args });
+        return { id: 'apr_1', risk: call.classification.risk, summary: 'close', status: 'pending' };
+      },
+    });
+    const out = await tool.execute!({ task: 'close it' }, { toolCallId: 't', messages: [] });
+    expect(called).toEqual(['list']);
+    expect(requested).toEqual([{ toolName: 'salesforce-mcp_sf_update_opportunity', args: { opportunity_id: '006', stage: 'Closed Won' } }]);
+    expect(out).toMatchObject({ result: '已送出審批', approvals: [{ id: 'apr_1', risk: 'high', status: 'pending' }] });
+  });
+
+  it('holds a Code Mode script that writes', async () => {
+    const run = async (def: SubagentDef<{ task: string }>) => {
+      const tools = def.tools(ctx) as Record<string, { execute: (a: unknown, o: unknown) => Promise<unknown> }>;
+      await tools.tool_saas_portal_codemode_execute!.execute({ code: 'async () => codemode.salesforce_mcp_sf_create_lead({ last_name: "A" })' }, { toolCallId: 'x' });
+      return { text: 'ok' };
+    };
+    const seen: string[] = [];
+    const tool = buildDelegateTool({
+      server: saas!, toolNames: [], ctx, parentSpanId: 'main', codeMode: true, run,
+      loadTools: async () => ({ tools: { tool_saas_portal_codemode_execute: { description: 'x', execute: async () => 'ran' } }, catalogPrompt: '' }),
+      requestApproval: async (call) => { seen.push(call.toolName); return { id: 'apr_2', risk: call.classification.risk, summary: 's', status: 'pending' }; },
+    });
+    const out = await tool.execute!({ task: 'x' }, { toolCallId: 't', messages: [] });
+    expect(seen).toEqual(['portal_codemode_execute']);
+    expect(out).toMatchObject({ approvals: [{ id: 'apr_2', risk: 'low' }] });
+  });
+});

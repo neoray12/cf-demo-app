@@ -29,6 +29,8 @@ import { AutoRouterModelsDialog } from "../components/chat/auto-router-models-di
 import type { HistoryTurn } from "@/lib/chat-history";
 import { HistoryPanel } from "../components/chat/history-panel";
 import { SubagentCard } from "../components/chat/subagent-card";
+import { ApprovalCard } from "../components/chat/approval-card";
+import type { ApprovalRef } from "@/lib/mcp-subagent";
 import type { RunTrace, SpanNode } from "@/lib/agents/trace-tree";
 import { MAIN_ROOT_SPAN, summarizeTrace } from "@/lib/trace-summary";
 import { CompareTable } from "../components/chat/compare-table";
@@ -847,10 +849,12 @@ function AssistantMessage({
     const server = delegateServerLabel(tc.name);
     if (server) {
       const block = tc.result as (GatewayBlock & { source: string; tool: string }) | undefined;
+      const approvals = (tc.result as { approvals?: ApprovalRef[] } | undefined)?.approvals ?? [];
       return (
         <div key={key}>
           <SubagentCard toolCall={tc} trace={message.trace} serverLabel={server} toolLabel={toolLabel} sNow={sNow} />
           {block?.blocked === true && <GatewayBlockCard block={block} label={server} />}
+          {approvals.map((a) => <ApprovalCard key={a.id} approval={a} />)}
         </div>
       );
     }

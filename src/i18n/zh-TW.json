@@ -368,6 +368,29 @@
       "filled": "已填入 {{count}} 字元，可修改後再送出。",
       "skipped": "已略過 {{count}} 個非文字內容。"
     },
+    "approval": {
+      "title": "審批",
+      "lowRisk": "需要你核准",
+      "highRisk": "高風險 · 主管審批（Cloudflare Workflow）",
+      "approve": "核准",
+      "reject": "拒絕",
+      "working": "處理中…",
+      "waitingManager": "已建立 Workflow 並寄信給主管，等主管點信裡的連結核准；關掉這個頁面也不影響。",
+      "waitingYou": "Agent 想執行這個寫入，核准後才會寫進系統。",
+      "details": "請求內容",
+      "script": "Code Mode 腳本",
+      "result": "結果",
+      "viewWorkflow": "在 Cloudflare 查看 Workflow",
+      "status": {
+        "pending": "等待核准",
+        "approved": "已核准",
+        "rejected": "已拒絕",
+        "executing": "寫入中",
+        "done": "已完成",
+        "failed": "失敗",
+        "expired": "已逾時"
+      }
+    },
     "subagent": {
       "title": "{{server}} subagent",
       "ask": "交給 {{server}} subagent",

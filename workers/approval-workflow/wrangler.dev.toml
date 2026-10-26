@@ -1,0 +1,23 @@
+# Local dev: run from the repo root so the Workflow shares the app's local D1:
+#   npx wrangler dev -c workers/approval-workflow/wrangler.dev.toml --persist-to .wrangler/state --port 8790
+name = "cf-approval-workflow"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[workflows]]
+name = "approval-workflow"
+binding = "APPROVAL_WORKFLOW"
+class_name = "ApprovalWorkflow"
+
+[[d1_databases]]
+binding = "HISTORY_DB"
+database_name = "cf-demo-chat-history"
+database_id = "82dfa424-a91f-4794-9991-a5f2daf83172"
+
+[vars]
+APP_URL = "http://localhost:3000"
+MAIL_FROM = "approvals@neokung.work"
+APPROVER_EMAIL = ""
+# No email locally: the approval link is printed to the worker log instead.
+LOG_APPROVAL_LINK = "1"

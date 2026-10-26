@@ -39,6 +39,13 @@ export function mcpTokenKey(sessionId: string, serverId: string): string {
   return `mcp-token:${sessionId}:${serverId}`;
 }
 
+/** Long-lived refresh token (outlives the access token's KV entry), for approvals executed hours later. */
+export function mcpRefreshKey(sessionId: string, serverId: string): string {
+  return `mcp-refresh:${sessionId}:${serverId}`;
+}
+
+export const MCP_REFRESH_TTL_SECONDS = 14 * 24 * 3600;
+
 export function mcpOAuthStateKey(state: string): string {
   return `mcp-oauth-state:${state}`;
 }
@@ -254,4 +261,53 @@ export async function refreshAccessToken(
   }
 
   return await res.json() as TokenResponse;
+}
+
+/** Stores a token response the way the OAuth callback does, plus the long-lived refresh entry. */
+export async function storeMcpTokens(
+  kv: KVNamespace,
+  sessionId: string,
+  serverId: string,
+  token: TokenResponse,
+  client: { clientId: string; tokenEndpoint: string },
+): Promise<void> {
+  const ttl = token.expires_in ? Math.max(token.expires_in - 60, 300) : 3600;
+  await kv.put(
+    mcpTokenKey(sessionId, serverId),
+    JSON.stringify({
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token || null,
+      tokenType: token.token_type,
+      expiresAt: token.expires_in ? Date.now() + token.expires_in * 1000 : null,
+      clientId: client.clientId,
+      tokenEndpoint: client.tokenEndpoint,
+      serverId,
+    }),
+    { expirationTtl: ttl },
+  );
+  if (token.refresh_token) {
+    await kv.put(
+      mcpRefreshKey(sessionId, serverId),
+      JSON.stringify({ refreshToken: token.refresh_token, clientId: client.clientId, tokenEndpoint: client.tokenEndpoint }),
+      { expirationTtl: MCP_REFRESH_TTL_SECONDS },
+    );
+  }
+}
+
+/**
+ * A usable access token for this session + server: the stored one while it is
+ * valid, otherwise a new one from the refresh token. null = re-authorize.
+ */
+export async function getFreshAccessToken(kv: KVNamespace, sessionId: string, serverId: string): Promise<string | null> {
+  const raw = await kv.get(mcpTokenKey(sessionId, serverId));
+  if (raw) {
+    const t = JSON.parse(raw) as { accessToken: string; expiresAt: number | null };
+    if (!t.expiresAt || t.expiresAt > Date.now() + 30_000) return t.accessToken;
+  }
+  const refreshRaw = await kv.get(mcpRefreshKey(sessionId, serverId));
+  if (!refreshRaw) return null;
+  const r = JSON.parse(refreshRaw) as { refreshToken: string; clientId: string; tokenEndpoint: string };
+  const token = await refreshAccessToken(r.tokenEndpoint, r.refreshToken, r.clientId);
+  await storeMcpTokens(kv, sessionId, serverId, { ...token, refresh_token: token.refresh_token || r.refreshToken }, r);
+  return token.access_token;
 }

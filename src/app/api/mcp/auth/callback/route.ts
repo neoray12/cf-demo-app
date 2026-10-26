@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
-import { mcpOAuthStateKey, mcpTokenKey, mcpToolCacheKey, mcpPromptCacheKey, exchangeCodeForToken } from '@/lib/mcp-auth';
+import { mcpOAuthStateKey, mcpToolCacheKey, mcpPromptCacheKey, exchangeCodeForToken, storeMcpTokens } from '@/lib/mcp-auth';
 
 export async function GET(request: NextRequest) {
   const { env } = await getCloudflareContext();
@@ -59,24 +59,8 @@ export async function GET(request: NextRequest) {
       stateData.resource,
     );
 
-    // Store tokens in KV
-    const tokenKey = mcpTokenKey(stateData.sessionId, stateData.serverId);
-    const ttl = tokenResponse.expires_in ? Math.max(tokenResponse.expires_in - 60, 300) : 3600;
-    await kv.put(
-      tokenKey,
-      JSON.stringify({
-        accessToken: tokenResponse.access_token,
-        refreshToken: tokenResponse.refresh_token || null,
-        tokenType: tokenResponse.token_type,
-        expiresAt: tokenResponse.expires_in
-          ? Date.now() + tokenResponse.expires_in * 1000
-          : null,
-        clientId: stateData.clientId,
-        tokenEndpoint: stateData.tokenEndpoint,
-        serverId: stateData.serverId,
-      }),
-      { expirationTtl: ttl },
-    );
+    // Store tokens in KV (and the refresh token for 14 days: approvals run later)
+    await storeMcpTokens(kv, stateData.sessionId, stateData.serverId, tokenResponse, stateData);
     // A new grant can expose a different set of servers (e.g. the user picked
     // other servers on the portal's consent page), so drop the old lists.
     await Promise.all([

@@ -272,6 +272,29 @@
 - **Code Mode 對照的公平性**：(1) 選 Auto Router 時對照固定用預設模型（`comparisonModel()`，`src/lib/experiment-compare.ts`；以前兩次可能路由到不同模型——Code Mode 那次 subagent 被路由到 Sonnet，成本反而高 8 倍），表格標題顯示「兩次都用 {model}」；(2) 對照請求帶 `cf-aig-skip-cache: true`——同一題問兩次，第二次的第一個主模型請求會命中 Gateway 快取（Log `cached: true`、0 token、18 ms），畫面卻照樣算 token，時間也被低估。2026-10-25 實測（Haiku 5.5，數字與 Gateway Log 完全一致）：輸入 42,082 → 22,976（−45%）、輸出 −30%、成本 0.00552 → 0.00321 USD、總時間 24.8 → 15.3 s。**不開 Code Mode 時 subagent 確實載入全部 46 個工具**（每步約 10.6k–12k 輸入），Code Mode 每步約 4.7k–9k
 - **System Prompt**：基本提示詞每個使用者一份，存 KV `system-prompt:{email}`，預設為 `DEFAULT_SYSTEM_PROMPT`（`src/lib/system-prompt.ts`，demo 用、含工具選擇指引）。Harness 依這一輪實際提供的工具附加段落（`HARNESS_SECTIONS`）：資安攔截規則一律附加（使用者改不掉），其餘只在該工具有提供時附加。API `GET/PUT/DELETE /api/chat/system-prompt`（上限 8,000 字）；工具列「System Prompt」按鈕開編輯視窗，可看唯讀的 Harness 段落、還原預設
 
+### 12. Human-in-the-loop 審批（2026-10-26）
+
+設計：`docs/superpowers/specs/2026-10-26-human-in-the-loop-approvals-design.md`。
+
+- **攔截點**：`buildDelegateTool`（`src/lib/mcp-subagent.ts`）的 `requestApproval`：subagent 呼叫寫入工具時不直接執行，改成建立審批，工具回 `{ pendingApproval, approvalId, risk }`（system prompt 要求模型不要重試、回報已送審）；`ask_*` 結果帶 `approvals`，聊天畫 `ApprovalCard`。只有驗證過的使用者 + 設定了 `HISTORY_DB` / `APPROVAL_SECRET` 時啟用，否則寫入照舊直接執行
+- **風險分級**（`classifyCall`，`src/lib/approvals.ts`）：高 = 商機 stage 含 Closed、金額 ≥ 1,000,000、`sap_create_sales_order` / `sap_release|teco|close_production_order`；低 = 其他 `sf_create_*` / `sf_update_*`；其餘是讀取。**Code Mode** 時掃描 `portal_codemode_execute` 的 `code`，有寫入就整段腳本送審
+- **低風險**：送出者在聊天卡片按核准 → `POST /api/approvals/{id}/decision` → App 立即執行（`executeApproval`，`src/lib/approval-exec.ts`）
+- **高風險**：App `POST {APPROVAL_WORKER_URL}/start` → `ApprovalWorkflow`（`workers/approval-workflow`，instance id = approval id）：load → 寄信（`send_email` binding，簽章連結 `/approvals/{id}?t=`，24 小時）→ `step.waitForEvent("decision", 24 hours)` → 回呼 App `POST /api/approvals/{id}/execute`（`x-approval-secret`）→ 寄結果。主管在審批頁（不需登入，靠簽章）決定 → App **先**寫 D1 再 `POST /event`（避免 Workflow 搶先執行時狀態還不是 approved）。送出者本人就算登入也不能核准高風險
+- **執行身分**：一律用送出者的 MCP token（`session_id`）；OAuth callback 另存 refresh token `mcp-refresh:{session}:{server}`（14 天，`storeMcpTokens`），`getFreshAccessToken` 過期自動續期；斷開連線會一併刪除。原本 access token 過期時 refresh token 會跟著 KV TTL 消失
+- **資料**：D1 `approvals`（migration `0003_approvals.sql`），狀態 pending → approved / rejected / expired / failed；approved → executing / failed；executing → done / failed（`transition` 用 `WHERE status IN (...)` 防止重複決定）。`events_json` 是卡片 / 審批頁的時間軸，Workflow 也會寫入
+- **本地**：`.dev.vars` 加 `APPROVAL_SECRET`、`APPROVAL_WORKER_URL=http://localhost:8790`；Worker 從 repo 根目錄跑 `npx wrangler dev -c workers/approval-workflow/wrangler.dev.toml --persist-to .wrangler/state --port 8790`（共用 App 的本地 D1；`workers/approval-workflow/.dev.vars` 放同一個 `APPROVAL_SECRET`）。本地不寄信，審批連結印在 Worker log（`approval.link`）
+- **上線前**：正式 D1 套 migration 0003；`neokung.work` 開 Email Routing 並驗證主管信箱，取消 `wrangler.toml` 的 `[[send_email]]` 註解、填 `APPROVER_EMAIL`；App 與 Worker 都 `wrangler secret put APPROVAL_SECRET`（同一個值）；Worker 用 `npx wrangler deploy -c workers/approval-workflow/wrangler.toml` 部署
+
+| 檔案 | 說明 |
+|------|------|
+| `src/lib/approvals.ts` | 分級、狀態轉換、D1 存取、`decisionRight` |
+| `src/lib/approval-token.ts` / `approval-mail.ts` | 簽章連結、審批信 MIME（App 與 Worker 共用） |
+| `src/lib/approval-service.ts` / `approval-exec.ts` / `approval-route.ts` | 建立審批與呼叫 Worker、執行寫入、API 共用 |
+| `src/app/api/approvals/[id]/{route,decision,execute}` | 查詢、核准 / 拒絕、內部執行 |
+| `src/app/approvals/[id]` | 主管審批頁 |
+| `src/app/components/chat/approval-card.tsx` | 聊天卡片 |
+| `workers/approval-workflow` | `ApprovalWorkflow` 與 `/start`、`/event` |
+
 ## 技術棧
 
 - **前端**: React 19 + Vite + Tailwind CSS 4 + shadcn (new-york style)

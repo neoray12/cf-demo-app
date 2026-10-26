@@ -8,6 +8,7 @@ import { createChatSpanTracker, MAIN_ROOT_SPAN, type GatewayInfo } from '@/lib/c
 import { buildGatewayMetadata } from '@/lib/gateway-metadata';
 import { resolveToolPolicy, turnCodeMode } from '@/lib/tool-policy';
 import { buildDelegateTool } from '@/lib/mcp-subagent';
+import { approvalRequester, approvalsConfigured } from '@/lib/approval-service';
 import { createIdleGuard } from '@/lib/idle-guard';
 import { parseRoutingHeaders, type AutoRouting } from '@/lib/auto-router';
 import { DEFAULT_SYSTEM_PROMPT, composeSystemPrompt, systemPromptKey } from '@/lib/system-prompt';
@@ -449,6 +450,17 @@ export async function POST(request: NextRequest) {
         ctx: runCtx,
         parentSpanId: MAIN_ROOT_SPAN,
         codeMode: d.codeMode,
+        // Human in the loop: writes become approvals (needs a verified user to own them).
+        requestApproval:
+          user && approvalsConfigured(env as any)
+            ? approvalRequester(env as any, {
+                email: user.email,
+                sessionId,
+                conversationId: traceConversationId ?? null,
+                serverId: d.serverId,
+                codeMode: d.codeMode,
+              })
+            : undefined,
         loadTools: async () => {
           const loaded = await runTracedTool(
             runCtx,

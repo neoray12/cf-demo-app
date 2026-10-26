@@ -1,0 +1,41 @@
+# Human-in-the-loop approval Workflow for the demo app's MCP writes
+# (docs/superpowers/specs/2026-10-26-human-in-the-loop-approvals-design.md).
+# Deploy: npx wrangler deploy -c workers/approval-workflow/wrangler.toml (from the repo root)
+name = "cf-approval-workflow"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "5efa272dc28e4e3933324c44165b6dbe"
+workers_dev = true
+
+[observability]
+enabled = true
+
+  [observability.traces]
+  enabled = true
+  head_sampling_rate = 1
+
+[[workflows]]
+name = "approval-workflow"
+binding = "APPROVAL_WORKFLOW"
+class_name = "ApprovalWorkflow"
+
+# Same D1 as the app (table `approvals`, migrations/chat-history/0003_approvals.sql).
+[[d1_databases]]
+binding = "HISTORY_DB"
+database_name = "cf-demo-chat-history"
+database_id = "82dfa424-a91f-4794-9991-a5f2daf83172"
+
+# Email to the approver. The destination must be a verified Email Routing
+# address on the sending zone (neokung.work); set it before deploying.
+# [[send_email]]
+# name = "APPROVAL_EMAIL"
+# destination_address = "approver@example.com"
+
+[vars]
+APP_URL = "https://demo.neokung.work"
+MAIL_FROM = "approvals@neokung.work"
+APPROVER_EMAIL = ""
+
+# Secret (wrangler secret put APPROVAL_SECRET -c workers/approval-workflow/wrangler.toml):
+# - APPROVAL_SECRET: same value as the app's APPROVAL_SECRET

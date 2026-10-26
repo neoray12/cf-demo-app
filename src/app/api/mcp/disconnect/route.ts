@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { cookies } from 'next/headers';
-import { mcpTokenKey, mcpToolCacheKey, mcpPromptCacheKey } from '@/lib/mcp-auth';
+import { mcpTokenKey, mcpRefreshKey, mcpToolCacheKey, mcpPromptCacheKey } from '@/lib/mcp-auth';
 
 export async function POST(request: NextRequest) {
   const { env } = await getCloudflareContext();
@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
   // Delete token and cached tools/prompts from KV
   await Promise.all([
     kv.delete(mcpTokenKey(sessionId, serverId)),
+    kv.delete(mcpRefreshKey(sessionId, serverId)),
     kv.delete(mcpToolCacheKey(sessionId, serverId)),
     kv.delete(mcpPromptCacheKey(sessionId, serverId)),
   ]);

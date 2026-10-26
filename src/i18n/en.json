@@ -368,6 +368,29 @@
       "filled": "Filled {{count}} characters — edit before sending.",
       "skipped": "Skipped {{count}} non-text item(s)."
     },
+    "approval": {
+      "title": "Approval",
+      "lowRisk": "Needs your approval",
+      "highRisk": "High risk · manager approval (Cloudflare Workflow)",
+      "approve": "Approve",
+      "reject": "Reject",
+      "working": "Working…",
+      "waitingManager": "A Workflow was created and the manager was emailed; it waits for them to approve via the link. Closing this page does not affect it.",
+      "waitingYou": "The agent wants to make this write; nothing is written until you approve.",
+      "details": "Request",
+      "script": "Code Mode script",
+      "result": "Result",
+      "viewWorkflow": "View the Workflow in Cloudflare",
+      "status": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "executing": "Writing",
+        "done": "Done",
+        "failed": "Failed",
+        "expired": "Expired"
+      }
+    },
     "subagent": {
       "title": "{{server}} subagent",
       "ask": "Ask the {{server}} subagent",
