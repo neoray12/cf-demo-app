@@ -77,3 +77,8 @@ export function buildMime(m: {
     '',
   ].join('\r\n');
 }
+
+/** APPROVER_EMAIL may list several approvers: "a@x.com, b@y.com". */
+export function parseRecipients(raw: string | undefined): string[] {
+  return [...new Set((raw ?? '').split(',').map((s) => s.trim()).filter(Boolean))];
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { approvalEmail, buildMime } from './approval-mail';
+import { approvalEmail, buildMime, parseRecipients } from './approval-mail';
 
 const approval = {
   id: 'apr_1',
@@ -41,5 +41,13 @@ describe('buildMime', () => {
     // Body parts decode back to the original UTF-8 text.
     const b64 = raw.split('Content-Transfer-Encoding: base64\r\n\r\n')[1]!.split('\r\n--')[0]!.replace(/\r\n/g, '');
     expect(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)))).toBe('純文字');
+  });
+});
+
+describe('parseRecipients', () => {
+  it('splits a comma list, trims, drops blanks and duplicates', () => {
+    expect(parseRecipients(' neo@cloudflare.com, neoray12@hotmail.com ,,neo@cloudflare.com')).toEqual(['neo@cloudflare.com', 'neoray12@hotmail.com']);
+    expect(parseRecipients('')).toEqual([]);
+    expect(parseRecipients(undefined)).toEqual([]);
   });
 });

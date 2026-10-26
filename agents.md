@@ -283,7 +283,8 @@
 - **執行身分**：一律用送出者的 MCP token（`session_id`）；OAuth callback 另存 refresh token `mcp-refresh:{session}:{server}`（14 天，`storeMcpTokens`），`getFreshAccessToken` 過期自動續期；斷開連線會一併刪除。原本 access token 過期時 refresh token 會跟著 KV TTL 消失
 - **資料**：D1 `approvals`（migration `0003_approvals.sql`），狀態 pending → approved / rejected / expired / failed；approved → executing / failed；executing → done / failed（`transition` 用 `WHERE status IN (...)` 防止重複決定）。`events_json` 是卡片 / 審批頁的時間軸，Workflow 也會寫入
 - **本地**：`.dev.vars` 加 `APPROVAL_SECRET`、`APPROVAL_WORKER_URL=http://localhost:8790`；Worker 從 repo 根目錄跑 `npx wrangler dev -c workers/approval-workflow/wrangler.dev.toml --persist-to .wrangler/state --port 8790`（共用 App 的本地 D1；`workers/approval-workflow/.dev.vars` 放同一個 `APPROVAL_SECRET`）。本地不寄信，審批連結印在 Worker log（`approval.link`）
-- **上線前**：正式 D1 套 migration 0003；`neokung.work` 開 Email Routing 並驗證主管信箱，取消 `wrangler.toml` 的 `[[send_email]]` 註解、填 `APPROVER_EMAIL`；App 與 Worker 都 `wrangler secret put APPROVAL_SECRET`（同一個值）；Worker 用 `npx wrangler deploy -c workers/approval-workflow/wrangler.toml` 部署
+- **部署狀態（2026-10-26）**：正式 D1 已套 0003；App 與 Worker 都設了同一個 `APPROVAL_SECRET`（`wrangler secret put`）；Worker 已部署到 `https://cf-approval-workflow.neo-cloudflare.workers.dev`（`npx wrangler deploy -c workers/approval-workflow/wrangler.toml`，不走 CI）。審批信寄給 `APPROVER_EMAIL`（逗號分隔，必須也在 `[[send_email]] allowed_destination_addresses`）：neo@cloudflare.com、neoray12@hotmail.com
+- **寄信**：用 Cloudflare **Email Sending**，寄件人 `approvals@mail.neokung.work`。`mail.neokung.work` 要在 Dashboard「Compute > Email Service > Email Sending > Onboard Domain」onboard（文件只有 Dashboard 流程；只會在子網域加 DNS 紀錄）。**不要在 apex 開 Email Routing**：apex 的 MX `ms15033002.msv1.invalid` 與 TXT `MS=ms15033002` 是 Microsoft 網域驗證用的。寄信失敗不會讓 Workflow 失敗，時間軸會記「寄信失敗：…」（`sendMail` 逐一寄、各自記錄）
 
 | 檔案 | 說明 |
 |------|------|

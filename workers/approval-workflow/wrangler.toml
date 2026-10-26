@@ -26,16 +26,18 @@ binding = "HISTORY_DB"
 database_name = "cf-demo-chat-history"
 database_id = "82dfa424-a91f-4794-9991-a5f2daf83172"
 
-# Email to the approver. The destination must be a verified Email Routing
-# address on the sending zone (neokung.work); set it before deploying.
-# [[send_email]]
-# name = "APPROVAL_EMAIL"
-# destination_address = "approver@example.com"
+# Email to the approvers through Cloudflare Email Sending. The sender domain
+# (mail.neokung.work) must be onboarded in Email Service > Email Sending; only
+# the subdomain gets DNS records, the apex (neokung.work) is untouched.
+[[send_email]]
+name = "APPROVAL_EMAIL"
+allowed_destination_addresses = ["neo@cloudflare.com", "neoray12@hotmail.com"]
 
 [vars]
 APP_URL = "https://demo.neokung.work"
-MAIL_FROM = "approvals@neokung.work"
-APPROVER_EMAIL = ""
+MAIL_FROM = "approvals@mail.neokung.work"
+# Comma-separated; every address must be in allowed_destination_addresses above.
+APPROVER_EMAIL = "neo@cloudflare.com, neoray12@hotmail.com"
 
 # Secret (wrangler secret put APPROVAL_SECRET -c workers/approval-workflow/wrangler.toml):
 # - APPROVAL_SECRET: same value as the app's APPROVAL_SECRET
