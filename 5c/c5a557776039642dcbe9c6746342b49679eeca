@@ -1,0 +1,27 @@
+agents.md
+  s_35f257df545d16::t_7079584569a02a 286-287
+src/lib/approval-mail.test.ts
+  s_35f257df545d16::t_6f33fbb4aaab69 2,46-53
+src/lib/approval-mail.ts
+  s_35f257df545d16::t_05bcc82c6de93b 80-84
+workers/approval-workflow/src/index.ts
+  s_35f257df545d16::t_2f4759c621bff6 10,28-35,37-49,68,70-73
+workers/approval-workflow/wrangler.toml
+  s_35f257df545d16::t_6f70f3e7dd3834 29-34,38-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "5cc5a557776039642dcbe9c6746342b49679eeca",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
