@@ -94,3 +94,57 @@ export function toEgressEvent(
 export function appendEgress(list: EgressEvent[] | null, e: EgressEvent, max = 50): EgressEvent[] {
   return [...(list ?? []), e].slice(-max);
 }
+
+export function egressSince(list: EgressEvent[] | null, start: number): EgressEvent[] {
+  return (list ?? []).filter((e) => e.at >= start);
+}
+
+export interface EgressDeps {
+  fetch: (request: Request) => Promise<Response>;
+  /** GitHub token held by the Worker; never reaches the container. */
+  githubToken?: string;
+  record: (event: EgressEvent) => Promise<void>;
+  now?: () => number;
+}
+
+/**
+ * Apply the policy to one outbound request from the container. Logs only the
+ * decision (method / host / path / status) — never headers or bodies.
+ */
+export async function handleEgress(request: Request, deps: EgressDeps): Promise<Response> {
+  const at = (deps.now ?? Date.now)();
+  const decision = decideEgress(request.url);
+  if (decision.probe) return deps.fetch(request);
+
+  let action = decision.action;
+  let response: Response;
+  if (action === 'blocked') {
+    response = new Response(`Blocked by sandbox egress policy: ${decision.host}`, {
+      status: 403,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    });
+  } else {
+    let outgoing = request;
+    if (action === 'injected') {
+      if (deps.githubToken) {
+        outgoing = new Request(request);
+        outgoing.headers.set('Authorization', `Bearer ${deps.githubToken}`);
+      } else {
+        // No secret configured: still allowed, but nothing was injected.
+        action = 'allowed';
+      }
+    }
+    try {
+      response = await deps.fetch(outgoing);
+    } catch {
+      response = new Response('Sandbox egress fetch failed', { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    }
+  }
+
+  try {
+    await deps.record(toEgressEvent(request, action, response.status, at));
+  } catch (err) {
+    console.error('[EGRESS] record failed:', (err as Error).message);
+  }
+  return response;
+}

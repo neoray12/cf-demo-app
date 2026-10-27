@@ -3,6 +3,8 @@ import {
   appendEgress,
   decideEgress,
   EGRESS_ALLOWLIST,
+  egressSince,
+  handleEgress,
   matchesHost,
   toEgressEvent,
   type EgressEvent,
@@ -93,5 +95,92 @@ describe('appendEgress', () => {
     expect(list).toHaveLength(50);
     expect(list![0].at).toBe(10);
     expect(list![49].at).toBe(59);
+  });
+});
+
+describe('handleEgress', () => {
+  function harness(opts: { token?: string; fetchImpl?: (r: Request) => Promise<Response>; recordFails?: boolean } = {}) {
+    const sent: Request[] = [];
+    const recorded: EgressEvent[] = [];
+    const deps = {
+      fetch: async (r: Request) => {
+        sent.push(r);
+        return opts.fetchImpl ? opts.fetchImpl(r) : new Response('ok', { status: 200 });
+      },
+      githubToken: opts.token,
+      record: async (e: EgressEvent) => {
+        if (opts.recordFails) throw new Error('storage down');
+        recorded.push(e);
+      },
+      now: () => 1000,
+    };
+    return { sent, recorded, deps };
+  }
+
+  it('adds the GitHub token at the egress and records an injected event', async () => {
+    const h = harness({ token: 'ghp_secret' });
+    const res = await handleEgress(new Request('https://api.github.com/rate_limit?x=1'), h.deps);
+    expect(res.status).toBe(200);
+    expect(h.sent[0].headers.get('authorization')).toBe('Bearer ghp_secret');
+    expect(h.recorded).toEqual([{ at: 1000, method: 'GET', host: 'api.github.com', path: '/rate_limit', action: 'injected', status: 200 }]);
+    expect(JSON.stringify(h.recorded)).not.toContain('ghp_secret');
+  });
+
+  it('replaces an Authorization header the code set itself', async () => {
+    const h = harness({ token: 'ghp_secret' });
+    await handleEgress(new Request('https://api.github.com/user', { headers: { Authorization: 'Bearer fake' } }), h.deps);
+    expect(h.sent[0].headers.get('authorization')).toBe('Bearer ghp_secret');
+  });
+
+  it('forwards GitHub calls without a token as allowed when no secret is configured', async () => {
+    const h = harness();
+    await handleEgress(new Request('https://api.github.com/rate_limit'), h.deps);
+    expect(h.sent[0].headers.get('authorization')).toBeNull();
+    expect(h.recorded[0].action).toBe('allowed');
+  });
+
+  it('never adds the token to plain HTTP', async () => {
+    const h = harness({ token: 'ghp_secret' });
+    await handleEgress(new Request('http://api.github.com/rate_limit'), h.deps);
+    expect(h.sent[0].headers.get('authorization')).toBeNull();
+    expect(h.recorded[0].action).toBe('allowed');
+  });
+
+  it('blocks hosts outside the allowlist with a 403 and never forwards them', async () => {
+    const h = harness();
+    const res = await handleEgress(new Request('https://exfil.example.net/collect', { method: 'POST', body: 'data' }), h.deps);
+    expect(res.status).toBe(403);
+    expect(res.headers.get('content-type')).toMatch(/^text\/plain/);
+    expect(await res.text()).toBe('Blocked by sandbox egress policy: exfil.example.net');
+    expect(h.sent).toHaveLength(0);
+    expect(h.recorded).toEqual([{ at: 1000, method: 'POST', host: 'exfil.example.net', path: '/collect', action: 'blocked', status: 403 }]);
+  });
+
+  it('forwards the colo probe without recording it', async () => {
+    const h = harness();
+    await handleEgress(new Request('https://cloudflare.com/cdn-cgi/trace'), h.deps);
+    expect(h.sent).toHaveLength(1);
+    expect(h.recorded).toHaveLength(0);
+  });
+
+  it('answers 502 and records it when the upstream fetch throws', async () => {
+    const h = harness({ fetchImpl: async () => { throw new Error('connect failed'); } });
+    const res = await handleEgress(new Request('https://pypi.org/simple/'), h.deps);
+    expect(res.status).toBe(502);
+    expect(h.recorded[0]).toMatchObject({ action: 'allowed', status: 502 });
+  });
+
+  it('still returns the response when recording fails', async () => {
+    const h = harness({ recordFails: true });
+    const res = await handleEgress(new Request('https://pypi.org/simple/'), h.deps);
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('egressSince', () => {
+  it('keeps only events at or after the start time', () => {
+    const ev = (at: number): EgressEvent => ({ at, method: 'GET', host: 'h', path: '/', action: 'allowed' });
+    expect(egressSince([ev(1), ev(5), ev(9)], 5).map((e) => e.at)).toEqual([5, 9]);
+    expect(egressSince(null, 5)).toEqual([]);
   });
 });
