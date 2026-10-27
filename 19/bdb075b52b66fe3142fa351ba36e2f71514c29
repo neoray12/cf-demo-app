@@ -1,0 +1,23 @@
+agents.md
+  s_35f257df545d16::t_d182be79615f7f 305,310-316
+workers/approval-workflow/wrangler.dev.toml
+  s_35f257df545d16::t_dae6faa4ac7a15 26
+workers/approval-workflow/wrangler.toml
+  s_35f257df545d16::t_9713cf3ea72441 12,14-16,49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "19bdb075b52b66fe3142fa351ba36e2f71514c29",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
