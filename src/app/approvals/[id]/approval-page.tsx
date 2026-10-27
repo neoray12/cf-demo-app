@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Check, ExternalLink, Loader2, ShieldAlert, X } from "lucide-react";
-import { isTerminal, type ApprovalStatus, type ApprovalView } from "@/lib/approvals";
+import { decisionErrorMessage, isTerminal, type ApprovalStatus, type ApprovalView } from "@/lib/approvals";
 
 const STATUS: Record<ApprovalStatus, string> = {
   pending: "等待核准",
@@ -47,7 +47,11 @@ export function ApprovalPage({ id, token }: { id: string; token: string | null }
       });
       const body = (await res.json().catch(() => ({}))) as ApprovalView & { error?: string };
       if (res.ok) setView(body);
-      else setError(body.error ?? `HTTP ${res.status}`);
+      else {
+        setError(decisionErrorMessage(res.status, body.error));
+        // Show the current status (e.g. someone else already decided).
+        if (res.status === 409) void load();
+      }
     } finally {
       setBusy(false);
     }

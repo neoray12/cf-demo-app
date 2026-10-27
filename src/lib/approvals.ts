@@ -157,6 +157,14 @@ export function isTerminal(s: ApprovalStatus): boolean {
   return NEXT[s].length === 0;
 }
 
+/** What the approval page says when POST /decision fails (the route answers in short English codes). */
+export function decisionErrorMessage(status: number, error: string | undefined): string {
+  if (status === 403) return '連結無效或已過期，無法核准或拒絕。請從最新的審批信重新開啟。';
+  if (status === 409 && error === 'forbidden') return '你沒有權限決定這筆審批：高風險審批要用審批信的連結或回信核准。';
+  if (status === 409 && error?.startsWith('already')) return '這筆審批已經有人處理過了。';
+  return error ?? `HTTP ${status}`;
+}
+
 /**
  * Who may approve or reject: low risk — the requester, in the chat; high risk —
  * whoever holds the signed email link (the manager), never the requester alone.

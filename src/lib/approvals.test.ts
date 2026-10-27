@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baseToolName, classifyCall, canTransition, isTerminal, appendEvent, decisionRight, HITL_EXAMPLES, decisionLabel, recordDecision } from './approvals';
+import { baseToolName, classifyCall, canTransition, isTerminal, appendEvent, decisionRight, HITL_EXAMPLES, decisionLabel, recordDecision, decisionErrorMessage } from './approvals';
 import zhTW from '../i18n/zh-TW.json';
 import en from '../i18n/en.json';
 
@@ -176,5 +176,22 @@ describe('recordDecision', () => {
     const { db, row } = fakeDb('approved');
     expect(await recordDecision(db, 'apr_1', false, 'x')).toBe(false);
     expect(row.status).toBe('approved');
+  });
+});
+
+describe('decisionErrorMessage', () => {
+  it('explains an invalid or expired link (403)', () => {
+    expect(decisionErrorMessage(403, 'forbidden')).toBe('連結無效或已過期，無法核准或拒絕。請從最新的審批信重新開啟。');
+  });
+  it('explains a viewer without the right to decide', () => {
+    expect(decisionErrorMessage(409, 'forbidden')).toBe('你沒有權限決定這筆審批：高風險審批要用審批信的連結或回信核准。');
+  });
+  it('explains an approval that was already decided', () => {
+    expect(decisionErrorMessage(409, 'already decided')).toBe('這筆審批已經有人處理過了。');
+    expect(decisionErrorMessage(409, 'already approved')).toBe('這筆審批已經有人處理過了。');
+  });
+  it('falls back to the server error, then the status', () => {
+    expect(decisionErrorMessage(502, 'workflow unreachable')).toBe('workflow unreachable');
+    expect(decisionErrorMessage(500, undefined)).toBe('HTTP 500');
   });
 });
