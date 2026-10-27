@@ -48,12 +48,15 @@ export class Sandbox extends BaseSandbox<Env> {
 
 // ctx.containerId is this Durable Object's id (`ctx.id.toString()` in
 // @cloudflare/containers), i.e. env.Sandbox.idFromName(resolvedSandboxId).
-Sandbox.outbound = (request: Request, env: Env, ctx: { containerId: string }) =>
-  handleEgress(request, {
+Sandbox.outbound = (request, rawEnv, ctx) => {
+  // The SDK types env as the global Cloudflare.Env; this Worker's bindings are Env.
+  const env = rawEnv as unknown as Env;
+  return handleEgress(request, {
     fetch: (r) => fetch(r),
     githubToken: env.GITHUB_TOKEN || undefined,
     record: (event) => env.Sandbox.get(env.Sandbox.idFromString(ctx.containerId)).recordEgress(event),
   });
+};
 
 // Keep containers alive between tool calls in the same conversation.
 // Preview URLs die when the container sleeps, so this is also the preview TTL.

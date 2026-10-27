@@ -6,6 +6,7 @@ import {
   egressSince,
   handleEgress,
   matchesHost,
+  summarizeEgress,
   toEgressEvent,
   type EgressEvent,
 } from './sandbox-egress';
@@ -93,8 +94,8 @@ describe('appendEgress', () => {
     let list: EgressEvent[] | null = null;
     for (let i = 0; i < 60; i++) list = appendEgress(list, ev(i));
     expect(list).toHaveLength(50);
-    expect(list![0].at).toBe(10);
-    expect(list![49].at).toBe(59);
+    expect(list?.[0]?.at).toBe(10);
+    expect(list?.[49]?.at).toBe(59);
   });
 });
 
@@ -121,7 +122,7 @@ describe('handleEgress', () => {
     const h = harness({ token: 'ghp_secret' });
     const res = await handleEgress(new Request('https://api.github.com/rate_limit?x=1'), h.deps);
     expect(res.status).toBe(200);
-    expect(h.sent[0].headers.get('authorization')).toBe('Bearer ghp_secret');
+    expect(h.sent[0]?.headers.get('authorization')).toBe('Bearer ghp_secret');
     expect(h.recorded).toEqual([{ at: 1000, method: 'GET', host: 'api.github.com', path: '/rate_limit', action: 'injected', status: 200 }]);
     expect(JSON.stringify(h.recorded)).not.toContain('ghp_secret');
   });
@@ -129,21 +130,21 @@ describe('handleEgress', () => {
   it('replaces an Authorization header the code set itself', async () => {
     const h = harness({ token: 'ghp_secret' });
     await handleEgress(new Request('https://api.github.com/user', { headers: { Authorization: 'Bearer fake' } }), h.deps);
-    expect(h.sent[0].headers.get('authorization')).toBe('Bearer ghp_secret');
+    expect(h.sent[0]?.headers.get('authorization')).toBe('Bearer ghp_secret');
   });
 
   it('forwards GitHub calls without a token as allowed when no secret is configured', async () => {
     const h = harness();
     await handleEgress(new Request('https://api.github.com/rate_limit'), h.deps);
-    expect(h.sent[0].headers.get('authorization')).toBeNull();
-    expect(h.recorded[0].action).toBe('allowed');
+    expect(h.sent[0]?.headers.get('authorization')).toBeNull();
+    expect(h.recorded[0]?.action).toBe('allowed');
   });
 
   it('never adds the token to plain HTTP', async () => {
     const h = harness({ token: 'ghp_secret' });
     await handleEgress(new Request('http://api.github.com/rate_limit'), h.deps);
-    expect(h.sent[0].headers.get('authorization')).toBeNull();
-    expect(h.recorded[0].action).toBe('allowed');
+    expect(h.sent[0]?.headers.get('authorization')).toBeNull();
+    expect(h.recorded[0]?.action).toBe('allowed');
   });
 
   it('blocks hosts outside the allowlist with a 403 and never forwards them', async () => {
@@ -174,6 +175,14 @@ describe('handleEgress', () => {
     const h = harness({ recordFails: true });
     const res = await handleEgress(new Request('https://pypi.org/simple/'), h.deps);
     expect(res.status).toBe(200);
+  });
+});
+
+describe('summarizeEgress', () => {
+  it('counts events per action', () => {
+    const ev = (action: EgressEvent['action']): EgressEvent => ({ at: 1, method: 'GET', host: 'h', path: '/', action });
+    expect(summarizeEgress([ev('allowed'), ev('injected'), ev('blocked'), ev('blocked')])).toEqual({ allowed: 1, injected: 1, blocked: 2 });
+    expect(summarizeEgress(undefined)).toEqual({ allowed: 0, injected: 0, blocked: 0 });
   });
 });
 

@@ -95,6 +95,12 @@ export function appendEgress(list: EgressEvent[] | null, e: EgressEvent, max = 5
   return [...(list ?? []), e].slice(-max);
 }
 
+export function summarizeEgress(events: EgressEvent[] | null | undefined): Record<EgressAction, number> {
+  const counts: Record<EgressAction, number> = { allowed: 0, injected: 0, blocked: 0 };
+  for (const e of events ?? []) counts[e.action]++;
+  return counts;
+}
+
 export function egressSince(list: EgressEvent[] | null, start: number): EgressEvent[] {
   return (list ?? []).filter((e) => e.at >= start);
 }

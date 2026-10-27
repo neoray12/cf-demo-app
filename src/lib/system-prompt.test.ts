@@ -40,6 +40,13 @@ describe('composeSystemPrompt', () => {
     expect(some).toContain(HARNESS_SECTIONS.find((s) => s.id === 'delegate')!.text);
     expect(some).not.toContain(HARNESS_SECTIONS.find((s) => s.id === 'sandbox')!.text);
   });
+
+  it('tells the model the sandbox has an egress allowlist and GitHub needs no token', () => {
+    const sandbox = HARNESS_SECTIONS.find((s) => s.id === 'sandbox')!.text;
+    expect(sandbox).toContain('白名單');
+    expect(sandbox).toContain('api.github.com');
+    expect(sandbox).toMatch(/不需要也拿不到 token/);
+  });
 });
 
 describe('systemPromptKey', () => {

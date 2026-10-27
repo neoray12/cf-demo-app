@@ -19,6 +19,8 @@ import { Square, SquarePen, Copy, Check, Zap, RotateCcw, Wrench, ChevronRight, B
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { SandboxInfoBar, PopMap, type SandboxTelemetry } from "../components/chat/sandbox-telemetry";
+import { EgressLog } from "../components/chat/egress-log";
+import type { EgressEvent } from "@/lib/sandbox-egress";
 import { ProcessTimeline, type ChatTimeline } from "../components/chat/process-timeline";
 import { GatewayBlockCard } from "../components/chat/gateway-block-card";
 import { SuggestionCategories, type SuggestionSendOpts } from "../components/chat/suggestion-categories";
@@ -324,6 +326,7 @@ interface CodeExecutionResult {
   edgeColo?: string | null;
   engine?: string;
   executionMs?: number;
+  egress?: EgressEvent[];
 }
 
 function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
@@ -410,6 +413,7 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           <PopMap edgeColo={result.edgeColo} sandboxColo={result.sandbox.colo} />
         </>
       )}
+      {expanded && !isCalling && toolCall.name === "executeCode" && <EgressLog events={result.egress} />}
       {expanded && !isCalling && isCodeMode && (
         <div className="mt-1.5 ml-3 flex items-center gap-1.5 flex-wrap">
           <span
