@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { replyAddress, parseReplyAddress, isApprover, replyDecision, stripQuoted, htmlToText } from './approval-reply';
+import { replyAddress, parseReplyAddress, isApprover, replyDecision, stripQuoted, htmlToText, handleReply, replySubject, type ReplyDeps } from './approval-reply';
+import type { ApprovalStatus, Risk } from './approvals';
 
 const SECRET = 'test-secret';
 const ID = 'apr_0123456789abcdef0123';
@@ -103,5 +104,162 @@ describe('htmlToText', () => {
     expect(t).toContain('OK');
     expect(t).not.toContain('reject');
     expect(t).not.toContain('p{}');
+  });
+});
+
+describe('replySubject', () => {
+  it('keeps an existing reply prefix (English or Outlook Chinese)', () => {
+    expect(replySubject('Re: [審批] x')).toBe('Re: [審批] x');
+    expect(replySubject('RE: [審批] x')).toBe('RE: [審批] x');
+    expect(replySubject('回覆: [審批] x')).toBe('回覆: [審批] x');
+    expect(replySubject('答覆：[審批] x')).toBe('答覆：[審批] x');
+  });
+  it('adds Re: otherwise, with a fallback for an empty subject', () => {
+    expect(replySubject('[審批] x')).toBe('Re: [審批] x');
+    expect(replySubject('')).toBe('Re: 審批');
+  });
+});
+
+describe('handleReply', () => {
+  const APPROVERS = 'neo@cloudflare.com, neoray12@hotmail.com';
+
+  /** In-memory approval + recorded side effects; decide() has the same first-wins guard as D1. */
+  function setup(opts: { status?: ApprovalStatus; risk?: Risk; text?: string; exists?: boolean; workflowId?: string | null; resumeFails?: boolean } = {}) {
+    const state = {
+      status: opts.status ?? ('pending' as ApprovalStatus),
+      events: [] as { step: string; label: string }[],
+      resumed: [] as { workflowId: string; decision: string; by: string }[],
+      failed: [] as string[],
+      decidedBy: null as string | null,
+      textRead: 0,
+    };
+    const deps: ReplyDeps = {
+      secret: SECRET,
+      approvers: APPROVERS,
+      async get(id) {
+        if (opts.exists === false || id !== ID) return null;
+        return { id, status: state.status, risk: opts.risk ?? 'high', summary: 'sf_update_opportunity（stage: Closed Won）', workflowId: opts.workflowId === undefined ? 'apr_wf' : opts.workflowId };
+      },
+      async addEvent(id, e) {
+        if (opts.exists !== false && id === ID) state.events.push(e);
+      },
+      async decide(_id, approve, by) {
+        if (state.status !== 'pending') return false;
+        state.status = approve ? 'approved' : 'rejected';
+        state.decidedBy = by;
+        state.events.push({ step: state.status, label: by });
+        return true;
+      },
+      async fail(_id, error) {
+        state.status = 'failed';
+        state.failed.push(error);
+      },
+      async resume(workflowId, payload) {
+        if (opts.resumeFails) throw new Error('instance not found');
+        state.resumed.push({ workflowId, ...payload });
+      },
+      async readText() {
+        state.textRead++;
+        return opts.text ?? '核准\n\nOn Mon, Oct 27, 2026 Approvals <approvals@mail.neokung.work> wrote:\n> 拒絕';
+      },
+    };
+    return { state, deps };
+  }
+
+  it('approves: records the decision, resumes the Workflow, confirms to the sender', async () => {
+    const { state, deps } = setup();
+    const r = await handleReply({ from: 'Neo@Cloudflare.com', to: await replyAddress(SECRET, ID) }, deps);
+    expect(r.outcome).toBe('approved');
+    expect(r.approvalId).toBe(ID);
+    expect(state.status).toBe('approved');
+    expect(state.decidedBy).toBe('主管（Email 回信：neo@cloudflare.com）');
+    expect(state.resumed).toEqual([{ workflowId: 'apr_wf', decision: 'approve', by: '主管（Email 回信：neo@cloudflare.com）' }]);
+    expect(r.reply).toContain('核准');
+  });
+
+  it('rejects', async () => {
+    const { state, deps } = setup({ text: '不核准，金額不對' });
+    const r = await handleReply({ from: 'neoray12@hotmail.com', to: await replyAddress(SECRET, ID) }, deps);
+    expect(r.outcome).toBe('rejected');
+    expect(state.status).toBe('rejected');
+    expect(state.resumed[0]!.decision).toBe('reject');
+    expect(r.reply).toContain('拒絕');
+  });
+
+  it('ignores a bad signature or an unknown approval silently', async () => {
+    const a = setup();
+    const addr = await replyAddress(SECRET, ID);
+    const bad = await handleReply({ from: 'neo@cloudflare.com', to: addr.replace(/\.[0-9a-f]{16}@/, '.0000000000000000@') }, a.deps);
+    expect(bad).toMatchObject({ outcome: 'bad-address', approvalId: null, reply: null });
+    expect(a.state.events).toEqual([]);
+    const b = setup({ exists: false });
+    expect(await handleReply({ from: 'neo@cloudflare.com', to: addr }, b.deps)).toMatchObject({ outcome: 'not-found', reply: null });
+    expect(b.state.textRead).toBe(0);
+  });
+
+  it('ignores a sender who is not an approver, notes it on the timeline, does not reply', async () => {
+    const { state, deps } = setup();
+    const r = await handleReply({ from: 'attacker@example.com', to: await replyAddress(SECRET, ID) }, deps);
+    expect(r).toMatchObject({ outcome: 'not-approver', reply: null });
+    expect(state.status).toBe('pending');
+    expect(state.events).toEqual([{ step: 'reply_ignored', label: '收到非主管的回信（attacker@example.com），已忽略' }]);
+    expect(state.textRead).toBe(0);
+  });
+
+  it('ignores a low-risk approval silently', async () => {
+    const { state, deps } = setup({ risk: 'low' });
+    const r = await handleReply({ from: 'neo@cloudflare.com', to: await replyAddress(SECRET, ID) }, deps);
+    expect(r).toMatchObject({ outcome: 'not-high', reply: null });
+    expect(state.status).toBe('pending');
+  });
+
+  it('tells the sender when it is no longer pending', async () => {
+    const { state, deps } = setup({ status: 'expired' });
+    const r = await handleReply({ from: 'neo@cloudflare.com', to: await replyAddress(SECRET, ID) }, deps);
+    expect(r.outcome).toBe('not-pending');
+    expect(r.reply).toContain('逾時');
+    expect(state.resumed).toEqual([]);
+  });
+
+  it('asks again when the reply is unclear, status unchanged', async () => {
+    const { state, deps } = setup({ text: '我再想想' });
+    const r = await handleReply({ from: 'neo@cloudflare.com', to: await replyAddress(SECRET, ID) }, deps);
+    expect(r.outcome).toBe('unclear');
+    expect(r.reply).toContain('「核准」或「拒絕」');
+    expect(state.status).toBe('pending');
+    expect(state.events.at(-1)!.step).toBe('reply_unclear');
+  });
+
+  it('a second reply (or a resend) is told it was already handled', async () => {
+    const { state, deps } = setup();
+    const to = await replyAddress(SECRET, ID);
+    await handleReply({ from: 'neo@cloudflare.com', to }, deps);
+    const again = await handleReply({ from: 'neoray12@hotmail.com', to }, deps);
+    expect(again.outcome).toBe('not-pending');
+    expect(again.reply).toContain('已核准');
+    expect(state.resumed).toHaveLength(1);
+  });
+
+  it('loses the race to the link cleanly: decide() false → already decided, no resume', async () => {
+    const { state, deps } = setup();
+    // The link decided between our read and our write.
+    const decide = deps.decide;
+    deps.decide = async (id, approve, by) => {
+      state.status = 'rejected';
+      return decide(id, approve, by);
+    };
+    const r = await handleReply({ from: 'neo@cloudflare.com', to: await replyAddress(SECRET, ID) }, deps);
+    expect(r.outcome).toBe('already-decided');
+    expect(r.reply).toContain('已經處理過');
+    expect(state.resumed).toEqual([]);
+  });
+
+  it('marks an approval failed when the Workflow cannot be resumed', async () => {
+    const { state, deps } = setup({ resumeFails: true });
+    const r = await handleReply({ from: 'neo@cloudflare.com', to: await replyAddress(SECRET, ID) }, deps);
+    expect(r.outcome).toBe('resume-failed');
+    expect(state.status).toBe('failed');
+    expect(state.failed).toEqual(['instance not found']);
+    expect(r.reply).toBeTruthy();
   });
 });

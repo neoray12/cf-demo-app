@@ -5,10 +5,11 @@
 // POST /event (x-approval-secret); state lives in the app's D1 `approvals` table.
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import { EmailMessage } from 'cloudflare:email';
-import { addEvent, getApproval, transition } from '../../../src/lib/approvals';
+import PostalMime from 'postal-mime';
+import { addEvent, getApproval, recordDecision, transition } from '../../../src/lib/approvals';
 import { signApprovalLink } from '../../../src/lib/approval-token';
 import { approvalEmail, buildMime, parseRecipients } from '../../../src/lib/approval-mail';
-import { replyAddress } from '../../../src/lib/approval-reply';
+import { handleReply, htmlToText, replyAddress, replySubject } from '../../../src/lib/approval-reply';
 
 interface Env {
   APPROVAL_WORKFLOW: Workflow<Params>;
@@ -75,7 +76,7 @@ export class ApprovalWorkflow extends WorkflowEntrypoint<Env, Params> {
       // Replies ("核准" / "拒絕") come back to email() through this signed sub-address.
       const replyTo = await replyAddress(this.env.APPROVAL_SECRET, id, replyDomain(this.env));
       const { sent, failed } = await sendMail(this.env, mail.subject, mail.text, mail.html, replyTo);
-      if (this.env.LOG_APPROVAL_LINK === '1') console.log(JSON.stringify({ event: 'approval.link', approvalId: id, link }));
+      if (this.env.LOG_APPROVAL_LINK === '1') console.log(JSON.stringify({ event: 'approval.link', approvalId: id, link, replyTo }));
       if (sent.length) await addEvent(db, id, { step: 'email', label: `已寄審批信給主管（${sent.join('、')}）` });
       if (failed.length) await addEvent(db, id, { step: 'email_failed', label: `寄信失敗：${failed.join('；')}` });
       if (!sent.length && !failed.length) await addEvent(db, id, { step: 'email', label: '審批連結已產生（未設定寄信，見 Worker log）' });
@@ -117,7 +118,67 @@ export class ApprovalWorkflow extends WorkflowEntrypoint<Env, Params> {
   }
 }
 
+/** Confirmation back to the manager who replied, threaded under their reply. */
+async function sendConfirmation(env: Env, to: string, originalSubject: string, inReplyTo: string | null, text: string): Promise<void> {
+  const subject = replySubject(originalSubject);
+  if (!env.APPROVAL_EMAIL) {
+    // Local dev has no send_email binding.
+    if (env.LOG_APPROVAL_LINK === '1') console.log(JSON.stringify({ event: 'approval.reply_confirmation', to, subject, text }));
+    return;
+  }
+  try {
+    await env.APPROVAL_EMAIL.send({
+      from: env.MAIL_FROM,
+      to,
+      subject,
+      text,
+      ...(inReplyTo ? { headers: { 'In-Reply-To': inReplyTo, References: inReplyTo } } : {}),
+    });
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'approval.reply_confirmation_failed', to, error: (err as Error).message }));
+  }
+}
+
 export default {
+  // Email Routing: replies to the approval email ("核准" / "拒絕") arrive at the
+  // signed approvals+{id}.{sig}@ sub-address. Never throws: a thrown error would
+  // make Email Routing bounce the reply to the manager.
+  async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
+    let parsed: Promise<{ text: string; subject: string }> | null = null;
+    const parse = () =>
+      (parsed ??= PostalMime.parse(message.raw).then((m) => ({
+        text: m.text || htmlToText(m.html ?? ''),
+        subject: m.subject ?? '',
+      })));
+    const db = env.HISTORY_DB;
+    let result: Awaited<ReturnType<typeof handleReply>> | null = null;
+    try {
+      result = await handleReply({ from: message.from, to: message.to }, {
+        secret: env.APPROVAL_SECRET,
+        approvers: env.APPROVER_EMAIL,
+        get: (id) => getApproval(db, id),
+        addEvent: (id, e) => addEvent(db, id, e),
+        decide: (id, approve, by) => recordDecision(db, id, approve, by),
+        fail: async (id, error) => {
+          await transition(db, id, 'failed', { step: 'failed', label: '無法通知 Workflow' }, { error });
+        },
+        resume: async (workflowId, payload) => {
+          const instance = await env.APPROVAL_WORKFLOW.get(workflowId);
+          await instance.sendEvent({ type: 'decision', payload });
+        },
+        readText: async () => (await parse()).text,
+      });
+      if (result.reply) {
+        const { subject } = await parse();
+        await sendConfirmation(env, message.from, subject, message.headers.get('message-id'), result.reply);
+      }
+    } catch (err) {
+      console.error(JSON.stringify({ event: 'approval.reply_error', from: message.from, error: (err as Error).message }));
+    }
+    // Outcome only — never the mail body.
+    console.log(JSON.stringify({ event: 'approval.reply', approvalId: result?.approvalId ?? null, from: message.from, outcome: result?.outcome ?? 'error' }));
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'GET' && url.pathname === '/') {

@@ -6,6 +6,7 @@
 // the reply to workers/approval-workflow's email() handler, which uses the
 // helpers below. Pure, no Next / Node dependencies.
 import { parseRecipients } from './approval-mail';
+import type { ApprovalEvent, ApprovalStatus, Risk } from './approvals';
 
 const enc = new TextEncoder();
 const LOCAL = 'approvals';
@@ -102,4 +103,101 @@ export function replyDecision(text: string): 'approve' | 'reject' | null {
   if (REJECT.test(line)) return 'reject';
   if (APPROVE.test(line)) return 'approve';
   return null;
+}
+
+/** Subject of the confirmation: the manager's own subject, "Re: " added unless it already has a reply prefix. */
+export function replySubject(subject: string): string {
+  const s = (subject ?? '').trim() || '審批';
+  return /^(re|回覆|答覆)\s*[:：]/i.test(s) ? s : `Re: ${s}`;
+}
+
+// ── The email() handler's logic, with its side effects injected ──
+
+export type ReplyOutcome =
+  | 'bad-address'
+  | 'not-approver'
+  | 'not-found'
+  | 'not-high'
+  | 'no-workflow'
+  | 'not-pending'
+  | 'unclear'
+  | 'approved'
+  | 'rejected'
+  | 'already-decided'
+  | 'resume-failed';
+
+export interface ReplyDeps {
+  secret: string;
+  /** APPROVER_EMAIL: comma-separated. */
+  approvers: string | undefined;
+  get(id: string): Promise<{ id: string; status: ApprovalStatus; risk: Risk; summary: string; workflowId: string | null } | null>;
+  addEvent(id: string, e: Omit<ApprovalEvent, 'at'>): Promise<void>;
+  /** recordDecision: false if someone else decided first. */
+  decide(id: string, approve: boolean, by: string): Promise<boolean>;
+  /** Marks an approved request failed (the Workflow could not be resumed). */
+  fail(id: string, error: string): Promise<void>;
+  /** Delivers the decision to the waiting Workflow instance. */
+  resume(workflowId: string, payload: { decision: 'approve' | 'reject'; by: string }): Promise<void>;
+  /** The reply's text (MIME already decoded); only read once the sender and approval checked out. */
+  readText(): Promise<string>;
+}
+
+const STATUS_LABEL: Record<ApprovalStatus, string> = {
+  pending: '等待核准',
+  approved: '已核准',
+  rejected: '已拒絕',
+  executing: '執行中',
+  done: '已完成',
+  failed: '失敗',
+  expired: '已逾時',
+};
+
+/**
+ * Handles one reply to an approval email. `reply` is the confirmation text to
+ * send back to the sender, or null when nothing should be sent (forged
+ * address, unknown approval, not an approver — never act as a mail relay).
+ */
+export async function handleReply(
+  msg: { from: string; to: string },
+  deps: ReplyDeps,
+): Promise<{ outcome: ReplyOutcome; approvalId: string | null; reply: string | null }> {
+  const id = await parseReplyAddress(deps.secret, msg.to);
+  if (!id) return { outcome: 'bad-address', approvalId: null, reply: null };
+  const done = (outcome: ReplyOutcome, reply: string | null = null) => ({ outcome, approvalId: id, reply });
+  const sender = bareAddress(msg.from);
+
+  if (!isApprover(sender, deps.approvers)) {
+    await deps.addEvent(id, { step: 'reply_ignored', label: `收到非主管的回信（${sender.slice(0, 200)}），已忽略` });
+    return done('not-approver');
+  }
+  const a = await deps.get(id);
+  if (!a) return done('not-found');
+  if (a.risk !== 'high') return done('not-high');
+  if (a.status !== 'pending') {
+    return done('not-pending', `這筆審批目前是「${STATUS_LABEL[a.status]}」，不需要再回覆。\n\n${a.summary}`);
+  }
+  if (!a.workflowId) return done('no-workflow');
+
+  const decision = replyDecision(stripQuoted(await deps.readText()));
+  if (!decision) {
+    await deps.addEvent(id, { step: 'reply_unclear', label: `收到主管回信（${sender}），但無法判斷核准或拒絕` });
+    return done('unclear', `沒有看懂你的回覆。請在回信的第一行寫「核准」或「拒絕」。\n\n${a.summary}`);
+  }
+
+  const approve = decision === 'approve';
+  const by = `主管（Email 回信：${sender}）`;
+  if (!(await deps.decide(id, approve, by))) {
+    const now = await deps.get(id);
+    return done('already-decided', `這筆審批已經處理過（目前：${STATUS_LABEL[now?.status ?? a.status]}），這封回信沒有改變任何事。`);
+  }
+  try {
+    await deps.resume(a.workflowId, { decision, by });
+  } catch (err) {
+    const message = (err as Error).message;
+    if (approve) await deps.fail(id, message);
+    return done('resume-failed', `已記錄你的${approve ? '核准' : '拒絕'}，但無法通知 Workflow（${message}）${approve ? '，這筆寫入不會執行' : ''}。`);
+  }
+  return approve
+    ? done('approved', `已收到你的核准：${a.summary}\n\nWorkflow 會以送出者的身分執行寫入，完成後另寄結果通知。`)
+    : done('rejected', `已收到你的拒絕：${a.summary}\n\n這筆寫入不會執行。`);
 }
