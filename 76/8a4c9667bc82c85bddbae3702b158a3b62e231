@@ -1,0 +1,23 @@
+agents.md
+  s_51968567f71c44::t_d9e20ecb9c5291 128
+src/lib/sandbox-egress.test.ts
+  s_51968567f71c44::t_25b6c59f5029ef 58-72,158-177
+src/lib/sandbox-egress.ts
+  s_51968567f71c44::t_e9e5ceeac5a698 56-66,78,118-119,134,145-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "768a4c9667bc82c85bddbae3702b158a3b62e231",
+  "prompts": {},
+  "sessions": {
+    "s_51968567f71c44": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a9e4182d0f2796067",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
