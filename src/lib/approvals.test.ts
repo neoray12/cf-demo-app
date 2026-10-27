@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { baseToolName, classifyCall, canTransition, isTerminal, appendEvent, decisionRight } from './approvals';
+import { baseToolName, classifyCall, canTransition, isTerminal, appendEvent, decisionRight, HITL_EXAMPLES } from './approvals';
+import zhTW from '../i18n/zh-TW.json';
+import en from '../i18n/en.json';
 
 describe('baseToolName', () => {
   it('strips the delegate key, portal server and Code Mode prefixes', () => {
@@ -36,6 +38,13 @@ describe('classifyCall', () => {
     }`;
     expect(classifyCall('portal_codemode_execute', { code })).toMatchObject({ risk: 'high', writes: ['sf_update_opportunity'] });
     expect(classifyCall('portal_codemode_execute', { code: 'async () => codemode.salesforce_mcp_sf_create_lead({ last_name: "A" })' })?.risk).toBe('low');
+  });
+
+  it('spots a big amount written in a Code Mode script', () => {
+    const big = 'async () => codemode.salesforce_mcp_sf_create_opportunity({ name: "年度合約", amount: 1_500_000, stage: "Prospecting" })';
+    expect(classifyCall('portal_codemode_execute', { code: big })?.risk).toBe('high');
+    const small = 'async () => codemode.salesforce_mcp_sf_create_opportunity({ name: "小案", amount: 50000, stage: "Prospecting" })';
+    expect(classifyCall('portal_codemode_execute', { code: small })?.risk).toBe('low');
   });
 
   it('lets read-only Code Mode scripts through', () => {
@@ -86,5 +95,19 @@ describe('decisionRight', () => {
   });
   it('allows no decision once it left pending', () => {
     expect(decisionRight({ status: 'approved', risk: 'low' }, { requester: true, linkHolder: true })).toBe(false);
+  });
+});
+
+describe('HITL_EXAMPLES', () => {
+  it('has both risk levels and a title and prompt in both languages', () => {
+    expect(HITL_EXAMPLES.filter((e) => e.risk === 'low').length).toBeGreaterThanOrEqual(2);
+    expect(HITL_EXAMPLES.filter((e) => e.risk === 'high').length).toBeGreaterThanOrEqual(2);
+    for (const lang of [zhTW, en]) {
+      const items = (lang as unknown as { chat: { hitlSuggestions: Record<string, { title?: string; prompt?: string }> } }).chat.hitlSuggestions;
+      for (const { key } of HITL_EXAMPLES) {
+        expect(items[key]?.title, key).toBeTruthy();
+        expect(items[key]?.prompt, key).toBeTruthy();
+      }
+    }
   });
 });

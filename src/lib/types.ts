@@ -122,9 +122,12 @@ export const AI_MODELS: AIModel[] = [
   },
 ];
 
+// The chat starts on Auto Router (the gateway picks the model per request).
+export const DEFAULT_MODEL_ID = "cf-auto";
+
 // Haiku 5.5: fast, cheap ($0.10 / $0.50 per MTok) and good at tool use — the
-// demos (sandbox, MCP, Code Mode) run on it by default.
-export const DEFAULT_MODEL_ID = "claude-haiku-5-5";
+// model a Code Mode comparison pins when Auto Router is selected.
+export const COMPARISON_MODEL_ID = "claude-haiku-5-5";
 
 export interface BrowserRenderingEndpoint {
   id: string;

@@ -18,7 +18,7 @@ import { getRequestUser } from '@/lib/auth';
 import { TurnRecorder, historyConfigured, isValidConversationId, saveTurn, type ModelAttempt } from '@/lib/chat-history';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { cookies } from 'next/headers';
-import { AI_MODELS, DEFAULT_MODEL_ID, type ModelProvider } from '@/lib/types';
+import { AI_MODELS, type ModelProvider } from '@/lib/types';
 import { chatSandboxConfigured, uploadFile as sandboxUploadFile, warmSandbox } from '@/lib/chat-sandbox';
 import { parseMcpServerUrls } from '@/lib/mcp-client';
 import { buildToolSet, browserRenderingConfigured, listServerTools, buildServerTools, type ToolSetConfig, type UploadedFileInfo } from '@/lib/chat-tools';

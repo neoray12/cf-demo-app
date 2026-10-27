@@ -42,6 +42,19 @@ export interface Approval {
   events: ApprovalEvent[];
 }
 
+/**
+ * Home page "Human-in-the-loop" examples (strings: chat.hitlSuggestions.{key}).
+ * `risk` is what classifyCall will decide for the write each prompt leads to.
+ */
+export const HITL_EXAMPLES: ReadonlyArray<{ key: string; risk: Risk }> = [
+  { key: 'lead', risk: 'low' },
+  { key: 'casePriority', risk: 'low' },
+  { key: 'resetDeal', risk: 'low' },
+  { key: 'closeDeal', risk: 'high' },
+  { key: 'bigDeal', risk: 'high' },
+  { key: 'sapRelease', risk: 'high' },
+];
+
 /** An approval as the chat card and the approval page see it (GET /api/approvals/{id}). */
 export interface ApprovalView {
   id: string;
@@ -88,8 +101,11 @@ function writeRisk(base: string, args: Record<string, unknown> | null, scriptTex
     const stage = String(args?.stage ?? args?.StageName ?? '');
     const amount = Number(args?.amount ?? args?.Amount ?? 0);
     if (/closed/i.test(stage) || amount >= BIG_AMOUNT) return 'high';
-    // In a script the arguments are code, not values: closing is spotted in its text.
+    // In a script the arguments are code, not values: closing and big amounts
+    // are spotted in its text.
     if (scriptText && /closed\s*(won|lost)/i.test(scriptText)) return 'high';
+    const amounts = scriptText ? [...scriptText.matchAll(/amount["']?\s*:\s*["']?([\d_,]+)/gi)] : [];
+    if (amounts.some((m) => Number(m[1]!.replace(/[_,]/g, '')) >= BIG_AMOUNT)) return 'high';
   }
   return 'low';
 }

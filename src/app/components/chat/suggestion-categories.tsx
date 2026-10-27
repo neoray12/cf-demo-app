@@ -9,6 +9,8 @@ import {
   Camera,
   Cloud,
   Globe,
+  Hand,
+  MailCheck,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
@@ -19,6 +21,7 @@ import {
 } from "lucide-react";
 import { GUARDRAIL_SCENARIOS } from "@/lib/mcp-guardrails";
 import { CODE_MODE_EXAMPLES } from "@/lib/experiment-compare";
+import { HITL_EXAMPLES } from "@/lib/approvals";
 
 export interface SuggestionSendOpts {
   /** MCP server that must be connected; the turn is sent with only this server. */
@@ -37,7 +40,7 @@ interface SuggestionItem {
   opts?: SuggestionSendOpts;
 }
 
-type CategoryId = "basics" | "sandbox" | "dw" | "codemode" | "browser" | "safety" | "guardrails";
+type CategoryId = "basics" | "sandbox" | "dw" | "codemode" | "browser" | "safety" | "guardrails" | "hitl";
 
 interface CategoryStyle {
   /** Category card classes (idle). */
@@ -119,6 +122,15 @@ const STYLES: Record<CategoryId, CategoryStyle> = {
     itemIcon: "text-emerald-600 dark:text-emerald-400",
     itemTitle: "",
     grid: "sm:grid-cols-2",
+  },
+  hitl: {
+    card: "border-orange-300/40 dark:border-orange-800/40 hover:bg-orange-50/50 dark:hover:bg-orange-950/20",
+    cardActive: "bg-orange-50 dark:bg-orange-950/30 border-orange-400/70 dark:border-orange-700/70",
+    icon: "text-orange-600 dark:text-orange-400",
+    item: "border-orange-300/40 dark:border-orange-800/40 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 active:bg-orange-50 dark:active:bg-orange-950/30",
+    itemIcon: "text-orange-600 dark:text-orange-400",
+    itemTitle: "",
+    grid: "sm:grid-cols-3",
   },
 };
 
@@ -217,6 +229,18 @@ export function SuggestionCategories({
           : []),
         { title: t("chat.guardrailSuggestions.viewPolicy"), desc: t("chat.guardrailSuggestions.viewPolicyDesc"), icon: ArrowRight, href: "/mcp-guardrails" },
       ],
+    },
+    {
+      // Writes the harness holds for a human: low risk is approved in the chat,
+      // high risk goes to a Cloudflare Workflow that emails the manager.
+      id: "hitl",
+      icon: Hand,
+      opts: { mcp: "saas" },
+      items: HITL_EXAMPLES.map((e) => ({
+        title: t(`chat.hitlSuggestions.${e.key}.title`),
+        desc: t(`chat.hitlSuggestions.${e.key}.prompt`),
+        icon: e.risk === "high" ? MailCheck : Hand,
+      })),
     },
   ];
 

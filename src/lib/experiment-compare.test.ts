@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CODE_MODE_EXAMPLES, compareRuns, comparisonModel } from './experiment-compare';
+import { DEFAULT_MODEL_ID } from './types';
 import zhTW from '../i18n/zh-TW.json';
 import en from '../i18n/en.json';
 import type { TraceSummary } from './trace-summary';
@@ -56,5 +57,12 @@ describe('CODE_MODE_EXAMPLES', () => {
         expect(examples[key]?.prompt, key).toBeTruthy();
       }
     }
+  });
+});
+
+describe('default model', () => {
+  it('is Auto Router, while comparisons still pin a concrete model', () => {
+    expect(DEFAULT_MODEL_ID).toBe('cf-auto');
+    expect(comparisonModel(DEFAULT_MODEL_ID)).toBe('claude-haiku-5-5');
   });
 });

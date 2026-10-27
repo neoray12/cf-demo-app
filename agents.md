@@ -19,7 +19,7 @@
 - 支援多個模型提供商：Workers AI、OpenAI、Anthropic、Perplexity
 - 整合 **AI Search (AutoRAG)** 進行 RAG，查詢 R2 中已爬取的資料
 - 聊天 UI 仿 ChatGPT 風格：串流回覆、Markdown 渲染、模型選擇器、建議卡片
-- 預設模型：Claude Haiku 5.5（`claude-haiku-5-5`）。Anthropic 只保留 Sonnet 5.5 / Haiku 5.5；OpenAI 只保留 GPT-6.1 Sol（`gpt-6.1-sol`）/ GPT-6 Luna（`gpt-6-luna`）。Claude 5.5 不接受非預設的 `temperature`，不要在請求加上它
+- 預設模型：Auto Router（`cf-auto`，2026-10-27 起，`DEFAULT_MODEL_ID`）；Code Mode 對照在 Auto Router 時固定用 `COMPARISON_MODEL_ID`（Claude Haiku 5.5）。Anthropic 只保留 Sonnet 5.5 / Haiku 5.5；OpenAI 只保留 GPT-6.1 Sol（`gpt-6.1-sol`）/ GPT-6 Luna（`gpt-6-luna`）。Claude 5.5 不接受非預設的 `temperature`，不要在請求加上它
 
 ### 2. 網站爬蟲 (Browser Rendering)
 - **Sidebar 子功能導航**：每個功能是獨立的子頁面，不使用 Tab
@@ -277,7 +277,8 @@
 設計：`docs/superpowers/specs/2026-10-26-human-in-the-loop-approvals-design.md`。
 
 - **攔截點**：`buildDelegateTool`（`src/lib/mcp-subagent.ts`）的 `requestApproval`：subagent 呼叫寫入工具時不直接執行，改成建立審批，工具回 `{ pendingApproval, approvalId, risk }`（system prompt 要求模型不要重試、回報已送審）；`ask_*` 結果帶 `approvals`，聊天畫 `ApprovalCard`。只有驗證過的使用者 + 設定了 `HISTORY_DB` / `APPROVAL_SECRET` 時啟用，否則寫入照舊直接執行
-- **風險分級**（`classifyCall`，`src/lib/approvals.ts`）：高 = 商機 stage 含 Closed、金額 ≥ 1,000,000、`sap_create_sales_order` / `sap_release|teco|close_production_order`；低 = 其他 `sf_create_*` / `sf_update_*`；其餘是讀取。**Code Mode** 時掃描 `portal_codemode_execute` 的 `code`，有寫入就整段腳本送審
+- **風險分級**（`classifyCall`，`src/lib/approvals.ts`）：高 = 商機 stage 含 Closed、金額 ≥ 1,000,000、`sap_create_sales_order` / `sap_release|teco|close_production_order`；低 = 其他 `sf_create_*` / `sf_update_*`；其餘是讀取。**Code Mode** 時掃描 `portal_codemode_execute` 的 `code`，有寫入就整段腳本送審（腳本文字裡的 `Closed Won/Lost` 與 `amount: ≥ 1000000` 也算高風險）
+- **首頁類別「Human-in-the-loop 審批」**（`HITL_EXAMPLES`，字串 `chat.hitlSuggestions.*`）：低風險 = 建立潛在客戶、最新客服案件改 High、示範商機改回 Prospecting；高風險 = 示範商機 Closed Won、為 GenePoint 建 150 萬商機、SAP 下達生產訂單 1000007。示範商機與「MCP 卡控」相同（`006hg000001fNCzAAM`）：卡控規則 2 啟用時，核准後的結案寫入仍會被 Gateway 擋下（時間軸顯示「寫入被 Gateway 攔截」）；SAP 1000007 下達後再按一次會失敗；建 150 萬商機每次都會新增一筆
 - **低風險**：送出者在聊天卡片按核准 → `POST /api/approvals/{id}/decision` → App 立即執行（`executeApproval`，`src/lib/approval-exec.ts`）
 - **高風險**：App `POST {APPROVAL_WORKER_URL}/start` → `ApprovalWorkflow`（`workers/approval-workflow`，instance id = approval id）：load → 寄信（`send_email` binding，簽章連結 `/approvals/{id}?t=`，24 小時）→ `step.waitForEvent("decision", 24 hours)` → 回呼 App `POST /api/approvals/{id}/execute`（`x-approval-secret`）→ 寄結果。主管在審批頁（不需登入，靠簽章）決定 → App **先**寫 D1 再 `POST /event`（避免 Workflow 搶先執行時狀態還不是 approved）。送出者本人就算登入也不能核准高風險
 - **執行身分**：一律用送出者的 MCP token（`session_id`）；OAuth callback 另存 refresh token `mcp-refresh:{session}:{server}`（14 天，`storeMcpTokens`），`getFreshAccessToken` 過期自動續期；斷開連線會一併刪除。原本 access token 過期時 refresh token 會跟著 KV TTL 消失

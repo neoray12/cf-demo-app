@@ -274,6 +274,10 @@
         "title": "MCP Guardrails Demo",
         "desc": "Gateway policies blocking Salesforce MCP tool calls"
       },
+      "hitl": {
+        "title": "Human-in-the-loop approvals",
+        "desc": "Ask a human before writing: approve low risk in the chat, high risk goes to a manager by email (Workflow)"
+      },
       "count": "{{count}} examples",
       "codemode": {
         "title": "Code Mode demos",
@@ -316,6 +320,32 @@
           "title": "SAP × Salesforce side by side",
           "prompt": "List all SAP customers and all Salesforce Accounts, match companies present in both by name, and for each one look up its SAP sales order total plus its Salesforce pipeline and case count, in one table (list the unmatched ones too)"
         }
+      }
+    },
+    "hitlSuggestions": {
+      "lead": {
+        "title": "Create a lead · low risk",
+        "prompt": "Create a Salesforce lead: Ya-Ting Lin, company \"Cloudo Tech\", title IT Manager, source Web"
+      },
+      "casePriority": {
+        "title": "Raise a case priority · low risk",
+        "prompt": "Set the priority of the latest Salesforce support case to High"
+      },
+      "resetDeal": {
+        "title": "Reset the demo deal · low risk",
+        "prompt": "Move the opportunity MCP Demo 商機 (Spike) back to the Prospecting stage"
+      },
+      "closeDeal": {
+        "title": "Close a deal · high risk",
+        "prompt": "Move the opportunity MCP Demo 商機 (Spike) to Closed Won"
+      },
+      "bigDeal": {
+        "title": "Create a 1.5M deal · high risk",
+        "prompt": "Create a new Salesforce opportunity \"Cloudo Tech annual license\" for GenePoint, amount 1,500,000, stage Prospecting, close date 2026-12-31"
+      },
+      "sapRelease": {
+        "title": "Release an SAP production order · high risk",
+        "prompt": "Release SAP production order 1000007 so production can start"
       }
     },
     "mcpPanelResize": "Drag to resize the MCP panel (double-click to reset)",

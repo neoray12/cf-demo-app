@@ -274,6 +274,10 @@
         "title": "MCP 卡控示範",
         "desc": "Gateway 政策攔截 Salesforce MCP 工具呼叫"
       },
+      "hitl": {
+        "title": "Human-in-the-loop 審批",
+        "desc": "寫入前先問人：低風險在聊天裡核准，高風險寄信給主管（Workflow）"
+      },
       "count": "{{count}} 個範例",
       "codemode": {
         "title": "Code Mode 示範",
@@ -316,6 +320,32 @@
           "title": "SAP × Salesforce 對照",
           "prompt": "列出 SAP 全部客戶與 Salesforce 全部 Account，用公司名稱比對兩邊都有的公司；每一家逐一查出 SAP 銷售訂單總額與 Salesforce 商機總額及案件數，整理成對照表（沒有對到的也列出來）"
         }
+      }
+    },
+    "hitlSuggestions": {
+      "lead": {
+        "title": "建立潛在客戶 · 低風險",
+        "prompt": "在 Salesforce 建立一個潛在客戶：林雅婷，公司「雲朵科技」，職稱 IT 經理，來源 Web"
+      },
+      "casePriority": {
+        "title": "調整案件優先順序 · 低風險",
+        "prompt": "把 Salesforce 最新一筆客服案件的優先順序改成 High"
+      },
+      "resetDeal": {
+        "title": "還原示範商機 · 低風險",
+        "prompt": "把商機 MCP Demo 商機 (Spike) 的階段改回 Prospecting"
+      },
+      "closeDeal": {
+        "title": "商機結案 · 高風險",
+        "prompt": "把商機 MCP Demo 商機 (Spike) 的階段改成 Closed Won"
+      },
+      "bigDeal": {
+        "title": "建立 150 萬商機 · 高風險",
+        "prompt": "在 Salesforce 為 GenePoint 建立一筆新商機「雲朵科技 年度授權」，金額 1,500,000，階段 Prospecting，預計 2026-12-31 結案"
+      },
+      "sapRelease": {
+        "title": "SAP 下達生產訂單 · 高風險",
+        "prompt": "在 SAP 下達生產訂單 1000007，讓它可以開始生產"
       }
     },
     "mcpPanelResize": "拖曳調整 MCP 面板寬度（雙擊恢復預設）",
