@@ -1,0 +1,23 @@
+src/app/approvals/[id]/approval-page.tsx
+  s_35f257df545d16::t_75f524ea7448ba 5,50-54
+src/lib/approvals.test.ts
+  s_35f257df545d16::t_de8867f688d481 2,181-197
+src/lib/approvals.ts
+  s_35f257df545d16::t_4ed443d80303e3 160-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6f049acfc2fae39c0636e6dc1159e2b59f9a6fd5",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
