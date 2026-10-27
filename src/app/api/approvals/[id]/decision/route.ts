@@ -1,5 +1,5 @@
 import { approvalContext, noStore, publicView } from '@/lib/approval-route';
-import { decisionRight, getApproval, transition } from '@/lib/approvals';
+import { decisionRight, getApproval, recordDecision, transition } from '@/lib/approvals';
 import { executeApproval } from '@/lib/approval-exec';
 import { callApprovalWorker } from '@/lib/approval-service';
 
@@ -25,10 +25,7 @@ export async function POST(request: Request, { params }: Params) {
   if (approval.risk === 'high') {
     if (!approval.workflowId) return Response.json({ error: 'workflow not started' }, { status: 409 });
     // Record the decision first, so the Workflow's execute step finds it approved.
-    const moved = await transition(env.HISTORY_DB, id, approve ? 'approved' : 'rejected', {
-      step: approve ? 'approved' : 'rejected',
-      label: approve ? `${by} 已核准` : `${by} 已拒絕`,
-    }, { decidedBy: by });
+    const moved = await recordDecision(env.HISTORY_DB, id, approve, by);
     if (!moved) return Response.json({ error: 'already decided' }, { status: 409 });
     try {
       // The Workflow is waiting in step.waitForEvent; it runs the write itself.
@@ -38,10 +35,7 @@ export async function POST(request: Request, { params }: Params) {
       return Response.json({ error: (err as Error).message }, { status: 502 });
     }
   } else {
-    const moved = await transition(env.HISTORY_DB, id, approve ? 'approved' : 'rejected', {
-      step: approve ? 'approved' : 'rejected',
-      label: approve ? `${by} 已核准` : `${by} 已拒絕`,
-    }, { decidedBy: by });
+    const moved = await recordDecision(env.HISTORY_DB, id, approve, by);
     if (!moved) return Response.json({ error: 'already decided' }, { status: 409 });
     if (approve) await executeApproval(env, id);
   }

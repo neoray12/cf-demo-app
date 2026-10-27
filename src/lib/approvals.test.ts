@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baseToolName, classifyCall, canTransition, isTerminal, appendEvent, decisionRight, HITL_EXAMPLES } from './approvals';
+import { baseToolName, classifyCall, canTransition, isTerminal, appendEvent, decisionRight, HITL_EXAMPLES, decisionLabel, recordDecision } from './approvals';
 import zhTW from '../i18n/zh-TW.json';
 import en from '../i18n/en.json';
 
@@ -109,5 +109,62 @@ describe('HITL_EXAMPLES', () => {
         expect(items[key]?.prompt, key).toBeTruthy();
       }
     }
+  });
+});
+
+describe('decisionLabel', () => {
+  it('names who decided and how', () => {
+    expect(decisionLabel(true, '主管（Email 回信：neo@cloudflare.com）')).toBe('主管（Email 回信：neo@cloudflare.com） 已核准');
+    expect(decisionLabel(false, 'neo@cloudflare.com')).toBe('neo@cloudflare.com 已拒絕');
+  });
+});
+
+/** Just enough D1 for transition(): one row whose status the UPDATE's WHERE checks. */
+function fakeDb(status: string) {
+  const row = { status, events_json: null as string | null, decided_by: null as string | null };
+  const db = {
+    prepare(sql: string) {
+      let args: unknown[] = [];
+      const stmt = {
+        bind(...a: unknown[]) {
+          args = a;
+          return stmt;
+        },
+        async first() {
+          return sql.startsWith('SELECT') ? { events_json: row.events_json } : null;
+        },
+        async run() {
+          // UPDATE … SET status = ?, events_json = ?, …, decided_by = COALESCE(?, …) … WHERE id = ? AND status IN (…)
+          const n = sql.match(/status IN \(([^)]*)\)/)![1]!.split(',').length;
+          if (!args.slice(args.length - n).includes(row.status)) return { meta: { changes: 0 } };
+          row.status = args[0] as string;
+          row.events_json = args[1] as string;
+          row.decided_by = (args[4] as string | null) ?? row.decided_by;
+          return { meta: { changes: 1 } };
+        },
+      };
+      return stmt;
+    },
+  };
+  return { db: db as unknown as D1Database, row };
+}
+
+describe('recordDecision', () => {
+  it('moves a pending approval to approved, with who decided on the timeline', async () => {
+    const { db, row } = fakeDb('pending');
+    expect(await recordDecision(db, 'apr_1', true, '主管（Email 連結）')).toBe(true);
+    expect(row.status).toBe('approved');
+    expect(row.decided_by).toBe('主管（Email 連結）');
+    expect(JSON.parse(row.events_json!)).toMatchObject([{ step: 'approved', label: '主管（Email 連結） 已核准' }]);
+  });
+  it('moves a pending approval to rejected', async () => {
+    const { db, row } = fakeDb('pending');
+    expect(await recordDecision(db, 'apr_1', false, 'x')).toBe(true);
+    expect(row.status).toBe('rejected');
+  });
+  it('returns false when someone already decided', async () => {
+    const { db, row } = fakeDb('approved');
+    expect(await recordDecision(db, 'apr_1', false, 'x')).toBe(false);
+    expect(row.status).toBe('approved');
   });
 });
