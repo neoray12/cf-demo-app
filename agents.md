@@ -281,21 +281,28 @@
 - **首頁類別「Human-in-the-loop 審批」**（`HITL_EXAMPLES`，字串 `chat.hitlSuggestions.*`）：低風險 = 建立潛在客戶、最新客服案件改 High、示範商機改回 Prospecting；高風險 = 示範商機 Closed Won、為 GenePoint 建 150 萬商機、SAP 下達生產訂單 1000007。示範商機與「MCP 卡控」相同（`006hg000001fNCzAAM`）：卡控規則 2 啟用時，核准後的結案寫入仍會被 Gateway 擋下（時間軸顯示「寫入被 Gateway 攔截」）；SAP 1000007 下達後再按一次會失敗；建 150 萬商機每次都會新增一筆
 - **低風險**：送出者在聊天卡片按核准 → `POST /api/approvals/{id}/decision` → App 立即執行（`executeApproval`，`src/lib/approval-exec.ts`）
 - **高風險**：App `POST {APPROVAL_WORKER_URL}/start` → `ApprovalWorkflow`（`workers/approval-workflow`，instance id = approval id）：load → 寄信（`send_email` binding，簽章連結 `/approvals/{id}?t=`，24 小時）→ `step.waitForEvent("decision", 24 hours)` → 回呼 App `POST /api/approvals/{id}/execute`（`x-approval-secret`）→ 寄結果。主管在審批頁（不需登入，靠簽章）決定 → App **先**寫 D1 再 `POST /event`（避免 Workflow 搶先執行時狀態還不是 approved）。送出者本人就算登入也不能核准高風險
+- **回信核准**（2026-10-27，計畫 `docs/superpowers/plans/2026-10-27-email-reply-approval.md`）：審批信的 `Reply-To` 是簽章子地址 `approvals+{approvalId}.{sig}@mail.neokung.work`（`sig` = `HMAC-SHA256(APPROVAL_SECRET, "reply.{approvalId}")` 前 16 hex，`replyAddress` / `parseReplyAddress`，`src/lib/approval-reply.ts`）。Email Routing（子網域 `mail.neokung.work`、開 Subaddressing）把回信交給 Worker 的 `email()`；判斷邏輯是 `handleReply()`（純函式、依賴注入，vitest 測得到），Worker 只負責綁 D1 / Workflow、用 `postal-mime` 解析（沒有 `text` 就把 `html` 去標籤）與寄確認信。規則：簽章錯或審批不存在 → 靜默忽略；寄件人不在 `APPROVER_EMAIL` → 時間軸記「收到非主管的回信（x），已忽略」、不回信（不當跳板）；只處理高風險；非 pending → 回信告知目前狀態；只看引用前的第一個非空行（`stripQuoted` 會切掉 Gmail `On … wrote:` / `在 … 寫道：`、Outlook `寄件者:` / `From:` / 底線分隔、`-----Original Message-----`、`>` 行），先比對拒絕（`不核准`/`不同意`/`拒絕`/`駁回`/`reject`/`no`）再比對核准（`核准`/`同意`/`准`/`approve`/`yes`/`ok`）；看不懂 → 回信請他第一行寫「核准」或「拒絕」、狀態不變。決定走與連結相同的 `recordDecision()`（D1 條件式 `transition`，連結與回信誰先到誰算，後到的回「已經處理過」），成功後 Worker **直接** `APPROVAL_WORKFLOW.get(id).sendEvent()`（失敗時核准的審批記為 failed），決定者記為 `主管（Email 回信：{寄件人}）`。確認信用 `APPROVAL_EMAIL.send({...})` 結構化 API 寄給寄件人（帶 `In-Reply-To` / `References` = 回信的 Message-ID）。Log 只記 `approval.reply` 的 `{approvalId, from, outcome}`，不記信件內容
 - **執行身分**：一律用送出者的 MCP token（`session_id`）；OAuth callback 另存 refresh token `mcp-refresh:{session}:{server}`（14 天，`storeMcpTokens`），`getFreshAccessToken` 過期自動續期；斷開連線會一併刪除。原本 access token 過期時 refresh token 會跟著 KV TTL 消失
 - **資料**：D1 `approvals`（migration `0003_approvals.sql`），狀態 pending → approved / rejected / expired / failed；approved → executing / failed；executing → done / failed（`transition` 用 `WHERE status IN (...)` 防止重複決定）。`events_json` 是卡片 / 審批頁的時間軸，Workflow 也會寫入
-- **本地**：`.dev.vars` 加 `APPROVAL_SECRET`、`APPROVAL_WORKER_URL=http://localhost:8790`；Worker 從 repo 根目錄跑 `npx wrangler dev -c workers/approval-workflow/wrangler.dev.toml --persist-to .wrangler/state --port 8790`（共用 App 的本地 D1；`workers/approval-workflow/.dev.vars` 放同一個 `APPROVAL_SECRET`）。本地不寄信，審批連結印在 Worker log（`approval.link`）
+- **本地**：`.dev.vars` 加 `APPROVAL_SECRET`、`APPROVAL_WORKER_URL=http://localhost:8790`；Worker 從 repo 根目錄跑 `npx wrangler dev -c workers/approval-workflow/wrangler.dev.toml --persist-to .wrangler/state --port 8790`（共用 App 的本地 D1；`workers/approval-workflow/.dev.vars` 放同一個 `APPROVAL_SECRET`）。本地不寄信，審批連結與回信地址印在 Worker log（`approval.link` 的 `link` / `replyTo`）。本地模擬回信：`curl -X POST 'http://localhost:8790/cdn-cgi/local/email' --url-query 'from=neo@cloudflare.com' --url-query 'to=<replyTo>' --data-binary @reply.eml`（`wrangler.dev.toml` 的 `APPROVER_EMAIL` 只有 neo@cloudflare.com；確認信內容印在 `approval.reply_confirmation`）。Next 的 3000 埠被占用時，Worker 加 `--var APP_URL:http://localhost:3100` 並 `npx next dev -p 3100`
 - **部署狀態（2026-10-26）**：正式 D1 已套 0003；App 與 Worker 都設了同一個 `APPROVAL_SECRET`（`wrangler secret put`）；Worker 已部署到 `https://cf-approval-workflow.neo-cloudflare.workers.dev`（`npx wrangler deploy -c workers/approval-workflow/wrangler.toml`，不走 CI）。審批信寄給 `APPROVER_EMAIL`（逗號分隔，必須也在 `[[send_email]] allowed_destination_addresses`）：neo@cloudflare.com、neoray12@hotmail.com
 - **寄信**：用 Cloudflare **Email Sending**，寄件人 `approvals@mail.neokung.work`。`mail.neokung.work` 要在 Dashboard「Compute > Email Service > Email Sending > Onboard Domain」onboard（文件只有 Dashboard 流程；只會在子網域加 DNS 紀錄）。**不要在 apex 開 Email Routing**：apex 的 MX `ms15033002.msv1.invalid` 與 TXT `MS=ms15033002` 是 Microsoft 網域驗證用的。寄信失敗不會讓 Workflow 失敗，時間軸會記「寄信失敗：…」（`sendMail` 逐一寄、各自記錄）
+- **收信（回信核准）上線前的手動步驟**（尚未做；程式已就緒）：
+  1. Dashboard → Email Service → Email Routing → `neokung.work` → Settings → Subdomains 加入 `mail.neokung.work`（只在子網域加 MX / SPF，**apex 不動**；如果 Dashboard 要求在 apex 加 MX 或改動 apex 紀錄就先停下——apex 的 MX / TXT 是 Microsoft 網域驗證用的）
+  2. 同一頁開啟 **Subaddressing**（否則 `approvals+…@` 不會路由到 `approvals@` 的規則）
+  3. 部署 Worker：`npx wrangler deploy -c workers/approval-workflow/wrangler.toml`（`addresses = ["approvals@mail.neokung.work"]` 會建立 Email Routing 規則；`[vars] REPLY_DOMAIN = "mail.neokung.work"`）
+  4. 上線後實測：觸發一個高風險範例，用 neo@cloudflare.com 或 neoray12@hotmail.com 直接回覆「核准」，確認時間軸出現「主管（Email 回信：…） 已核准」並收到確認信
 
 | 檔案 | 說明 |
 |------|------|
 | `src/lib/approvals.ts` | 分級、狀態轉換、D1 存取、`decisionRight` |
 | `src/lib/approval-token.ts` / `approval-mail.ts` | 簽章連結、審批信 MIME（App 與 Worker 共用） |
+| `src/lib/approval-reply.ts` | 回信核准：簽章子地址、引用切除、核准 / 拒絕判斷、`handleReply` |
 | `src/lib/approval-service.ts` / `approval-exec.ts` / `approval-route.ts` | 建立審批與呼叫 Worker、執行寫入、API 共用 |
 | `src/app/api/approvals/[id]/{route,decision,execute}` | 查詢、核准 / 拒絕、內部執行 |
 | `src/app/approvals/[id]` | 主管審批頁 |
 | `src/app/components/chat/approval-card.tsx` | 聊天卡片 |
-| `workers/approval-workflow` | `ApprovalWorkflow` 與 `/start`、`/event` |
+| `workers/approval-workflow` | `ApprovalWorkflow` 與 `/start`、`/event`、`email()`（回信核准） |
 
 ## 技術棧
 

@@ -112,6 +112,16 @@ describe('HITL_EXAMPLES', () => {
   });
 });
 
+describe('chat.approval.waitingManager', () => {
+  it('tells the requester the manager can also reply to the email, in both languages', () => {
+    const zh = (zhTW as unknown as { chat: { approval: { waitingManager: string } } }).chat.approval.waitingManager;
+    const enText = (en as unknown as { chat: { approval: { waitingManager: string } } }).chat.approval.waitingManager;
+    expect(zh).toContain('回信');
+    expect(zh).toMatch(/核准.*拒絕/);
+    expect(enText.toLowerCase()).toContain('reply');
+  });
+});
+
 describe('decisionLabel', () => {
   it('names who decided and how', () => {
     expect(decisionLabel(true, '主管（Email 回信：neo@cloudflare.com）')).toBe('主管（Email 回信：neo@cloudflare.com） 已核准');
