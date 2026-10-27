@@ -3,6 +3,8 @@
  * Powers the executeCode / createWebPreview chat tools.
  */
 
+import type { EgressEvent } from './sandbox-egress';
+
 interface SandboxEnv {
   CHAT_SANDBOX_URL?: string;
   CHAT_SANDBOX_SECRET?: string;
@@ -98,6 +100,9 @@ export interface CodeExecutionResult {
   results: CodeExecutionOutput[];
   error: string | null;
   sandbox: SandboxTelemetry | null;
+  // Outbound requests the code made while it ran (policy decisions only — the
+  // Worker never returns headers, bodies or the injected token)
+  egress: EgressEvent[];
 }
 
 export async function executeCode(
@@ -121,6 +126,7 @@ export async function executeCode(
         results: [],
         error: data.error || `HTTP ${res.status}`,
         sandbox: null,
+        egress: [],
       };
     }
     return {
@@ -130,6 +136,7 @@ export async function executeCode(
       results: data.results ?? [],
       error: data.error ?? null,
       sandbox: data.sandbox ?? null,
+      egress: Array.isArray(data.egress) ? data.egress : [],
     };
   } catch (err) {
     const message = (err as Error).message || String(err);
@@ -137,7 +144,7 @@ export async function executeCode(
     const friendly = /timeout|timed out|abort/i.test(message)
       ? '沙箱正在冷啟動（容器剛開機），這次逾時了。請用相同的工具與程式碼立即重試一次，通常第二次就會成功。'
       : message;
-    return { success: false, stdout: '', stderr: '', results: [], error: friendly, sandbox: null };
+    return { success: false, stdout: '', stderr: '', results: [], error: friendly, sandbox: null, egress: [] };
   }
 }
 

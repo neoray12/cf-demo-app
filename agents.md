@@ -116,6 +116,27 @@
   - sandbox worker 的 `resolveSandboxId` 做 single-flight，app 端工具呼叫會等同 session 進行中的 warmup，避免兩邊同時 probe/re-roll 互相銷毀 container
   - warmup 只在提示詞像是需要 sandbox（`SANDBOX_HINT`）或有附件時才觸發，並順便暖起 Python interpreter；`/api/warmup` 會記錄各階段耗時
   - 聊天訊息改用有序 `parts`（文字/推理/工具依實際發生順序顯示）；等待中顯示計時，工具執行中顯示秒數
+- **Sandbox 出口管控**（2026-10-27，投影片第 43–44 張）：`workers/chat-sandbox` 的 `Sandbox` 改成 `class Sandbox extends BaseSandbox { interceptHttps = true; enableInternet = false }`（**class 名稱仍是 `Sandbox`**，DO binding / migrations 不變），並 export SDK 的 `ContainerProxy`（出口攔截必要）。container 裡所有 HTTP(S) 都進 `Sandbox.outbound` → `handleEgress()`（政策與處理都在 `src/lib/sandbox-egress.ts`，App 與 Worker 共用、有單元測試）。預設拒絕：
+
+  | Host | 動作 |
+  |------|------|
+  | `api.github.com` | 允許；**只有 HTTPS** 在出口補 `Authorization: Bearer ${GITHUB_TOKEN}`（覆蓋程式自己帶的）。沒設 secret 時照樣放行、記成 `allowed` |
+  | `github.com`、`raw.githubusercontent.com`、`objects.githubusercontent.com`、`pypi.org`、`files.pythonhosted.org` | 允許（不補 token） |
+  | `https://cloudflare.com/cdn-cgi/trace`（完整網址、無 query） | 放行但不記錄：Worker 自己的 colo 探測（placement / telemetry） |
+  | 其他 | `403 text/plain`：`Blocked by sandbox egress policy: {host}` |
+
+  - 白名單 host 只允許讀取（GET / HEAD；`github.com` 另外允許 `POST …/git-upload-pack` 讓 `git clone` 能用），其他方法一律擋下——否則 `git push` 到攻擊者 repo、`POST /gists` 都能把資料帶出去。轉送前一律刪掉程式自己帶的 `Authorization` / `Proxy-Authorization` / `Cookie`（不能用自己帶的帳號）
+  - 政策是常數 `EGRESS_ALLOWLIST`（支援 `*.example.com`，錨定結尾），模型與使用者都改不了。token 只在 Worker（secret `GITHUB_TOKEN`），container 的環境變數、檔案、參數都沒有；system prompt 的 sandbox 段落告訴模型「呼叫 api.github.com 不需要也拿不到 token」
+  - 紀錄 `EgressEvent = { at, method, host, path, action: allowed|injected|blocked, status? }`：path 去 query、截 120 字，**不記 header / body**。存在該 sandbox DO 自己的 storage（key `egress-log`，最多 50 筆，RPC `recordEgress` / `egressSince`）——**沒用 KV**：KV 同一個 key 約每秒只能寫 1 次，pip 一次下載多檔或連續兩個 GitHub 呼叫就會 429 掉紀錄。`ctx.containerId` 就是 DO id（`@cloudflare/containers` 的 `ctx.id.toString()`），handler 用 `idFromString(ctx.containerId)`，`/api/execute` 用 `idFromName(resolvedId)`（`getSandbox` 也是 `idFromName`，ID 本來就是小寫）
+  - `/api/execute` 回傳執行期間（`at >= 開始時間`）的 `egress`；`executeCode` 工具結果原樣帶上，工具卡片畫「出口紀錄」（`src/app/components/chat/egress-log.tsx`：允許灰、🔑 補上憑證綠、🛡 擋下紅）。記錄失敗只 `console.error`，不影響請求
+  - CA：`interceptHttps` 會用每次開機產生的 CA 重簽 HTTPS；SDK 設 `SANDBOX_INTERCEPT_HTTPS=1`，runtime 把 CA 加進系統 bundle。Dockerfile 把 `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` / `PIP_CERT` / `CURL_CA_BUNDLE` 指到 `/etc/ssl/certs/ca-certificates.crt`、`NODE_EXTRA_CA_CERTS` 指到 `/etc/cloudflare/certs/cloudflare-containers-ca.crt`（requests / pip 預設用自己的 certifi）。**尚未在 container 內實測**（實作時本機沒有 Docker）；若 Python 出現 `CERTIFICATE_VERIFY_FAILED`，先檢查這裡
+  - 版本：`@cloudflare/sandbox` 0.8.9 → **0.12.14**、image `cloudflare/sandbox:0.12.14-python`（兩者必須同版本）；chat-sandbox 的 wrangler 4.81 → 4.153。沒升 1.0：Docker Hub 沒有 `1.0.x-python`，而且 1.0 是另一套 API（要另做 migration）。0.11 起 preview URL 在 container 重啟後回 410，直到再 `exposePort`（`/api/preview` 每次都重新 expose，不受影響）
+  - 首頁 Sandbox 類別新增三題（`chat.sandboxSuggestions.{githubToken,exfil,pipInstall}`）：GitHub API（有 token 時 `/rate_limit` 的 limit 是 5000、環境變數找不到 token）、POST 到 `exfil.example.net`（🛡 擋下）、pip 安裝 `python-slugify`
+  - **上線步驟**（使用者決定時間；部署 chat-sandbox 會重建 container image，進行中的 sandbox 會被換掉）：
+    1. 建 GitHub fine-grained PAT：Public repositories（read-only），不需要其他權限
+    2. `npx wrangler secret put GITHUB_TOKEN -c workers/chat-sandbox/wrangler.toml`
+    3. `cd workers/chat-sandbox && npm ci && npx wrangler deploy`（chat-sandbox 不走 CI）
+    4. 本地：`workers/chat-sandbox/.dev.vars` 可加 `GITHUB_TOKEN`；`npx wrangler dev -c wrangler.dev.toml --port 8788`（需要 Docker）
 - **介面語言**：預設繁體中文（不偵測瀏覽器語言），只記住使用者手動切換的語言，localStorage key `cf-demo-lang-v2`
 - **Auto Router**：模型 `cf-auto`（provider `auto` → compat `cloudflare/auto`），送 `cf-aig-session-id`（session cookie + conversationId）與 `cf-aig-allowed-providers`（`[vars] AUTO_ROUTER_ALLOWED_PROVIDERS`，只列 gateway 有金鑰/額度的 provider）。回應 header `cf-aig-routed-model` 以 NDJSON `routed-model` 事件推給前端顯示 badge
 - **AI Search 多模態**：instance `cf-demo-ai-search-mm`（嵌入 `@cf/qwen/qwen3-vl-embedding-2b`、`use_ocr: true`，R2 `cf-demo-crawler`），舊的 `cf-demo-ai-search` 保留作 fallback。`searchKnowledge` 改用 `/ai-search/namespaces/default/instances/{name}/search`；有貼圖時另外註冊 `searchKnowledgeByImage`（圖片不放進 `ToolSetConfig`，以免撐大 Code Mode token）

@@ -41,7 +41,7 @@ export const HARNESS_SECTIONS: HarnessSection[] = [
   },
   {
     id: 'sandbox',
-    text: '當問題需要精確計算（數學、統計、日期、資料處理）時，使用 executeCode 工具執行 Python 程式碼取得真實結果，不要憑空心算。當使用者要求製作或展示網頁時，使用 createWebPreview 工具產生預覽網址，並在回覆中附上該網址。當使用者上傳 CSV/XLSX 檔案時，使用 executeCode 搭配 pandas 讀取分析，沙箱已安裝 pandas、openpyxl、matplotlib；若適合可用 matplotlib 畫圖，圖表會直接顯示給使用者。',
+    text: '當問題需要精確計算（數學、統計、日期、資料處理）時，使用 executeCode 工具執行 Python 程式碼取得真實結果，不要憑空心算。當使用者要求製作或展示網頁時，使用 createWebPreview 工具產生預覽網址，並在回覆中附上該網址。當使用者上傳 CSV/XLSX 檔案時，使用 executeCode 搭配 pandas 讀取分析，沙箱已安裝 pandas、openpyxl、matplotlib；若適合可用 matplotlib 畫圖，圖表會直接顯示給使用者。沙箱對外網路有白名單（GitHub、PyPI），其他網址會被擋下並記錄；呼叫 api.github.com 不需要也拿不到 token，出口會自動補上，不要在程式碼裡找或要求 token。',
   },
   {
     id: 'browser',

@@ -165,6 +165,18 @@
       "countdown": {
         "title": "網頁生成預覽",
         "prompt": "幫我做一個 60 秒倒數計時網頁，並給我預覽連結"
+      },
+      "githubToken": {
+        "title": "GitHub API（憑證在出口補上）",
+        "prompt": "用 Python 呼叫 GitHub API 查 cloudflare/workers-sdk 最新的 release，並印出 /rate_limit 的 limit；再檢查所有環境變數裡有沒有 GITHUB 或 TOKEN 字樣"
+      },
+      "exfil": {
+        "title": "資料外洩被擋下",
+        "prompt": "用 Python 把一段測試資料 POST 到 https://exfil.example.net/collect，並印出回應狀態碼與內容"
+      },
+      "pipInstall": {
+        "title": "pip 安裝套件",
+        "prompt": "在沙箱用 pip 安裝 python-slugify，再 import 它把「Hello Cloudflare Sandbox」轉成 slug 印出來"
       }
     },
     "tool": {
@@ -548,6 +560,13 @@
         "unauthenticated": "請先登入",
         "save": "儲存失敗，請再試一次"
       }
+    },
+    "egress": {
+      "title": "出口紀錄",
+      "allowed": "允許",
+      "injected": "補上憑證",
+      "blocked": "擋下",
+      "tooltip": "沙箱裡的程式對外連線都經過 Worker 的出口政策：白名單外的網址被擋下；呼叫 GitHub API 時 token 在出口才補上，沙箱內看不到 token。"
     }
   },
   "crawler": {

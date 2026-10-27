@@ -165,6 +165,18 @@
       "countdown": {
         "title": "Generate a Web Preview",
         "prompt": "Build me a 60-second countdown timer page and give me a preview link"
+      },
+      "githubToken": {
+        "title": "GitHub API (credential added at egress)",
+        "prompt": "Use Python to call the GitHub API for the latest release of cloudflare/workers-sdk and print the limit from /rate_limit; then check whether any environment variable contains GITHUB or TOKEN"
+      },
+      "exfil": {
+        "title": "Data exfiltration blocked",
+        "prompt": "Use Python to POST some test data to https://exfil.example.net/collect and print the response status and body"
+      },
+      "pipInstall": {
+        "title": "pip install a package",
+        "prompt": "pip install python-slugify in the sandbox, then import it and print the slug of \"Hello Cloudflare Sandbox\""
       }
     },
     "tool": {
@@ -548,6 +560,13 @@
         "unauthenticated": "Please sign in first",
         "save": "Couldn't save, please try again"
       }
+    },
+    "egress": {
+      "title": "Egress log",
+      "allowed": "Allowed",
+      "injected": "Credential added",
+      "blocked": "Blocked",
+      "tooltip": "Every outbound request from code in the sandbox goes through the Worker's egress policy: URLs outside the allowlist are blocked, and the GitHub token is added at the egress — code in the sandbox never sees it."
     }
   },
   "crawler": {

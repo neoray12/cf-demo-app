@@ -10,6 +10,7 @@ import {
   Cloud,
   Globe,
   Hand,
+  KeyRound,
   MailCheck,
   RotateCcw,
   ShieldAlert,
@@ -171,6 +172,10 @@ export function SuggestionCategories({
         { title: t("chat.sandboxSuggestions.factorial.title"), desc: t("chat.sandboxSuggestions.factorial.prompt"), icon: Terminal },
         { title: t("chat.sandboxSuggestions.fibonacci.title"), desc: t("chat.sandboxSuggestions.fibonacci.prompt"), icon: Terminal },
         { title: t("chat.sandboxSuggestions.countdown.title"), desc: t("chat.sandboxSuggestions.countdown.prompt"), icon: Globe },
+        // Egress control: credential added at the egress / blocked exfiltration / allowlisted PyPI
+        { title: t("chat.sandboxSuggestions.githubToken.title"), desc: t("chat.sandboxSuggestions.githubToken.prompt"), icon: KeyRound },
+        { title: t("chat.sandboxSuggestions.exfil.title"), desc: t("chat.sandboxSuggestions.exfil.prompt"), icon: ShieldAlert },
+        { title: t("chat.sandboxSuggestions.pipInstall.title"), desc: t("chat.sandboxSuggestions.pipInstall.prompt"), icon: Terminal },
       ],
     },
     {

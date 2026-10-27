@@ -9,8 +9,54 @@
  */
 
 import { Hono } from 'hono';
-import { getSandbox, proxyToSandbox, Sandbox } from '@cloudflare/sandbox';
-export { Sandbox };
+import { ContainerProxy, getSandbox, proxyToSandbox, Sandbox as BaseSandbox } from '@cloudflare/sandbox';
+import { appendEgress, egressSince, handleEgress, type EgressEvent } from '../../../src/lib/sandbox-egress';
+// Required for outbound interception: the container's traffic is dispatched
+// through ctx.exports.ContainerProxy to the handler below.
+export { ContainerProxy };
+
+// ── Egress control ──
+//
+// Every HTTP(S) request the model's code makes inside the container goes
+// through Sandbox.outbound (default deny, see src/lib/sandbox-egress.ts).
+// GitHub API calls get GITHUB_TOKEN added here, so the token never exists in
+// the container (no env var, no file, no argument). Each decision is kept in
+// this Durable Object's own storage — strongly consistent and not subject to
+// KV's one-write-per-second-per-key limit, which a burst of pip downloads or
+// two back-to-back API calls would exceed.
+const EGRESS_LOG_KEY = 'egress-log';
+
+// Class name stays `Sandbox`: the DO binding and migrations refer to it.
+export class Sandbox extends BaseSandbox<Env> {
+  // Route HTTPS through the handler too. The SDK sets SANDBOX_INTERCEPT_HTTPS,
+  // and the runtime adds the ephemeral CA to the system bundle; the Dockerfile
+  // points Python/pip/curl/Node at that bundle.
+  interceptHttps = true;
+  // Nothing leaves except through the outbound handler (non-HTTP ports are
+  // closed too). Takes effect when a container starts.
+  enableInternet = false;
+
+  async recordEgress(event: EgressEvent): Promise<void> {
+    const list = (await this.ctx.storage.get<EgressEvent[]>(EGRESS_LOG_KEY)) ?? null;
+    await this.ctx.storage.put(EGRESS_LOG_KEY, appendEgress(list, event));
+  }
+
+  async egressSince(start: number): Promise<EgressEvent[]> {
+    return egressSince((await this.ctx.storage.get<EgressEvent[]>(EGRESS_LOG_KEY)) ?? null, start);
+  }
+}
+
+// ctx.containerId is this Durable Object's id (`ctx.id.toString()` in
+// @cloudflare/containers), i.e. env.Sandbox.idFromName(resolvedSandboxId).
+Sandbox.outbound = (request, rawEnv, ctx) => {
+  // The SDK types env as the global Cloudflare.Env; this Worker's bindings are Env.
+  const env = rawEnv as unknown as Env;
+  return handleEgress(request, {
+    fetch: (r) => fetch(r),
+    githubToken: env.GITHUB_TOKEN || undefined,
+    record: (event) => env.Sandbox.get(env.Sandbox.idFromString(ctx.containerId)).recordEgress(event),
+  });
+};
 
 // Keep containers alive between tool calls in the same conversation.
 // Preview URLs die when the container sleeps, so this is also the preview TTL.
@@ -44,6 +90,8 @@ interface Env {
   SANDBOX_API_SECRET: string;
   KV: KVNamespace;
   AVOID_COLOS?: string;
+  // Secret, read only by the outbound handler — never passed to the container.
+  GITHUB_TOKEN?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -59,6 +107,13 @@ function sandboxFor(env: Env, sessionId: string) {
     sleepAfter: DEFAULT_SLEEP_AFTER,
     containerTimeouts: CONTAINER_TIMEOUTS,
   });
+}
+
+// Raw DO stub for our own RPC methods (getSandbox() only wraps SDK methods).
+// getSandbox() resolves ids the same way: idFromName(sanitized id), and our
+// ids are already lowercase, so this is the same Durable Object.
+function sandboxStub(env: Env, sandboxId: string) {
+  return env.Sandbox.get(env.Sandbox.idFromName(sandboxId));
 }
 
 // ── Colo avoidance ──
@@ -332,6 +387,7 @@ app.post('/api/execute', async (c) => {
   const resolvedId = await resolveSandboxId(c.env, sessionId);
   await touch(c.env, resolvedId);
   const sandbox = sandboxFor(c.env, resolvedId);
+  const egressStart = Date.now();
 
   try {
     const [execution, sandboxInfo] = await Promise.all([
@@ -346,6 +402,13 @@ app.post('/api/execute', async (c) => {
         image: r.png ? `data:image/png;base64,${r.png}` : r.jpeg ? `data:image/jpeg;base64,${r.jpeg}` : null,
       }))
       .filter((r) => r.text || r.image);
+    // Egress decisions made while this code ran (the log never failing the run)
+    const egress = await sandboxStub(c.env, resolvedId)
+      .egressSince(egressStart)
+      .catch((e: Error) => {
+        console.error(`[EXECUTE] ${sessionId} egress log unavailable:`, e.message);
+        return [] as EgressEvent[];
+      });
 
     return c.json({
       success: !execution.error,
@@ -354,6 +417,7 @@ app.post('/api/execute', async (c) => {
       results,
       error: execution.error ? `${execution.error.name}: ${execution.error.message}` : null,
       sandbox: sandboxInfo,
+      egress,
     });
   } catch (err) {
     const message = (err as Error).message || String(err);
@@ -535,7 +599,7 @@ export default {
     // MUST run before Hono: routes preview-subdomain requests
     // (8000-sbx-xxx-token.chat-sandbox.neokung.work) into the container.
     // Skipping this would send them into the bearer-auth middleware → 401.
-    const proxied = await proxyToSandbox(request, env);
+    const proxied = await proxyToSandbox<Sandbox, Env>(request, env);
     if (proxied) return proxied;
 
     return app.fetch(request, env, ctx);

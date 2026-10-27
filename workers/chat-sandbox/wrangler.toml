@@ -69,3 +69,7 @@ AVOID_COLOS = "HKG"
 
 # Secrets (set via wrangler secret put):
 # - SANDBOX_API_SECRET: shared secret for authenticating requests from cf-demo-app
+# - GITHUB_TOKEN (optional): fine-grained PAT, public repos read-only. Added to
+#   HTTPS api.github.com requests by the egress handler (Sandbox.outbound) —
+#   never passed into the container. Without it GitHub calls still go out,
+#   unauthenticated (60 req/h).
