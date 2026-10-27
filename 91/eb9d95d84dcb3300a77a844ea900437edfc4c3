@@ -1,0 +1,21 @@
+src/lib/reports.test.ts
+  s_ffad672f1c00be::t_5fbc435973bc33 1-188
+src/lib/reports.ts
+  s_ffad672f1c00be::t_c9e818069b709e 1-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "91eb9d95d84dcb3300a77a844ea900437edfc4c3",
+  "prompts": {},
+  "sessions": {
+    "s_ffad672f1c00be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa12f633139417dd8",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
