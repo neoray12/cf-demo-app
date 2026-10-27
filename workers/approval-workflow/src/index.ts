@@ -8,6 +8,7 @@ import { EmailMessage } from 'cloudflare:email';
 import { addEvent, getApproval, transition } from '../../../src/lib/approvals';
 import { signApprovalLink } from '../../../src/lib/approval-token';
 import { approvalEmail, buildMime, parseRecipients } from '../../../src/lib/approval-mail';
+import { replyAddress } from '../../../src/lib/approval-reply';
 
 interface Env {
   APPROVAL_WORKFLOW: Workflow<Params>;
@@ -17,6 +18,8 @@ interface Env {
   APP_URL: string;
   MAIL_FROM: string;
   APPROVER_EMAIL: string;
+  /** Domain of the signed reply-to address (Email Routing, subaddressing on). */
+  REPLY_DOMAIN?: string;
   LOG_APPROVAL_LINK?: string;
 }
 
@@ -25,19 +28,23 @@ type Decision = { decision: 'approve' | 'reject'; by: string };
 
 const DECISION_TIMEOUT_MS = 24 * 3600 * 1000;
 
+function replyDomain(env: Env): string {
+  return env.REPLY_DOMAIN || env.MAIL_FROM.split('@')[1] || 'mail.neokung.work';
+}
+
 /**
  * Sends to every approver in APPROVER_EMAIL. Returns who got it and who failed:
  * a failed send (e.g. an address not yet verified in Email Routing) is
  * recorded on the timeline instead of failing the Workflow.
  */
-async function sendMail(env: Env, subject: string, text: string, html: string): Promise<{ sent: string[]; failed: string[] }> {
+async function sendMail(env: Env, subject: string, text: string, html: string, replyTo?: string): Promise<{ sent: string[]; failed: string[] }> {
   const to = parseRecipients(env.APPROVER_EMAIL);
   if (!env.APPROVAL_EMAIL || to.length === 0) return { sent: [], failed: [] };
   const host = env.MAIL_FROM.split('@')[1] ?? 'localhost';
   const sent: string[] = [];
   const failed: string[] = [];
   for (const addr of to) {
-    const raw = buildMime({ from: env.MAIL_FROM, to: addr, subject, text, html, messageId: `<${crypto.randomUUID()}@${host}>` });
+    const raw = buildMime({ from: env.MAIL_FROM, to: addr, subject, text, html, replyTo, messageId: `<${crypto.randomUUID()}@${host}>` });
     try {
       await env.APPROVAL_EMAIL.send(new EmailMessage(env.MAIL_FROM, addr, raw));
       sent.push(addr);
@@ -65,7 +72,9 @@ export class ApprovalWorkflow extends WorkflowEntrypoint<Env, Params> {
       const token = await signApprovalLink(this.env.APPROVAL_SECRET, id, Date.now() + DECISION_TIMEOUT_MS);
       const link = `${this.env.APP_URL}/approvals/${id}?t=${encodeURIComponent(token)}`;
       const mail = approvalEmail({ ...a, args: JSON.parse(a.argsJson) as Record<string, unknown> }, link);
-      const { sent, failed } = await sendMail(this.env, mail.subject, mail.text, mail.html);
+      // Replies ("核准" / "拒絕") come back to email() through this signed sub-address.
+      const replyTo = await replyAddress(this.env.APPROVAL_SECRET, id, replyDomain(this.env));
+      const { sent, failed } = await sendMail(this.env, mail.subject, mail.text, mail.html, replyTo);
       if (this.env.LOG_APPROVAL_LINK === '1') console.log(JSON.stringify({ event: 'approval.link', approvalId: id, link }));
       if (sent.length) await addEvent(db, id, { step: 'email', label: `已寄審批信給主管（${sent.join('、')}）` });
       if (failed.length) await addEvent(db, id, { step: 'email_failed', label: `寄信失敗：${failed.join('；')}` });
