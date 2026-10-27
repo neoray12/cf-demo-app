@@ -1,0 +1,31 @@
+src/app/api/approvals/[id]/decision/route.ts
+  s_35f257df545d16::t_35e9f922776982 2,28,38
+src/lib/approvals.test.ts
+  s_4b231bd82abb1f::t_d7b0daadbb4a5d 2,114-170
+src/lib/approvals.ts
+  s_4b231bd82abb1f::t_9777121de1dab4 309-324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "149c355a15d78d6b632ba341ca239247fb0ddf0d",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_4b231bd82abb1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6590e61e3386073e",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
