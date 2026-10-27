@@ -10,6 +10,7 @@ import { addEvent, getApproval, recordDecision, transition } from '../../../src/
 import { signApprovalLink } from '../../../src/lib/approval-token';
 import { approvalEmail, buildMime, parseRecipients } from '../../../src/lib/approval-mail';
 import { handleReply, htmlToText, replyAddress, replySubject } from '../../../src/lib/approval-reply';
+import { startWorkflowInstance } from '../../../src/lib/approval-service';
 
 interface Env {
   APPROVAL_WORKFLOW: Workflow<Params>;
@@ -191,9 +192,10 @@ export default {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
     if (url.pathname === '/start' && typeof body.approvalId === 'string') {
-      const instance = await env.APPROVAL_WORKFLOW.create({ id: body.approvalId, params: { approvalId: body.approvalId } });
-      console.log(JSON.stringify({ event: 'approval.start', approvalId: body.approvalId, instanceId: instance.id }));
-      return Response.json({ instanceId: instance.id });
+      const started = Date.now();
+      const instanceId = await startWorkflowInstance(env.APPROVAL_WORKFLOW, body.approvalId);
+      console.log(JSON.stringify({ event: 'approval.start', approvalId: body.approvalId, instanceId, ms: Date.now() - started }));
+      return Response.json({ instanceId });
     }
     if (url.pathname === '/event' && typeof body.instanceId === 'string' && (body.decision === 'approve' || body.decision === 'reject')) {
       const instance = await env.APPROVAL_WORKFLOW.get(body.instanceId);
