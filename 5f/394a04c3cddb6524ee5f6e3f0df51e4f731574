@@ -1,0 +1,35 @@
+src/lib/chat-sandbox.test.ts
+  s_ffad672f1c00be::t_6d2069b095d45f 44-53
+src/lib/report-service.test.ts
+  s_ffad672f1c00be::t_cbe9268dd72304 116-162
+agents.md
+  s_ffad672f1c00be::t_2f6fd3915aaa93 335-336
+src/lib/chat-sandbox.ts
+  s_ffad672f1c00be::t_ddc3cfb33c03c8 7,193-200
+src/lib/chat-tools-report.test.ts
+  s_ffad672f1c00be::t_fe41a89400620a 61-100
+src/lib/chat-tools.ts
+  s_ffad672f1c00be::t_c3dd7253d079db 7,563,574-575
+src/lib/report-service.ts
+  s_ffad672f1c00be::t_ac70b8d7805f5d 8,38-39,114-152,181-196
+src/lib/system-prompt.test.ts
+  s_ffad672f1c00be::t_cbc575c15df341 63-67
+src/lib/system-prompt.ts
+  s_ffad672f1c00be::t_111bfbd9b91e4d 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "5f394a04c3cddb6524ee5f6e3f0df51e4f731574",
+  "prompts": {},
+  "sessions": {
+    "s_ffad672f1c00be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa12f633139417dd8",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
