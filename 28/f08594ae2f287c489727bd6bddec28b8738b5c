@@ -1,0 +1,31 @@
+src/lib/approval-mail.ts
+  s_35f257df545d16::t_0a79d9cd5d599c 27,36,56-59,69-70
+workers/approval-workflow/src/index.ts
+  s_35f257df545d16::t_c8e4f090cc997c 11,21-22,31-34,40,47,75-77
+src/lib/approval-mail.test.ts
+  s_4b231bd82abb1f::t_2a9a472e95634f 23-31,54-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "28f08594ae2f287c489727bd6bddec28b8738b5c",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_4b231bd82abb1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6590e61e3386073e",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
