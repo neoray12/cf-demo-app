@@ -9,12 +9,11 @@ account_id = "5efa272dc28e4e3933324c44165b6dbe"
 workers_dev = true
 
 # Inbound: managers can approve or reject by replying to the approval email.
-# The approval mail's Reply-To is approvals+{approvalId}.{sig}@mail.neokung.work;
+# The approval mail's Reply-To is approvals+{approvalId}.{sig}@neokung.work;
 # with Subaddressing on, Email Routing hands it to this rule's email() handler.
-# Deploying creates the Email Routing rule. Prerequisites (Dashboard, once):
-# Email Routing on the subdomain mail.neokung.work (apex MX untouched) and
-# Subaddressing enabled.
-addresses = ["approvals@mail.neokung.work"]
+# Email Routing is zone-level, so it runs on the apex (neokung.work); sending
+# stays on mail.neokung.work (Email Sending). Deploying creates the rule.
+addresses = ["approvals@neokung.work"]
 
 [observability]
 enabled = true
@@ -47,7 +46,7 @@ MAIL_FROM = "approvals@mail.neokung.work"
 # Comma-separated; every address must be in allowed_destination_addresses above.
 APPROVER_EMAIL = "neo@cloudflare.com, neoray12@hotmail.com"
 # Domain of the signed reply-to sub-address (must match `addresses` above).
-REPLY_DOMAIN = "mail.neokung.work"
+REPLY_DOMAIN = "neokung.work"
 
 # Secret (wrangler secret put APPROVAL_SECRET -c workers/approval-workflow/wrangler.toml):
 # - APPROVAL_SECRET: same value as the app's APPROVAL_SECRET

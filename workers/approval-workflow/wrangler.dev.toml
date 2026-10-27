@@ -23,7 +23,7 @@ MAIL_FROM = "approvals@neokung.work"
 #   curl -X POST 'http://localhost:8790/cdn-cgi/local/email' --url-query 'from=neo@cloudflare.com' \
 #     --url-query 'to=<the approval's reply address>' --data-binary @reply.eml
 APPROVER_EMAIL = "neo@cloudflare.com"
-REPLY_DOMAIN = "mail.neokung.work"
+REPLY_DOMAIN = "neokung.work"
 # No email locally: the approval link and reply address (and reply
 # confirmations) are printed to the worker log instead.
 LOG_APPROVAL_LINK = "1"
