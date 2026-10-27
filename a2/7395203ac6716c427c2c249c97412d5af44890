@@ -1,0 +1,19 @@
+agents.md
+  s_51968567f71c44::t_2ba8494bcc7adb 119-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a27395203ac6716c427c2c249c97412d5af44890",
+  "prompts": {},
+  "sessions": {
+    "s_51968567f71c44": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a9e4182d0f2796067",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
