@@ -53,7 +53,17 @@ export function matchesHost(pattern: string, host: string): boolean {
   return p === h;
 }
 
-export function decideEgress(url: string): { action: EgressAction; host: string; probe?: true } {
+// Allowlisted hosts are read-only: an allowed host that accepts uploads (a gist,
+// a git push) would otherwise be an exfiltration channel of its own. The one
+// write-shaped exception is git's pack negotiation, which `git clone` needs.
+const READ_METHODS = new Set(['GET', 'HEAD']);
+
+function isReadRequest(host: string, method: string, path: string): boolean {
+  if (READ_METHODS.has(method)) return true;
+  return method === 'POST' && host === 'github.com' && path.endsWith('/git-upload-pack');
+}
+
+export function decideEgress(url: string, method = 'GET'): { action: EgressAction; host: string; probe?: true } {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -65,7 +75,7 @@ export function decideEgress(url: string): { action: EgressAction; host: string;
     return { action: 'allowed', host, probe: true };
   }
   const rule = EGRESS_ALLOWLIST.find((r) => matchesHost(r.host, host));
-  if (!rule) return { action: 'blocked', host };
+  if (!rule || !isReadRequest(host, method.toUpperCase(), parsed.pathname)) return { action: 'blocked', host };
   // Never add a credential to plain HTTP — it would cross the wire in clear text.
   if (rule.inject && parsed.protocol === 'https:') return { action: 'injected', host };
   return { action: 'allowed', host };
@@ -105,6 +115,8 @@ export function egressSince(list: EgressEvent[] | null, start: number): EgressEv
   return (list ?? []).filter((e) => e.at >= start);
 }
 
+const STRIPPED_HEADERS = ['authorization', 'proxy-authorization', 'cookie'];
+
 export interface EgressDeps {
   fetch: (request: Request) => Promise<Response>;
   /** GitHub token held by the Worker; never reaches the container. */
@@ -119,7 +131,7 @@ export interface EgressDeps {
  */
 export async function handleEgress(request: Request, deps: EgressDeps): Promise<Response> {
   const at = (deps.now ?? Date.now)();
-  const decision = decideEgress(request.url);
+  const decision = decideEgress(request.url, request.method);
   if (decision.probe) return deps.fetch(request);
 
   let action = decision.action;
@@ -130,10 +142,12 @@ export async function handleEgress(request: Request, deps: EgressDeps): Promise<
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     });
   } else {
-    let outgoing = request;
+    // The code's own credentials never leave: otherwise it could act as any
+    // account it brings a token for (e.g. push data to an attacker's repo).
+    const outgoing = new Request(request);
+    for (const h of STRIPPED_HEADERS) outgoing.headers.delete(h);
     if (action === 'injected') {
       if (deps.githubToken) {
-        outgoing = new Request(request);
         outgoing.headers.set('Authorization', `Bearer ${deps.githubToken}`);
       } else {
         // No secret configured: still allowed, but nothing was injected.

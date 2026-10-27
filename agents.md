@@ -125,6 +125,7 @@
   | `https://cloudflare.com/cdn-cgi/trace`（完整網址、無 query） | 放行但不記錄：Worker 自己的 colo 探測（placement / telemetry） |
   | 其他 | `403 text/plain`：`Blocked by sandbox egress policy: {host}` |
 
+  - 白名單 host 只允許讀取（GET / HEAD；`github.com` 另外允許 `POST …/git-upload-pack` 讓 `git clone` 能用），其他方法一律擋下——否則 `git push` 到攻擊者 repo、`POST /gists` 都能把資料帶出去。轉送前一律刪掉程式自己帶的 `Authorization` / `Proxy-Authorization` / `Cookie`（不能用自己帶的帳號）
   - 政策是常數 `EGRESS_ALLOWLIST`（支援 `*.example.com`，錨定結尾），模型與使用者都改不了。token 只在 Worker（secret `GITHUB_TOKEN`），container 的環境變數、檔案、參數都沒有；system prompt 的 sandbox 段落告訴模型「呼叫 api.github.com 不需要也拿不到 token」
   - 紀錄 `EgressEvent = { at, method, host, path, action: allowed|injected|blocked, status? }`：path 去 query、截 120 字，**不記 header / body**。存在該 sandbox DO 自己的 storage（key `egress-log`，最多 50 筆，RPC `recordEgress` / `egressSince`）——**沒用 KV**：KV 同一個 key 約每秒只能寫 1 次，pip 一次下載多檔或連續兩個 GitHub 呼叫就會 429 掉紀錄。`ctx.containerId` 就是 DO id（`@cloudflare/containers` 的 `ctx.id.toString()`），handler 用 `idFromString(ctx.containerId)`，`/api/execute` 用 `idFromName(resolvedId)`（`getSandbox` 也是 `idFromName`，ID 本來就是小寫）
   - `/api/execute` 回傳執行期間（`at >= 開始時間`）的 `egress`；`executeCode` 工具結果原樣帶上，工具卡片畫「出口紀錄」（`src/app/components/chat/egress-log.tsx`：允許灰、🔑 補上憑證綠、🛡 擋下紅）。記錄失敗只 `console.error`，不影響請求

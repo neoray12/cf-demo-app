@@ -55,6 +55,21 @@ describe('decideEgress', () => {
   });
 });
 
+describe('decideEgress methods (no uploads through allowlisted hosts)', () => {
+  it('allows only reads on allowlisted hosts', () => {
+    expect(decideEgress('https://api.github.com/rate_limit', 'HEAD').action).toBe('injected');
+    expect(decideEgress('https://api.github.com/gists', 'POST')).toEqual({ action: 'blocked', host: 'api.github.com' });
+    expect(decideEgress('https://github.com/attacker/r.git/git-receive-pack', 'POST').action).toBe('blocked');
+    expect(decideEgress('https://pypi.org/simple/', 'PUT').action).toBe('blocked');
+    expect(decideEgress('https://raw.githubusercontent.com/a/b/main/x', 'DELETE').action).toBe('blocked');
+  });
+
+  it('still lets git clone negotiate packs', () => {
+    expect(decideEgress('https://github.com/cloudflare/workers-sdk.git/git-upload-pack', 'POST').action).toBe('allowed');
+    expect(decideEgress('https://api.github.com/x/git-upload-pack', 'POST').action).toBe('blocked');
+  });
+});
+
 describe('matchesHost', () => {
   it('anchors wildcard patterns to the end of the host', () => {
     expect(matchesHost('*.example.com', 'a.example.com')).toBe(true);
@@ -138,6 +153,26 @@ describe('handleEgress', () => {
     await handleEgress(new Request('https://api.github.com/rate_limit'), h.deps);
     expect(h.sent[0]?.headers.get('authorization')).toBeNull();
     expect(h.recorded[0]?.action).toBe('allowed');
+  });
+
+  it("strips the code's own credentials so it cannot act as someone else", async () => {
+    const h = harness();
+    const headers = { Authorization: 'Bearer ghp_attacker', Cookie: 'user_session=x', 'Proxy-Authorization': 'Basic x' };
+    await handleEgress(new Request('https://api.github.com/user', { headers }), h.deps);
+    await handleEgress(new Request('https://github.com/a/b.git/info/refs', { headers }), h.deps);
+    for (const r of h.sent) {
+      expect(r.headers.get('authorization')).toBeNull();
+      expect(r.headers.get('cookie')).toBeNull();
+      expect(r.headers.get('proxy-authorization')).toBeNull();
+    }
+  });
+
+  it('blocks uploads to allowlisted hosts without forwarding them', async () => {
+    const h = harness({ token: 'ghp_secret' });
+    const res = await handleEgress(new Request('https://api.github.com/gists', { method: 'POST', body: '{}' }), h.deps);
+    expect(res.status).toBe(403);
+    expect(h.sent).toHaveLength(0);
+    expect(h.recorded[0]).toMatchObject({ method: 'POST', host: 'api.github.com', action: 'blocked', status: 403 });
   });
 
   it('never adds the token to plain HTTP', async () => {
