@@ -67,6 +67,15 @@ describe('replyDecision', () => {
   it.each(['我再想想', '', '   ', 'not sure', 'hmm maybe later?? no idea', 'nope'])('%j → null', (t) => {
     expect(replyDecision(t)).toBeNull();
   });
+  it.each(['核准嗎？', '准不准?', 'Approve?', 'OK?', '核准前想先確認金額', '核准不了', '准備好再說', '同意書呢', '不核准嗎?'])('a question or hedge %j → null', (t) => {
+    expect(replyDecision(t)).toBeNull();
+  });
+  it.each(['No problem, approved', 'No objection', 'No way, approve it', 'No access to email until Monday'])('"no" followed by more words %j → not a rejection', (t) => {
+    expect(replyDecision(t)).not.toBe('reject');
+  });
+  it.each(['核准謝謝', '核准了', '同意 👍', 'No, 金額不對', 'no'])('%j still decides', (t) => {
+    expect(replyDecision(t)).not.toBeNull();
+  });
   it('looks at the first non-empty line only', () => {
     expect(replyDecision('\n\n  核准\n不同意的話再說')).toBe('approve');
     expect(replyDecision('我再想想\n核准')).toBeNull();
@@ -204,6 +213,28 @@ describe('handleReply', () => {
     expect(state.status).toBe('pending');
     expect(state.events).toEqual([{ step: 'reply_ignored', label: '收到非主管的回信（attacker@example.com），已忽略' }]);
     expect(state.textRead).toBe(0);
+  });
+
+  it.each([
+    ['Auto-Submitted', 'auto-replied'],
+    ['X-Autoreply', 'yes'],
+    ['X-Autorespond', 'yes'],
+    ['Precedence', 'auto_reply'],
+    ['Precedence', 'bulk'],
+  ])('ignores an automatic reply (%s: %s) silently, without reading it', async (name, value) => {
+    const { state, deps } = setup({ text: 'No access to email until Monday' });
+    const headers = new Headers({ [name]: value });
+    const r = await handleReply({ from: 'neo@cloudflare.com', to: await replyAddress(SECRET, ID), headers }, deps);
+    expect(r).toMatchObject({ outcome: 'auto-reply', reply: null });
+    expect(state.status).toBe('pending');
+    expect(state.textRead).toBe(0);
+  });
+
+  it('treats Auto-Submitted: no as a person', async () => {
+    const { state, deps } = setup();
+    const r = await handleReply({ from: 'neo@cloudflare.com', to: await replyAddress(SECRET, ID), headers: new Headers({ 'Auto-Submitted': 'no' }) }, deps);
+    expect(r.outcome).toBe('approved');
+    expect(state.status).toBe('approved');
   });
 
   it('ignores a low-risk approval silently', async () => {

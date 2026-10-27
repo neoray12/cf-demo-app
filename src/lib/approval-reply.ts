@@ -88,16 +88,23 @@ export function htmlToText(html: string): string {
     .replace(/&amp;/g, '&');
 }
 
-// Rejections are checked first so "不核准" / "不同意" never read as approvals.
-// CJK words may be followed by anything ("核准，謝謝"); Latin words must end at
-// a word boundary ("no" but not "nope" / "not sure").
-const REJECT = /^(?:不\s*(?:核准|同意|准|批准)|拒絕|駁回|(?:rejected|reject|no)(?![a-z]))/i;
-const APPROVE = /^(?:核准|同意|准|批准|(?:approved|approve|yes|ok)(?![a-z]))/i;
+// A decision runs an irreversible write, so anything ambiguous is null (the
+// manager is asked again). Rejections are checked first so "不核准" / "不同意"
+// never read as approvals. A CJK keyword must be followed by the end of the
+// line, whitespace, punctuation or a polite tail ("核准，謝謝", "核准了") — not
+// by more words ("核准前想先確認", "准備", "同意書"). Latin words end at a word
+// boundary; a bare "no" only counts on its own or before punctuation
+// ("No." / "No, …"), not "No problem" / "No access to email until Monday".
+const TAIL = String.raw`(?=$|[\s,.!~。，、！～;；:：)）」』】]|謝謝|感謝|了|囉|喔|啦)`;
+const REJECT = new RegExp(String.raw`^(?:(?:不\s*(?:核准|同意|准|批准)|拒絕|駁回)${TAIL}|(?:rejected|reject)(?![a-z])|no(?=$|[,.!，。！]))`, 'i');
+const APPROVE = new RegExp(String.raw`^(?:(?:核准|同意|准|批准)${TAIL}|(?:approved|approve|yes|ok)(?![a-z]))`, 'i');
+// A question or a hedge is never a decision: "核准嗎？", "OK?", "核准不了".
+const QUESTION = /[?？]|嗎|呢|不了/;
 
 /** The decision in the first non-empty line of the reply, or null if unclear. */
 export function replyDecision(text: string): 'approve' | 'reject' | null {
   const first = (text ?? '').split(/\r?\n/).map((l) => l.trim()).find(Boolean);
-  if (!first) return null;
+  if (!first || QUESTION.test(first)) return null;
   // Leading quotes / brackets: 「核准」, "OK".
   const line = first.replace(/^[\s"'「『【(（\[*]+/, '');
   if (REJECT.test(line)) return 'reject';
@@ -113,8 +120,23 @@ export function replySubject(subject: string): string {
 
 // ── The email() handler's logic, with its side effects injected ──
 
+/**
+ * Out-of-office and other machine replies (RFC 3834 Auto-Submitted, the common
+ * X-Autoreply / X-Autorespond, Precedence: bulk | auto_reply | junk | list).
+ * They come from an approver's address to the signed Reply-To, so without this
+ * an auto-reply's first line could be read as a decision.
+ */
+export function isAutoReply(headers: { get(name: string): string | null } | undefined): boolean {
+  if (!headers) return false;
+  const auto = headers.get('auto-submitted');
+  if (auto && !/^\s*no\b/i.test(auto)) return true;
+  if (headers.get('x-autoreply') || headers.get('x-autorespond')) return true;
+  return /^\s*(bulk|auto_reply|junk|list)\b/i.test(headers.get('precedence') ?? '');
+}
+
 export type ReplyOutcome =
   | 'bad-address'
+  | 'auto-reply'
   | 'not-approver'
   | 'not-found'
   | 'not-high'
@@ -158,12 +180,14 @@ const STATUS_LABEL: Record<ApprovalStatus, string> = {
  * address, unknown approval, not an approver — never act as a mail relay).
  */
 export async function handleReply(
-  msg: { from: string; to: string },
+  msg: { from: string; to: string; headers?: { get(name: string): string | null } },
   deps: ReplyDeps,
 ): Promise<{ outcome: ReplyOutcome; approvalId: string | null; reply: string | null }> {
   const id = await parseReplyAddress(deps.secret, msg.to);
   if (!id) return { outcome: 'bad-address', approvalId: null, reply: null };
   const done = (outcome: ReplyOutcome, reply: string | null = null) => ({ outcome, approvalId: id, reply });
+  // Never answer a machine (mail loops) and never read it as a decision.
+  if (isAutoReply(msg.headers)) return done('auto-reply');
   const sender = bareAddress(msg.from);
 
   if (!isApprover(sender, deps.approvers)) {

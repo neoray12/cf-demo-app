@@ -132,7 +132,8 @@ async function sendConfirmation(env: Env, to: string, originalSubject: string, i
       to,
       subject,
       text,
-      ...(inReplyTo ? { headers: { 'In-Reply-To': inReplyTo, References: inReplyTo } } : {}),
+      // Auto-Submitted keeps the manager's own out-of-office from answering it.
+      headers: { 'Auto-Submitted': 'auto-replied', ...(inReplyTo ? { 'In-Reply-To': inReplyTo, References: inReplyTo } : {}) },
     });
   } catch (err) {
     console.error(JSON.stringify({ event: 'approval.reply_confirmation_failed', to, error: (err as Error).message }));
@@ -153,7 +154,7 @@ export default {
     const db = env.HISTORY_DB;
     let result: Awaited<ReturnType<typeof handleReply>> | null = null;
     try {
-      result = await handleReply({ from: message.from, to: message.to }, {
+      result = await handleReply({ from: message.from, to: message.to, headers: message.headers }, {
         secret: env.APPROVAL_SECRET,
         approvers: env.APPROVER_EMAIL,
         get: (id) => getApproval(db, id),
