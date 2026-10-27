@@ -1,0 +1,29 @@
+src/lib/sandbox-egress.ts
+  s_35f257df545d16::t_9464e7b9ea6606 1-96
+src/lib/sandbox-egress.test.ts
+  s_4b231bd82abb1f::t_1d9f56c294307f 1-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "88abb827f9ea7b6faa313a21cb60f73a349a3be3",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_4b231bd82abb1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6590e61e3386073e",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
