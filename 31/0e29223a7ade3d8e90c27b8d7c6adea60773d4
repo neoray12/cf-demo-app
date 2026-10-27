@@ -1,0 +1,39 @@
+package-lock.json
+  s_35f257df545d16::t_84ca0229f02a1a 35,9845-9850,13795-13801
+package.json
+  s_35f257df545d16::t_ecb34d2d3d7226 42
+workers/approval-workflow/src/index.ts
+  s_35f257df545d16::t_0b02839ca152cc 8-9,12,79,121-141,143-181
+workers/approval-workflow/wrangler.dev.toml
+  s_35f257df545d16::t_64943de4978e0f 21-28
+src/lib/approval-reply.test.ts
+  s_4b231bd82abb1f::t_5926a0255cf94d 2-3,109-265
+src/lib/approval-reply.ts
+  s_4b231bd82abb1f::t_9621b0bd5f53a3 9,107-203
+workers/approval-workflow/wrangler.toml
+  s_4b231bd82abb1f::t_35c6d00eb4cc5a 11-18,49-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "310e29223a7ade3d8e90c27b8d7c6adea60773d4",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    },
+    "s_4b231bd82abb1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6590e61e3386073e",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
