@@ -341,7 +341,7 @@
       },
       "casePriority": {
         "title": "Raise a case priority · low risk",
-        "prompt": "Set the priority of the latest Salesforce support case to High"
+        "prompt": "Find the latest Salesforce support case whose priority is not High yet and set its priority to High (skip cases that are already High)"
       },
       "resetDeal": {
         "title": "Reset the demo deal · low risk",

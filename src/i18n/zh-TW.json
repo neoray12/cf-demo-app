@@ -341,7 +341,7 @@
       },
       "casePriority": {
         "title": "調整案件優先順序 · 低風險",
-        "prompt": "把 Salesforce 最新一筆客服案件的優先順序改成 High"
+        "prompt": "找出 Salesforce 最新一筆優先順序「不是 High」的客服案件，把它的優先順序改成 High（已經是 High 的案件跳過）"
       },
       "resetDeal": {
         "title": "還原示範商機 · 低風險",
