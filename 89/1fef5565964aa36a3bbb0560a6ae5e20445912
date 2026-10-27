@@ -1,0 +1,23 @@
+src/lib/approval-reply.test.ts
+  s_4b231bd82abb1f::t_51bb8a3865f516 70-78,218-239
+src/lib/approval-reply.ts
+  s_4b231bd82abb1f::t_7b97651af31774 91-102,107,123-136,139,183,189-190
+workers/approval-workflow/src/index.ts
+  s_4b231bd82abb1f::t_dabed86f2e9b34 135-136,157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "891fef5565964aa36a3bbb0560a6ae5e20445912",
+  "prompts": {},
+  "sessions": {
+    "s_4b231bd82abb1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6590e61e3386073e",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
