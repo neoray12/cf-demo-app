@@ -24,6 +24,7 @@ export function approvalEmail(a: MailApproval, link: string): { subject: string;
     detail,
     '',
     `核准或拒絕：${link}`,
+    '也可以直接回覆這封信「核准」或「拒絕」（寫在第一行）。',
     '',
     '連結 24 小時內有效；核准後由 Cloudflare Workflow 以送出者的身分寫入。',
   ].join('\n');
@@ -32,6 +33,7 @@ export function approvalEmail(a: MailApproval, link: string): { subject: string;
 <p>動作：${esc(a.summary)}</p>
 <pre style="background:#f5f5f5;padding:12px;border-radius:6px;white-space:pre-wrap;font-size:12px">${esc(detail)}</pre>
 <p><a href="${esc(link)}" style="display:inline-block;background:#0a0a0a;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">開啟審批頁</a></p>
+<p>也可以直接回覆這封信「核准」或「拒絕」（寫在第一行）。</p>
 <p style="color:#737373;font-size:12px">連結 24 小時內有效；核准後由 Cloudflare Workflow 以送出者的身分寫入。</p>
 </div>`;
   return { subject, text, html };
@@ -51,6 +53,10 @@ export function buildMime(m: {
   html: string;
   messageId: string;
   date?: Date;
+  /** Where replies go, e.g. the signed approvals+{id}.{sig}@ sub-address. */
+  replyTo?: string;
+  /** Extra headers such as In-Reply-To / References. */
+  headers?: Record<string, string>;
 }): string {
   const boundary = `b_${m.messageId.replace(/[^A-Za-z0-9]/g, '')}`;
   const subject = `=?UTF-8?B?${b64(m.subject).replace(/\r\n/g, '')}?=`;
@@ -60,6 +66,8 @@ export function buildMime(m: {
     `Subject: ${subject}`,
     `Message-ID: ${m.messageId}`,
     `Date: ${(m.date ?? new Date()).toUTCString()}`,
+    ...(m.replyTo ? [`Reply-To: ${m.replyTo}`] : []),
+    ...Object.entries(m.headers ?? {}).map(([k, v]) => `${k}: ${v.replace(/[\r\n]+/g, ' ')}`),
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     '',

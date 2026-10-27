@@ -405,7 +405,7 @@
       "approve": "核准",
       "reject": "拒絕",
       "working": "處理中…",
-      "waitingManager": "已建立 Workflow 並寄信給主管，等主管點信裡的連結核准；關掉這個頁面也不影響。",
+      "waitingManager": "已建立 Workflow 並寄信給主管，等主管點信裡的連結核准，或直接回信「核准」/「拒絕」；關掉這個頁面也不影響。",
       "waitingYou": "Agent 想執行這個寫入，核准後才會寫進系統。",
       "details": "請求內容",
       "script": "Code Mode 腳本",

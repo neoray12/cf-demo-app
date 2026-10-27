@@ -405,7 +405,7 @@
       "approve": "Approve",
       "reject": "Reject",
       "working": "Working…",
-      "waitingManager": "A Workflow was created and the manager was emailed; it waits for them to approve via the link. Closing this page does not affect it.",
+      "waitingManager": "A Workflow was created and the manager was emailed; it waits for them to approve via the link or by replying \"approve\" / \"reject\" to the email. Closing this page does not affect it.",
       "waitingYou": "The agent wants to make this write; nothing is written until you approve.",
       "details": "Request",
       "script": "Code Mode script",

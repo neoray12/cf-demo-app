@@ -20,6 +20,15 @@ describe('approvalEmail', () => {
     expect(m.html).toContain('href="https://demo.neokung.work/approvals/apr_1?t=1.x"');
   });
 
+  it('tells the manager they can also reply 核准 or 拒絕', () => {
+    const m = approvalEmail(approval, 'https://x/a');
+    for (const body of [m.text, m.html]) {
+      expect(body).toContain('直接回覆這封信');
+      expect(body).toContain('核准');
+      expect(body).toContain('拒絕');
+    }
+  });
+
   it('escapes HTML coming from the model', () => {
     const m = approvalEmail({ ...approval, summary: '<img src=x onerror=alert(1)>' }, 'https://x/a');
     expect(m.html).not.toContain('<img');
@@ -41,6 +50,25 @@ describe('buildMime', () => {
     // Body parts decode back to the original UTF-8 text.
     const b64 = raw.split('Content-Transfer-Encoding: base64\r\n\r\n')[1]!.split('\r\n--')[0]!.replace(/\r\n/g, '');
     expect(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)))).toBe('純文字');
+  });
+
+  const base = { from: 'a@neokung.work', to: 'b@example.com', subject: 's', text: 't', html: 'h', messageId: '<m1@neokung.work>', date: new Date(0) };
+
+  it('adds Reply-To when given, before the body', () => {
+    const raw = buildMime({ ...base, replyTo: 'approvals+apr_1.0123456789abcdef@mail.neokung.work' });
+    const head = raw.split('\r\n\r\n')[0]!;
+    expect(head).toContain('\r\nReply-To: approvals+apr_1.0123456789abcdef@mail.neokung.work');
+  });
+
+  it('has no Reply-To when not given', () => {
+    expect(buildMime(base)).not.toContain('Reply-To:');
+  });
+
+  it('adds extra headers in the header block', () => {
+    const raw = buildMime({ ...base, headers: { 'In-Reply-To': '<r1@x>', References: '<r1@x>' } });
+    const head = raw.split('\r\n\r\n')[0]!;
+    expect(head).toContain('\r\nIn-Reply-To: <r1@x>');
+    expect(head).toContain('\r\nReferences: <r1@x>');
   });
 });
 

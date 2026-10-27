@@ -306,6 +306,22 @@ export async function transition(
   return (res.meta?.changes ?? 0) > 0;
 }
 
+export function decisionLabel(approve: boolean, by: string): string {
+  return approve ? `${by} 已核准` : `${by} 已拒絕`;
+}
+
+/**
+ * Records an approve / reject decision (pending → approved | rejected). Shared by
+ * the chat card, the signed email link and the email reply, so whichever
+ * arrives first wins and the others get false.
+ */
+export async function recordDecision(db: D1Database, id: string, approve: boolean, by: string): Promise<boolean> {
+  return transition(db, id, approve ? 'approved' : 'rejected', {
+    step: approve ? 'approved' : 'rejected',
+    label: decisionLabel(approve, by),
+  }, { decidedBy: by });
+}
+
 /** Adds a timeline entry without changing the status (e.g. "email sent"). */
 export async function addEvent(db: D1Database, id: string, event: Omit<ApprovalEvent, 'at'>, patch: { workflowId?: string } = {}): Promise<void> {
   const current = await db.prepare('SELECT events_json FROM approvals WHERE id = ?').bind(id).first<{ events_json: string | null }>();

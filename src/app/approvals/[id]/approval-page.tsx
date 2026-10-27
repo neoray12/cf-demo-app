@@ -77,6 +77,9 @@ export function ApprovalPage({ id, token }: { id: string; token: string | null }
             </pre>
           </div>
 
+          {view.canDecide && view.risk === "high" && (
+            <p className="text-muted-foreground">也可以直接回覆審批信「核准」或「拒絕」（寫在第一行）。</p>
+          )}
           {view.canDecide && (
             <div className="flex gap-3">
               <button
