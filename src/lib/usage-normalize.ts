@@ -82,3 +82,34 @@ export function createSseFixer(provider: () => string): { push(chunk: string): s
     },
   };
 }
+
+/** A response body rewritten line by line through `fixer` (see createSseFixer). */
+export function fixSseStream(body: ReadableStream<Uint8Array>, fixer: ReturnType<typeof createSseFixer>): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    // A pull that enqueues nothing is not called again for a read already waiting, so a
+    // chunk ending mid-line (a long tool-argument line) would stall the stream: keep
+    // reading until there is something to hand on.
+    async pull(controller) {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          const rest = fixer.push(decoder.decode()) + fixer.flush();
+          if (rest) controller.enqueue(encoder.encode(rest));
+          controller.close();
+          return;
+        }
+        const fixed = fixer.push(decoder.decode(value, { stream: true }));
+        if (fixed) {
+          controller.enqueue(encoder.encode(fixed));
+          return;
+        }
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+}

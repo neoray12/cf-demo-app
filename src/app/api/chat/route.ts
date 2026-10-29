@@ -13,7 +13,7 @@ import { createIdleGuard } from '@/lib/idle-guard';
 import { parseRoutingHeaders, type AutoRouting } from '@/lib/auto-router';
 import { DEFAULT_SYSTEM_PROMPT, composeSystemPrompt, systemPromptKey } from '@/lib/system-prompt';
 import { autoRouterModelsKey, parseModelList, resolveAllowedModels } from '@/lib/auto-router-models';
-import { createSseFixer, usageProvider } from '@/lib/usage-normalize';
+import { createSseFixer, fixSseStream, usageProvider } from '@/lib/usage-normalize';
 import { getRequestUser } from '@/lib/auth';
 import { TurnRecorder, historyConfigured, isValidConversationId, saveTurn, type ModelAttempt } from '@/lib/chat-history';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
@@ -221,26 +221,9 @@ export async function POST(request: NextRequest) {
         'aig.ray': gateway.ray ?? '',
       });
       if (!res.body || !res.headers.get('content-type')?.includes('text/event-stream')) return res;
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      const encoder2 = new TextEncoder();
       // Normalizes usage (Anthropic cache tokens) and coerces numeric delta.content;
       // the provider is the routed model's for Auto Router.
-      const fixer = createSseFixer(() => usageProvider(compatModelId, routedModel));
-      const transformed = new ReadableStream({
-        async pull(controller) {
-          const { done, value } = await reader.read();
-          if (done) {
-            const rest = fixer.flush();
-            if (rest) controller.enqueue(encoder2.encode(rest));
-            controller.close();
-            return;
-          }
-          const fixed = fixer.push(decoder.decode(value, { stream: true }));
-          if (fixed) controller.enqueue(encoder2.encode(fixed));
-        },
-        cancel() { reader.cancel(); },
-      });
+      const transformed = fixSseStream(res.body, createSseFixer(() => usageProvider(compatModelId, routedModel)));
       return new Response(transformed, { status: res.status, headers: res.headers });
     });
   }

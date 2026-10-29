@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createSseFixer, normalizeStreamUsage, usageProvider } from './usage-normalize';
+import { createSseFixer, fixSseStream, normalizeStreamUsage, usageProvider } from './usage-normalize';
 
 describe('normalizeStreamUsage', () => {
   it('adds Anthropic cache writes back into prompt_tokens (Auto Router reports them separately)', () => {
@@ -64,5 +64,29 @@ describe('createSseFixer', () => {
     const fixer = createSseFixer(() => provider);
     provider = 'anthropic';
     expect(fixer.push(usageLine)).toContain('"prompt_tokens":4011');
+  });
+});
+
+describe('fixSseStream', () => {
+  const body = (chunks: string[]) => {
+    const enc = new TextEncoder();
+    let i = 0;
+    return new ReadableStream<Uint8Array>({
+      pull(c) {
+        if (i < chunks.length) c.enqueue(enc.encode(chunks[i++]!));
+        else c.close();
+      },
+    });
+  };
+
+  it('delivers a line split across network chunks (a chunk with no newline must not stall the reader)', async () => {
+    const big = `data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"${'x'.repeat(5000)}"}}]}}]}`;
+    const chunks = ['data: {"choices":[{"delta":{"content":"a"}}]}\n\n', big.slice(0, 2000), big.slice(2000, 4000), `${big.slice(4000)}\n\n`, 'data: [DONE]\n\n'];
+    const out = await Promise.race([
+      new Response(fixSseStream(body(chunks), createSseFixer(() => 'anthropic'))).text(),
+      new Promise<string>((_, reject) => setTimeout(() => reject(new Error('stream stalled')), 1000)),
+    ]);
+    expect(out).toContain('x'.repeat(5000));
+    expect(out.endsWith('data: [DONE]\n\n')).toBe(true);
   });
 });
