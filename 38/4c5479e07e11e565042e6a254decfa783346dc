@@ -1,0 +1,33 @@
+agents.md
+  s_35f257df545d16::t_ecec7de3a0a50f 110
+src/app/pages/clef-demo-view.tsx
+  s_35f257df545d16::t_0b59f6975d1b78 1-223
+src/app/pages/clef-playground.tsx
+  s_35f257df545d16::t_74077fed6b9568 30-31,37,42,50,64,69,260-261,409,420,456-464,473-485,488-506,846,875-876,882,897,902,904,948
+src/app/pages/clef-presets.ts
+  s_35f257df545d16::t_7eeade5f52f349 26-30,77-82,100-105,124-129,143-148,242-247,272-277
+src/i18n/en.json
+  s_35f257df545d16::t_84c7079ad5bdb1 736-755
+src/i18n/zh-TW.json
+  s_35f257df545d16::t_8eceb96345fee7 736-755
+src/lib/clef-demo.test.ts
+  s_35f257df545d16::t_b71e41ec81c93c 1-38
+src/lib/clef-demo.ts
+  s_35f257df545d16::t_0ba77f90aaf699 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "384c5479e07e11e565042e6a254decfa783346dc",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
