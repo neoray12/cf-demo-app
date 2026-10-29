@@ -1,0 +1,25 @@
+agents.md
+  s_35f257df545d16::t_8c219f53aabe14 292
+src/app/api/chat/route.ts
+  s_35f257df545d16::t_42eda8dd6e9f3b 16,226
+src/lib/usage-normalize.test.ts
+  s_35f257df545d16::t_0467e4668d8457 2,69-92
+src/lib/usage-normalize.ts
+  s_35f257df545d16::t_60723c7fb5b588 85-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "aac0ae01006e2c4b0f489ffd923f04265f095e8b",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
