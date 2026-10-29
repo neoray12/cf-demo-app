@@ -27,17 +27,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { PRESETS, SAMPLES, type Preset, type QuestionType, type Sample } from "./clef-presets";
+import { ClefDemoView } from "./clef-demo-view";
+import { demoModel } from "@/lib/clef-demo";
 
 // ── Types ──
 
 type ClefModel = "clef" | "clef-flash" | "clef-omni";
 
-interface ImageClip {
+export interface ImageClip {
   dataUrl: string;
   sampleId?: string;
 }
 
-interface MediaClip {
+export interface MediaClip {
   sampleId?: string;
   dataUrl: string;
   name: string;
@@ -45,7 +47,7 @@ interface MediaClip {
   duration: number;
 }
 
-interface DraftQuestion {
+export interface DraftQuestion {
   uid: string;
   id: string;
   type: QuestionType;
@@ -59,12 +61,12 @@ interface DraftQuestion {
   no: string;
 }
 
-type Answer =
+export type Answer =
   | { type: "noul"; noul: number }
   | { type: "choice"; choice: string; probabilities: Record<string, number>; confidence: number }
   | { type: "score"; score: number; legend: Record<string, unknown>; probabilities: Record<string, number>; confidence: number };
 
-interface ModelResult {
+export interface ModelResult {
   model?: string;
   answers?: Record<string, Answer>;
   usage?: { input_tokens: number; output_tokens: number };
@@ -255,6 +257,8 @@ export function ClefPlaygroundPage() {
   const [results, setResults] = useState<Partial<Record<ClefModel, ModelResult>> | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [copied, setCopied] = useState(false);
+  // "demo": the simple three-step view; "advanced": the full editor below (same state).
+  const [mode, setMode] = useState<"demo" | "advanced">("demo");
   const fileRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
@@ -402,7 +406,7 @@ export function ClefPlaygroundPage() {
     ...(videos.length ? { videos: videos.map((c) => c.dataUrl) } : {}),
   });
 
-  const run = async () => {
+  const run = async (models: ClefModel[] = selectedModels) => {
     setError(null);
     if (jsonError) { setError(t("clef.errors.invalidJson")); return; }
     const ids = questions.map((q) => q.id);
@@ -413,7 +417,7 @@ export function ClefPlaygroundPage() {
       const res = await fetch("/api/clef", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...buildRequest(), models: selectedModels }),
+        body: JSON.stringify({ ...buildRequest(), models }),
       });
       const data = (await res.json()) as { results?: Partial<Record<ClefModel, ModelResult>>; error?: string };
       if (!res.ok || !data.results) throw new Error(data.error || `HTTP ${res.status}`);
@@ -449,6 +453,15 @@ export function ClefPlaygroundPage() {
   const slowest = ranked.length > 1 ? ranked[ranked.length - 1]! : null;
   const speedup = fastest && slowest ? results![slowest.id]!.latencyMs / Math.max(results![fastest.id]!.latencyMs, 1) : null;
   const preset = PRESETS.find((p) => p.key === presetKey);
+  const presetKinds = (preset?.samples ?? []).map((id) => SAMPLES.find((x) => x.id === id)!.kind);
+  const demoModelId = demoModel(presetKinds);
+  const demoModelInfo = MODELS.find((m) => m.id === demoModelId)!;
+  const compareModels = () => {
+    const models: ClefModel[] = demoModelId === "clef-omni" ? ["clef-omni"] : ["clef", "clef-flash", "clef-omni"];
+    setSelectedModels(models);
+    setMode("advanced");
+    void run(models);
+  };
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto" onPaste={onPaste}>
@@ -457,8 +470,39 @@ export function ClefPlaygroundPage() {
           <Scale className="size-6 text-orange-500" />
           {t("clef.title")}
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">{t("clef.description")}</p>
+        {mode === "advanced" && <p className="text-sm text-muted-foreground mt-1">{t("clef.description")}</p>}
+        <div className="mt-4 inline-flex rounded-lg border p-0.5 text-sm">
+          {(["demo", "advanced"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              className={`px-3 py-1 rounded-md transition-colors ${mode === m ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {t(m === "demo" ? "clef.demo.tabDemo" : "clef.demo.tabAdvanced")}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {mode === "demo" ? (
+        <ClefDemoView
+          lang={lang}
+          presetKey={presetKey}
+          onPick={loadPreset}
+          stateText={state}
+          images={images}
+          audio={audio}
+          videos={videos}
+          questions={questions}
+          model={demoModelInfo}
+          running={running}
+          error={error}
+          result={results?.[demoModelId]}
+          onRun={() => void run([demoModelId])}
+          onCompare={compareModels}
+        />
+      ) : (
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         {/* ── Input ── */}
@@ -799,7 +843,7 @@ export function ClefPlaygroundPage() {
               {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
               {t("clef.copyCurl")}
             </Button>
-            <Button size="sm" className="h-8 gap-1.5" onClick={run} disabled={running || Boolean(jsonError)}>
+            <Button size="sm" className="h-8 gap-1.5" onClick={() => void run()} disabled={running || Boolean(jsonError)}>
               {running ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
               {t("clef.run")}
             </Button>
@@ -828,12 +872,14 @@ export function ClefPlaygroundPage() {
                   {t("clef.speedup", { fast: fastest.name, slow: slowest.name, x: speedup.toFixed(1) })}
                 </div>
               )}
-              <div className={`grid gap-3 ${shownModels.length === 2 ? "sm:grid-cols-2" : shownModels.length > 2 ? "sm:grid-cols-2 xl:grid-cols-3" : ""}`}>
+              {/* One full-width card per model, top to bottom; the questions sit side by side inside it. */}
+              <div className="space-y-3">
                 {shownModels.map((m) => {
                   const r = results[m.id]!;
                   return (
                     <Card key={m.id} className="min-w-0">
                       <CardHeader className="pb-2">
+                        <div className="flex items-center gap-x-2 gap-y-1.5 flex-wrap">
                         <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
                           {m.name}
                           <Badge variant="secondary" className="font-mono text-[10px]">@cf/cloudflare/{m.id}</Badge>
@@ -848,13 +894,14 @@ export function ClefPlaygroundPage() {
                           )}
                           {r.via && <span className="px-2 py-0.5 rounded-md bg-muted">{r.via === "ai-gateway" ? "AI Gateway" : "REST"}</span>}
                         </div>
+                        </div>
                         {r.ignoredMedia && (
                           <p className="text-[11px] text-amber-600 dark:text-amber-400">{t("clef.ignoredMedia")}</p>
                         )}
                       </CardHeader>
-                      <CardContent className="space-y-4">
+                      <CardContent className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
                         {r.error ? (
-                          <p className="text-sm text-destructive">{r.error}</p>
+                          <p className="text-sm text-destructive sm:col-span-2">{r.error}</p>
                         ) : (
                           questions.map((q) => {
                             const a = r.answers?.[q.id];
@@ -898,6 +945,7 @@ export function ClefPlaygroundPage() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

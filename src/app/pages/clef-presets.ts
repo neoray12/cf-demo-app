@@ -23,6 +23,11 @@ export interface Preset {
   samples?: string[];
   state: L10n;
   questions: PresetQuestion[];
+  /**
+   * Demo view (src/lib/clef-demo.ts): a one-line summary, the yes/no question that
+   * drives the action, its default threshold, and the action above / below it.
+   */
+  demo?: { tagline: L10n; question: string; threshold: number; pass: L10n; fail: L10n };
 }
 
 export interface Sample {
@@ -69,6 +74,12 @@ export const PRESETS: Preset[] = [
   // ── Taiwan scenarios (audio / image / video) ──
   {
     key: "customerCall", group: "tw", samples: ["customer-call"],
+    demo: {
+      tagline: L("客服錄音 → 要不要升級", "Support call → escalate or not"),
+      question: "angry", threshold: 0.7,
+      pass: L("優先轉給主管處理", "Route to a supervisor first"),
+      fail: L("照一般流程排隊", "Queue it as usual"),
+    },
     useCase: L(
       "電商／物流客服中心：來電錄音直接判斷客戶是否憤怒、該轉哪個單位、有多急，不必先轉逐字稿再分類，主管可即時掌握客訴升級風險。",
       "E-commerce / logistics contact centers: judge anger, routing, and urgency straight from the call audio — no transcription step — so supervisors see escalation risk in real time."
@@ -86,6 +97,12 @@ export const PRESETS: Preset[] = [
   },
   {
     key: "scamCall", group: "tw", samples: ["scam-call"],
+    demo: {
+      tagline: L("來電錄音 → 要不要攔截", "Call recording → block or not"),
+      question: "scam", threshold: 0.85,
+      pass: L("攔截來電並通報 165", "Block the call and report it to 165"),
+      fail: L("轉給真人複核", "Send to a human for review"),
+    },
     useCase: L(
       "電信業者／銀行反詐騙：假冒檢警是台灣常見的詐騙手法。通話錄音（或片段）直接判斷是否詐騙與手法，決定要不要即時警示用戶、通報 165。",
       "Telcos and banks fighting fraud: fake-prosecutor calls are a common scam in Taiwan. Classify a call (or a clip) and decide whether to warn the user or report to the 165 hotline."
@@ -104,6 +121,12 @@ export const PRESETS: Preset[] = [
   },
   {
     key: "scamSms", group: "tw", samples: ["scam-sms"],
+    demo: {
+      tagline: L("簡訊截圖 → 是否詐騙", "SMS screenshot → scam or not"),
+      question: "phish", threshold: 0.8,
+      pass: L("直接攔截這則簡訊", "Block the message"),
+      fail: L("加上可疑警告後顯示", "Show it with a warning"),
+    },
     useCase: L(
       "簡訊閘道／行動電話業者：用戶回報的簡訊截圖，直接判斷是否為釣魚簡訊，不需要另外做 OCR 再分類。",
       "SMS gateways and mobile carriers: classify user-reported SMS screenshots as phishing directly — no separate OCR step."
@@ -117,6 +140,12 @@ export const PRESETS: Preset[] = [
   },
   {
     key: "invoice", group: "tw", samples: ["invoice"],
+    demo: {
+      tagline: L("發票照片 → 能否報帳", "Receipt photo → claimable or not"),
+      question: "is_receipt", threshold: 0.8,
+      pass: L("自動進入報帳流程", "Send it straight into the expense flow"),
+      fail: L("退回請員工重拍", "Ask the employee for a new photo"),
+    },
     useCase: L(
       "企業費用核銷：員工拍下電子發票證明聯，自動判斷是否為有效憑證、資訊是否完整，減少會計退件與來回補件。",
       "Expense reporting: employees snap an e-invoice; check whether it is a valid, complete receipt before accounting rejects it."
@@ -210,6 +239,12 @@ export const PRESETS: Preset[] = [
   },
   {
     key: "moderation", group: "text",
+    demo: {
+      tagline: L("留言 → 是否違規", "Comment → harmful or not"),
+      question: "toxic", threshold: 0.8,
+      pass: L("自動下架留言", "Remove the comment"),
+      fail: L("送人工審核", "Send to human review"),
+    },
     state: L(
       "這家餐廳的服務生態度超爛，我等了一小時才上菜。老闆你最好小心點，下次再這樣我就讓你好看。",
       "The waiter at this restaurant was terrible and I waited an hour for my food. Owner, you'd better watch out — if this happens again I'll make you regret it."
@@ -234,6 +269,12 @@ export const PRESETS: Preset[] = [
   },
   {
     key: "judge", group: "text", json: true,
+    demo: {
+      tagline: L("AI 回答 → 有沒有捏造", "AI answer → made up or not"),
+      question: "hallucination", threshold: 0.5,
+      pass: L("標記為有捏造，不採用這個回答", "Flag it as fabricated and drop the answer"),
+      fail: L("回答可以採用", "Keep the answer"),
+    },
     state: L(
       JSON.stringify({ question: "Cloudflare Workers 的 CPU 時間上限是多少？", answer: "Workers 付費方案預設每個請求 30 秒 CPU 時間，可設定到最多 5 分鐘；免費方案為 10 毫秒。" }, null, 2),
       JSON.stringify({ question: "What is the CPU time limit for Cloudflare Workers?", answer: "On the Workers Paid plan the default is 30 seconds of CPU time per request, configurable up to 5 minutes; the Free plan allows 10 ms." }, null, 2)

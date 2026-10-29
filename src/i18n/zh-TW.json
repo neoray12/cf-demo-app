@@ -733,6 +733,26 @@
     "readFileError": "讀取檔案失敗: {{message}}"
   },
   "clef": {
+    "demo": {
+      "tabDemo": "Demo",
+      "tabAdvanced": "自訂與 API（進階）",
+      "intro": "一般 LLM 回一段文字；Clef 對每個問題回傳機率，所以可以直接設門檻、自動決定下一步。",
+      "step1": "① 選一個情境",
+      "step2": "② Clef 看到什麼、被問什麼",
+      "step3": "③ 決策結果與動作",
+      "input": "輸入",
+      "questions": "問題",
+      "loadingSamples": "載入範例素材中…",
+      "judge": "判斷",
+      "judging": "Clef 判斷中…",
+      "meta": "{{model}} · {{ms}} ms · 每百萬次約 ${{cost}}",
+      "empty": "按「判斷」看 Clef 的決策",
+      "threshold": "自動處理門檻",
+      "passRule": "「{{question}}」{{p}} ≥ {{th}} → {{action}}",
+      "failRule": "「{{question}}」{{p}} < {{th}} → {{action}}",
+      "scoreOf": "分數 {{score}} / {{max}}",
+      "compare": "在進階模式比較三個模型"
+    },
     "title": "Clef 決策模型 Playground",
     "description": "Cloudflare 自家訓練的開源決策模型家族：Clef（27B，更快）、Clef-flash（9B，降價至 $0.038/M）與新的 Clef-omni（30B MoE，支援文字、圖片、音訊與影片）。不產生文字，而是對每個問題的每個選項回傳機率，適合分流、審核、評分等結構化決策。選一個台灣客戶情境，範例素材會自動載入，按「執行」即可看到結果。",
     "scenario": "範例情境",

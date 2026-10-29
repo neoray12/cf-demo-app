@@ -733,6 +733,26 @@
     "readFileError": "Failed to read file: {{message}}"
   },
   "clef": {
+    "demo": {
+      "tabDemo": "Demo",
+      "tabAdvanced": "Custom and API (advanced)",
+      "intro": "A regular LLM writes text. Clef returns a probability for every question, so you can set a threshold and pick the next step automatically.",
+      "step1": "1. Pick a scenario",
+      "step2": "2. What Clef sees and is asked",
+      "step3": "3. Decision and action",
+      "input": "Input",
+      "questions": "Questions",
+      "loadingSamples": "Loading the sample…",
+      "judge": "Decide",
+      "judging": "Clef is deciding…",
+      "meta": "{{model}} · {{ms}} ms · about ${{cost}} per million calls",
+      "empty": "Press Decide to see Clef's decision",
+      "threshold": "Auto-action threshold",
+      "passRule": "\"{{question}}\" {{p}} ≥ {{th}} → {{action}}",
+      "failRule": "\"{{question}}\" {{p}} < {{th}} → {{action}}",
+      "scoreOf": "Score {{score}} / {{max}}",
+      "compare": "Compare all three models in advanced mode"
+    },
     "title": "Clef Decision Model Playground",
     "description": "Cloudflare's own open-weight decision model family: Clef (27B, now faster), Clef-flash (9B, now $0.038/M), and the new Clef-omni (30B MoE: text, image, audio, and video). Instead of generating text they return a probability for every option of every question — ideal for triage, moderation, and scoring. Pick a Taiwan customer scenario, the sample media loads automatically, then press Run.",
     "scenario": "Example scenarios",
