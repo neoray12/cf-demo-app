@@ -115,7 +115,9 @@ export function classifyCall(name: string, args: Record<string, unknown>, server
   const base = baseToolName(name, serverId);
   if (base === 'portal_codemode_execute') {
     const code = String(args?.code ?? '');
-    const found = [...code.matchAll(/codemode\.([A-Za-z0-9_]+)\s*\(/g)].map((m) => baseToolName(m[1]!));
+    // Any mention of a tool name counts, not only `codemode.x(`: the step-log helper
+    // (portal-catalog.ts) calls tools by name — `call('sf_update_case', …)` / `codemode[tool]`.
+    const found = [...code.matchAll(/(?:salesforce[-_]mcp_|sap[-_]mcp_)?((?:sf|sap)_[A-Za-z0-9_]+)/g)].map((m) => baseToolName(m[1]!));
     const writes = [...new Set(found)].filter((w) => writeRisk(w, null, code) !== null);
     if (writes.length === 0) return null;
     const risk: Risk = writes.some((w) => writeRisk(w, null, code) === 'high') ? 'high' : 'low';

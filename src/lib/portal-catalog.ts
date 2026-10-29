@@ -59,6 +59,23 @@ export function formatPortalCatalog(serverName: string, tools: PortalCatalogEntr
     '工具回傳有兩種形狀：Salesforce 回傳物件（{ summary, totalSize, records: [...] } 或 { summary, record }），可以直接計算；' +
     "SAP 回傳 MCP 文字陣列 [{ type: 'text', text }]，內容是一行一筆（例如 \"Found 6 sales orders (showing 6):\\n- 6: Type=OR, Customer=17100011, Amount=31250.00 USD, Date=2026-09-08\"）——" +
     "先 `const t = Array.isArray(r) ? r.map((x) => x.text).join('\\n') : String(r)`，再用正規表示式逐行解析欄位。\n" +
+    '每一個工具呼叫都要經過下面這個 call 記錄步驟（畫面會把 steps 畫成表格給使用者看），腳本開頭先貼上：\n' +
+    '```js\n' +
+    'const steps = [];\n' +
+    'const call = async (tool, args = {}) => {\n' +
+    '  const t0 = Date.now();\n' +
+    '  try {\n' +
+    '    const r = await codemode[tool](args);\n' +
+    "    const n = Array.isArray(r?.records) ? r.records.length : Array.isArray(r) ? r.map((x) => x.text).join('\\n').split('\\n').filter((l) => l.startsWith('- ')).length : undefined;\n" +
+    '    steps.push({ tool, args, n, ms: Date.now() - t0 });\n' +
+    '    return r;\n' +
+    '  } catch (e) {\n' +
+    '    steps.push({ tool, args, error: String(e?.message ?? e), ms: Date.now() - t0 });\n' +
+    '    throw e;\n' +
+    '  }\n' +
+    '};\n' +
+    '```\n' +
+    "然後用 `await call('<name>', { … })` 取代 `await codemode.<name>({ … })`（Promise.all 裡也一樣），最後 `return { steps, result: { … } }`（steps 放前面）。\n" +
     lines.join('\n') +
     '\n'
   );

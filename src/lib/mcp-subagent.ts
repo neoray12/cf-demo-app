@@ -55,7 +55,8 @@ export function buildDelegateTool(args: {
   ctx: RunContext;
   parentSpanId: string;
   codeMode: boolean;
-  loadTools(): Promise<{ tools: Record<string, any>; catalogPrompt: string }>;
+  /** `spanId` = this delegate call's tool span, so loading shows up on the subagent card. */
+  loadTools(spanId: string): Promise<{ tools: Record<string, any>; catalogPrompt: string }>;
   /** Holds writes back for approval; without it writes run directly. */
   requestApproval?: RequestApproval;
   /** Injected in tests; defaults to the agents runtime. */
@@ -70,7 +71,8 @@ export function buildDelegateTool(args: {
     inputSchema: z.object({ task: z.string().min(1).describe('要交辦的完整任務，含所有條件') }),
     execute: async ({ task }, options): Promise<DelegateResult> => {
       try {
-        const loaded = await loadTools();
+        const delegateSpanId = toolSpanId(parentSpanId, options.toolCallId);
+        const loaded = await loadTools(delegateSpanId);
         // The first Gateway block inside the subagent is surfaced to the main chat (🛡 card).
         let block: Record<string, unknown> | null = null;
         const approvals: ApprovalRef[] = [];
@@ -109,7 +111,7 @@ export function buildDelegateTool(args: {
         const def = subagentDef(server, tools, loaded.catalogPrompt, codeMode);
         // The main stream's abort (stop button, idle, hard cap) also stops the subagent.
         const signal = options.abortSignal ? AbortSignal.any([ctx.signal, options.abortSignal]) : ctx.signal;
-        const { text } = await run(def, { task }, { ...ctx, signal }, toolSpanId(parentSpanId, options.toolCallId), 0);
+        const { text } = await run(def, { task }, { ...ctx, signal }, delegateSpanId, 0);
         const extra = approvals.length ? { approvals } : {};
         return block ? { ...(block as object), result: text, blocked: true, codeMode, ...extra } : { result: text, codeMode, ...extra };
       } catch (err) {

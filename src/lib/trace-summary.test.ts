@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { reduceTrace, type RunTrace } from './agents/trace-tree';
 import type { TraceEvent } from './agents/trace-events';
-import { summarizeTrace, formatSummary, subagentView } from './trace-summary';
+import { summarizeTrace, formatSummary } from './trace-summary';
 
 function trace(events: TraceEvent[]): RunTrace {
   return events.reduce<RunTrace | null>((s, e) => reduceTrace(s, e), null)!;
@@ -65,32 +65,5 @@ describe('formatSummary', () => {
 
   it('writes English', () => {
     expect(formatSummary(s, 'en')).toBe('8.4 s total · first token 1.2 s · 3 model calls · 2 tools · 5,923 in / 512 out tokens');
-  });
-});
-
-describe('subagentView', () => {
-  it('summarizes the subagent under a delegate tool call', () => {
-    const v = subagentView(trace(events), 'c1', 7000);
-    expect(v).toEqual({
-      running: false,
-      durationMs: 5050,
-      inputTokens: 4000,
-      outputTokens: 400,
-      modelCalls: 1,
-      tools: [{ name: 'tool_saas_sf_list_accounts', status: 'done', durationMs: 1000 }],
-      tail: '',
-    });
-  });
-
-  it('shows live progress and the latest text while running', () => {
-    const live = trace([
-      ...events.slice(0, 9),
-      { type: 'text-delta', spanId: 'sub/chat', text: 'Looking up accounts' },
-    ]);
-    expect(subagentView(live, 'c1', 2000)).toMatchObject({ running: true, durationMs: 1050, tail: 'Looking up accounts' });
-  });
-
-  it('returns null before the subagent starts', () => {
-    expect(subagentView(trace(events.slice(0, 6)), 'c1', 1000)).toBeNull();
   });
 });

@@ -340,3 +340,19 @@ describe("reduceTrace", () => {
     expect(reduceTrace(s1, future)).toBe(s1);
   });
 });
+
+describe("reduceTrace tool-input-delta", () => {
+  it("appends the streamed argument text to the tool span", () => {
+    const events: TraceEvent[] = [
+      { type: "run-start", runId: "r", agent: "a", model: "m", t: 0 },
+      { type: "span-start", id: "r", kind: "invoke_agent", name: "a", t: 0 },
+      { type: "span-start", id: "r/c1", parentId: "r", kind: "execute_tool", name: "x", t: 1 },
+      { type: "tool-input-delta", spanId: "r/c1", text: '{"code":"a' },
+      { type: "tool-input-delta", spanId: "r/c1", text: 'b"}' },
+      { type: "tool-input-delta", spanId: "missing", text: "ignored" },
+    ];
+    const s = events.reduce<RunTrace | null>(reduceTrace, null)!;
+    expect(s.spans["r/c1"]?.inputText).toBe('{"code":"ab"}');
+    expect(s.spans.r?.children[0]?.inputText).toBe('{"code":"ab"}');
+  });
+});

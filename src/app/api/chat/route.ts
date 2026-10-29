@@ -461,10 +461,10 @@ export async function POST(request: NextRequest) {
                 codeMode: d.codeMode,
               })
             : undefined,
-        loadTools: async () => {
+        loadTools: async (spanId) => {
           const loaded = await runTracedTool(
             runCtx,
-            MAIN_ROOT_SPAN,
+            spanId,
             `mcp.tools:${d.serverId}${d.codeMode ? '#codemode' : ''}`,
             { server: d.serverId, codeMode: d.codeMode },
             () => buildServerTools(env as any, sessionId, entry.config, { codeMode: d.codeMode }),

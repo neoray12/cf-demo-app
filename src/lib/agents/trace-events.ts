@@ -27,6 +27,8 @@ export type TraceEvent =
   /** Deltas carry the chat span that produced them: root-agent chat spans are the answer, others are progress. */
   | { type: "reasoning-delta"; spanId: string; text: string }
   | { type: "text-delta"; spanId: string; text: string }
+  /** Raw argument text of an execute_tool span while the model is still writing it (≤ 8000 chars per span). */
+  | { type: "tool-input-delta"; spanId: string; text: string }
   | {
       type: "citation";
       spanId: string;

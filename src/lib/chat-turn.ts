@@ -62,7 +62,7 @@ function updateTool(s: TurnState, id: string, patch: Partial<ToolCallInfo>): Tur
   return { ...s, toolCalls: s.toolCalls.map((tc) => (tc.id === id ? { ...tc, ...patch } : tc)) };
 }
 
-const SPAN_EVENTS = new Set(['run-start', 'span-start', 'span-end', 'span-input', 'run-end', 'citation', 'chart']);
+const SPAN_EVENTS = new Set(['run-start', 'span-start', 'span-end', 'span-input', 'tool-input-delta', 'run-end', 'citation', 'chart']);
 
 /** Apply one stream event at `t` ms into the turn. Unknown events return the state unchanged. */
 export function applyChatEvent(s: TurnState, ev: ChatStreamEvent, t: number): TurnState {

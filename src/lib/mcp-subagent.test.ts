@@ -132,3 +132,19 @@ describe('buildDelegateTool approvals', () => {
     expect(out).toMatchObject({ approvals: [{ id: 'apr_2', risk: 'low' }] });
   });
 });
+
+describe('buildDelegateTool loadTools parent span', () => {
+  it('loads the tools under the delegate tool span, so the subagent card shows it', async () => {
+    let parent: string | undefined;
+    const tool = buildDelegateTool({
+      server: saas!, toolNames: [], ctx, parentSpanId: 'main', codeMode: true,
+      loadTools: async (spanId) => {
+        parent = spanId;
+        return { tools: {}, catalogPrompt: '' };
+      },
+      run: async () => ({ text: 'ok' }),
+    });
+    await tool.execute!({ task: 't' }, { toolCallId: 'call-1', messages: [] } as never);
+    expect(parent).toBe('main/call-1');
+  });
+});

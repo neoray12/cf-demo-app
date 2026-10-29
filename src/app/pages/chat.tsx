@@ -1377,6 +1377,7 @@ export function ChatPage() {
                 case "run-start":
                 case "span-start":
                 case "span-input":
+                case "tool-input-delta":
                 case "span-end":
                 case "run-end":
                   scheduleFlush();

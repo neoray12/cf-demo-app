@@ -17,6 +17,8 @@ export interface SpanNode {
   reasoning: string;
   /** Tool arguments (execute_tool spans), from `span-input`. */
   input?: unknown;
+  /** Raw argument text streamed while the model writes it (`tool-input-delta`), before `input` arrives. */
+  inputText?: string;
   children: SpanNode[];
 }
 
@@ -141,6 +143,10 @@ export function reduceTrace(state: RunTrace | null, e: TraceEvent): RunTrace {
     case "span-input": {
       if (!s.spans[e.id]) return s;
       return { ...s, spans: updateSpan(s.spans, e.id, (n) => ({ ...n, input: e.input })) };
+    }
+    case "tool-input-delta": {
+      if (!s.spans[e.spanId]) return s;
+      return { ...s, spans: updateSpan(s.spans, e.spanId, (n) => ({ ...n, inputText: (n.inputText ?? "") + e.text })) };
     }
     case "text-delta":
     case "reasoning-delta": {

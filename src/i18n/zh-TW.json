@@ -437,7 +437,28 @@
       "title": "{{server}} subagent",
       "ask": "交給 {{server}} subagent",
       "directTools": "直接呼叫工具",
-      "stats": "{{s}} 秒 · {{calls}} 次模型呼叫 · 輸入 {{input}} / 輸出 {{output}} tokens"
+      "stats": "{{s}} 秒 · {{calls}} 次模型呼叫 · 輸入 {{input}} / 輸出 {{output}} tokens",
+      "prepare": "載入工具清單",
+      "model": "模型第 {{n}} 次呼叫",
+      "modelTokens": "輸入 {{input}} / 輸出 {{output}}",
+      "waitingModel": "等待模型回應…",
+      "toolStatus": {
+        "writing": "撰寫參數中",
+        "running": "執行中",
+        "done": "完成",
+        "error": "失敗",
+        "approval": "已送審",
+        "blocked": "被 Gateway 攔截"
+      },
+      "script": "Code Mode 腳本（{{n}} 行）",
+      "args": "參數",
+      "result": "結果",
+      "innerSteps": "腳本內部步驟（{{n}} 步，執行完才取得）",
+      "colTool": "工具",
+      "colArgs": "參數",
+      "colRows": "筆數",
+      "heldBack": "寫入已送審（{{id}}），核准後才會執行",
+      "retried": "第一次執行失敗，已自動重試；上面是重試的過程"
     },
     "trace": {
       "mainAgent": "AI Agent",

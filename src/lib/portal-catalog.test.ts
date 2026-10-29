@@ -56,6 +56,12 @@ describe('formatPortalCatalog', () => {
     expect(out).toContain("[{ type: 'text', text }]");
     expect(out).toContain("r.map((x) => x.text).join('\\n')");
   });
+  it('asks the script to log each call and return { steps, result }', () => {
+    const out = formatPortalCatalog('x', [{ name: 'a', description: '' }]);
+    expect(out).toContain('const steps = [];');
+    expect(out).toContain("await call('");
+    expect(out).toContain('return { steps, result');
+  });
   it('is empty when there are no tools', () => {
     expect(formatPortalCatalog('x', [])).toBe('');
   });

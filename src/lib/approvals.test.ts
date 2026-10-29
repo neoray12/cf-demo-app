@@ -47,6 +47,18 @@ describe('classifyCall', () => {
     expect(classifyCall('portal_codemode_execute', { code: small })?.risk).toBe('low');
   });
 
+  it('finds writes called by name (the step-log helper, bracket access)', () => {
+    const viaHelper = `async () => {
+      const steps = [];
+      const call = async (tool, args) => { const r = await codemode[tool](args); steps.push({ tool }); return r; };
+      await call('salesforce_mcp_sf_update_case', { case_id: '500x', priority: 'High' });
+      return { steps };
+    }`;
+    expect(classifyCall('portal_codemode_execute', { code: viaHelper })).toMatchObject({ risk: 'low', writes: ['sf_update_case'] });
+    const bracket = "async () => codemode['sap_mcp_sap_release_production_order']({ order: '1000007' })";
+    expect(classifyCall('portal_codemode_execute', { code: bracket })).toMatchObject({ risk: 'high', writes: ['sap_release_production_order'] });
+  });
+
   it('lets read-only Code Mode scripts through', () => {
     expect(classifyCall('portal_codemode_execute', { code: 'async () => codemode.salesforce_mcp_sf_list_accounts({})' })).toBeNull();
     expect(classifyCall('portal_codemode_search', { code: 'async () => codemode.tools()' })).toBeNull();

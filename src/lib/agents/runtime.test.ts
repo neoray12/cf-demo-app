@@ -1590,3 +1590,100 @@ describe("run-start reports whether tracing is active", () => {
     expect(b.events[0]).not.toHaveProperty("traced");
   });
 });
+
+describe("pipeStepStream tool-input-delta (arguments as the model writes them)", () => {
+  const startStep = (at: number) => ({ at, part: p({ type: "start-step", request: {}, warnings: [] }) });
+  const finishStep = (at: number) => ({
+    at,
+    part: p({ type: "finish-step", usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "tool-calls" }),
+  });
+
+  it("streams the raw argument text, coalesced, before the span-input", async () => {
+    const { ctx, events, clock } = makeCtx();
+    await pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 100, part: p({ type: "tool-input-start", id: "c1", toolName: "portal_codemode_execute" }) },
+        { at: 150, part: p({ type: "tool-input-delta", id: "c1", delta: '{"code":"async' }) },
+        { at: 170, part: p({ type: "tool-input-delta", id: "c1", delta: " () => " }) },
+        { at: 300, part: p({ type: "tool-input-delta", id: "c1", delta: '1"}' }) },
+        { at: 310, part: p({ type: "tool-input-end", id: "c1" }) },
+        { at: 320, part: p({ type: "tool-call", toolCallId: "c1", toolName: "portal_codemode_execute", input: { code: "async () => 1" } }) },
+        { at: 400, part: p({ type: "tool-result", toolCallId: "c1", toolName: "portal_codemode_execute", input: { code: "async () => 1" }, output: 1 }) },
+        finishStep(450),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    );
+    const deltas = events.filter((e) => e.type === "tool-input-delta");
+    expect(deltas.every((e) => e.type === "tool-input-delta" && e.spanId === "P/c1")).toBe(true);
+    expect(deltas.map((e) => (e as { text: string }).text).join("")).toBe('{"code":"async () => 1"}');
+    // 150 goes out at once; 170 is within 100 ms and waits; 300 goes out with it
+    expect(deltas.length).toBe(2);
+    const lastDelta = events.lastIndexOf(deltas[deltas.length - 1]!);
+    expect(lastDelta).toBeLessThan(events.findIndex((e) => e.type === "span-input"));
+  });
+
+  it("stops streaming a tool's arguments after 8000 characters", async () => {
+    const { ctx, events, clock } = makeCtx();
+    const chunk = "x".repeat(3000);
+    await pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 100, part: p({ type: "tool-input-start", id: "c1", toolName: "t" }) },
+        { at: 200, part: p({ type: "tool-input-delta", id: "c1", delta: chunk }) },
+        { at: 400, part: p({ type: "tool-input-delta", id: "c1", delta: chunk }) },
+        { at: 600, part: p({ type: "tool-input-delta", id: "c1", delta: chunk }) },
+        { at: 800, part: p({ type: "tool-input-delta", id: "c1", delta: chunk }) },
+        { at: 900, part: p({ type: "tool-call", toolCallId: "c1", toolName: "t", input: {} }) },
+        { at: 950, part: p({ type: "tool-result", toolCallId: "c1", toolName: "t", input: {}, output: 1 }) },
+        finishStep(990),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    );
+    const streamed = events
+      .filter((e) => e.type === "tool-input-delta")
+      .map((e) => (e as { text: string }).text)
+      .join("");
+    expect(streamed.length).toBe(8000);
+  });
+
+  it("keeps a Code Mode script (code) up to 8000 characters in span-input and span-end", async () => {
+    const { ctx, events, clock } = makeCtx();
+    const code = `async () => { ${"a".repeat(6000)} }`;
+    const output = { result: "r".repeat(6000) };
+    await pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 10, part: p({ type: "tool-call", toolCallId: "c1", toolName: "tool_saas_portal_codemode_execute", input: { code } }) },
+        { at: 20, part: p({ type: "tool-result", toolCallId: "c1", toolName: "tool_saas_portal_codemode_execute", input: { code }, output }) },
+        finishStep(30),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    );
+    const input = events.find((e) => e.type === "span-input") as { input: { code: string } };
+    expect(input.input.code).toBe(code);
+    const end = events.find((e) => e.type === "span-end" && e.id === "P/c1") as { detail: { input: { code: string }; output: { result: string } } };
+    expect(end.detail.input.code).toBe(code);
+    expect(end.detail.output.result).toBe(output.result);
+  });
+
+  it("still clips other tools' strings to 500 characters", async () => {
+    const { ctx, events, clock } = makeCtx();
+    const query = "q".repeat(900);
+    await pipeStepStream(
+      fakeStream(clock, [
+        startStep(0),
+        { at: 10, part: p({ type: "tool-call", toolCallId: "c1", toolName: "search_docs", input: { query } }) },
+        { at: 20, part: p({ type: "tool-result", toolCallId: "c1", toolName: "search_docs", input: { query }, output: "ok" }) },
+        finishStep(30),
+      ]),
+      ctx,
+      { parentSpanId: "P", modelLabel: "m", forwardText: true },
+    );
+    const input = events.find((e) => e.type === "span-input") as { input: { query: string } };
+    expect(input.input.query.length).toBe(500);
+  });
+});

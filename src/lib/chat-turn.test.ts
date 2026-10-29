@@ -112,3 +112,18 @@ describe('applyChatEvent routed-model', () => {
     });
   });
 });
+
+describe('applyChatEvent tool-input-delta', () => {
+  it('goes to the trace, never to the answer', () => {
+    let s = createTurnState();
+    const evs: ChatStreamEvent[] = [
+      { type: 'run-start', runId: 'main', agent: 'main-chat', model: 'm', t: 0 } as ChatStreamEvent,
+      { type: 'span-start', id: 'main', kind: 'invoke_agent', name: 'main-chat', t: 0 } as ChatStreamEvent,
+      { type: 'span-start', id: 'main/c1', parentId: 'main', kind: 'execute_tool', name: 'x', t: 1 } as ChatStreamEvent,
+      { type: 'tool-input-delta', spanId: 'main/c1', text: '{"a":1}' } as ChatStreamEvent,
+    ];
+    for (const e of evs) s = applyChatEvent(s, e, 0);
+    expect(s.trace?.spans['main/c1']?.inputText).toBe('{"a":1}');
+    expect(s.content).toBe('');
+  });
+});

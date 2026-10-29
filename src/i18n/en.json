@@ -437,7 +437,28 @@
       "title": "{{server}} subagent",
       "ask": "Ask the {{server}} subagent",
       "directTools": "Direct tools",
-      "stats": "{{s}} s · {{calls}} model calls · {{input}} in / {{output}} out tokens"
+      "stats": "{{s}} s · {{calls}} model calls · {{input}} in / {{output}} out tokens",
+      "prepare": "Load tool list",
+      "model": "Model call {{n}}",
+      "modelTokens": "{{input}} in / {{output}} out",
+      "waitingModel": "Waiting for the model…",
+      "toolStatus": {
+        "writing": "Writing arguments",
+        "running": "Running",
+        "done": "Done",
+        "error": "Failed",
+        "approval": "Sent for approval",
+        "blocked": "Blocked by Gateway"
+      },
+      "script": "Code Mode script ({{n}} lines)",
+      "args": "Arguments",
+      "result": "Result",
+      "innerSteps": "Steps inside the script ({{n}}, available after it ran)",
+      "colTool": "Tool",
+      "colArgs": "Arguments",
+      "colRows": "Rows",
+      "heldBack": "Write sent for approval ({{id}}); it runs only once approved",
+      "retried": "The first attempt failed and was retried; the steps above are the retry"
     },
     "trace": {
       "mainAgent": "AI Agent",

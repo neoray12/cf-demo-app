@@ -29,6 +29,13 @@ export const SUBAGENT_STREAM_IDLE_MS = 45_000;
 export const FIRST_PART_IDLE_MS = 150_000;
 const DETAIL_MAX_CHARS = 2000;
 const SPAN_INPUT_MAX_CHARS = 500;
+// Portal Code Mode scripts and their results are what the subagent card shows step by step: keep them whole.
+const LONG_DETAIL_TOOL = /codemode_execute$/;
+const CODE_STRING_MAX_CHARS = 8000;
+const CODE_DETAIL_MAX_CHARS = 12000;
+/** Raw tool arguments streamed while the model writes them (`tool-input-delta`): per span cap and batching. */
+const TOOL_INPUT_STREAM_MAX_CHARS = 8000;
+const TOOL_INPUT_FLUSH_MS = 100;
 /** runAgent batches text/reasoning deltas per (span, type) and flushes them at this interval. */
 export const DELTA_FLUSH_MS = 75;
 
@@ -249,18 +256,30 @@ function clipString(s: string, max: number): string {
  * Tool arguments for `span-input`: a JSON-safe copy (via smallDetail's JSON round-trip) with every string
  * clipped to ≤ SPAN_INPUT_MAX_CHARS; if the whole thing is still large (huge arrays), its JSON text clipped instead.
  */
-function spanInputValue(value: unknown): unknown {
+function spanInputValue(value: unknown, toolName = ""): unknown {
+  const long = LONG_DETAIL_TOOL.test(toolName);
+  const stringMax = long ? CODE_STRING_MAX_CHARS : SPAN_INPUT_MAX_CHARS;
+  const jsonMax = long ? CODE_DETAIL_MAX_CHARS : DETAIL_MAX_CHARS;
   const safe = smallDetail(value, Number.POSITIVE_INFINITY);
   if (safe === undefined) return null;
   const clip = (v: unknown): unknown => {
-    if (typeof v === "string") return clipString(v, SPAN_INPUT_MAX_CHARS);
+    if (typeof v === "string") return clipString(v, stringMax);
     if (Array.isArray(v)) return v.map(clip);
     if (v !== null && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clip(x)]));
     return v;
   };
   const clipped = clip(safe);
   const json = JSON.stringify(clipped);
-  return json.length > DETAIL_MAX_CHARS ? clipString(json, SPAN_INPUT_MAX_CHARS) : clipped;
+  return json.length > jsonMax ? clipString(json, stringMax) : clipped;
+}
+
+/** span-end detail of a finished tool call (Code Mode scripts and results are kept longer). */
+function toolEndDetail(toolName: string, input: unknown, output: unknown) {
+  const long = LONG_DETAIL_TOOL.test(toolName);
+  return {
+    input: long ? spanInputValue(input, toolName) : smallDetail(input, 500),
+    output: smallDetail(output, long ? CODE_DETAIL_MAX_CHARS : DETAIL_MAX_CHARS),
+  };
 }
 
 /** experimental_telemetry for a streamText call (spec §6.4): agentId, conversationId, model key, workspace when set. */
@@ -319,7 +338,7 @@ function traceToolExecutions(
         }
         if (!inputs.has(id)) {
           inputs.add(id);
-          ctx.emit({ type: "span-input", id, input: spanInputValue(input) });
+          ctx.emit({ type: "span-input", id, input: spanInputValue(input, name) });
         }
         return execute.call(t, input, { ...options, toolCallId: id });
       },
@@ -457,24 +476,48 @@ export async function pipeStepStream(
   const endedTools = new Set<string>();
   const inputSent = opts.inputToolSpans ?? new Set<string>();
   const toolInputs = new Map<string, unknown>();
+  const toolNames = new Map<string, string>();
+  // Streamed argument text per tool span: sent = chars already emitted, pending = waiting for the next batch.
+  const inputStreams = new Map<string, { sent: number; pending: string; lastAt: number }>();
   const openToolIds = () => [...startedTools].filter((id) => !endedTools.has(id));
   const runningToolIds = () => openToolIds().filter((id) => inputSent.has(id));
   const inputPhaseToolIds = () => openToolIds().filter((id) => !inputSent.has(id));
 
   const ensureToolStarted = (rawToolCallId: string, toolName: string) => {
     const toolCallId = toolSpanId(parentSpanId, rawToolCallId);
+    toolNames.set(toolCallId, toolName);
     if (startedTools.has(toolCallId)) return;
     startedTools.add(toolCallId);
     ctx.emit({ type: "span-start", id: toolCallId, parentId: parentSpanId, kind: "execute_tool", name: toolName, t: ctx.now() });
   };
+  const flushInputStream = (id: string) => {
+    const st = inputStreams.get(id);
+    if (!st || !st.pending) return;
+    ctx.emit({ type: "tool-input-delta", spanId: id, text: st.pending });
+    st.sent += st.pending.length;
+    st.pending = "";
+    st.lastAt = ctx.now();
+  };
+  const pushInputDelta = (rawToolCallId: string, delta: string) => {
+    const id = toolSpanId(parentSpanId, rawToolCallId);
+    if (!delta || !startedTools.has(id) || inputSent.has(id) || endedTools.has(id)) return;
+    let st = inputStreams.get(id);
+    if (!st) inputStreams.set(id, (st = { sent: 0, pending: "", lastAt: Number.NEGATIVE_INFINITY }));
+    const room = TOOL_INPUT_STREAM_MAX_CHARS - st.sent - st.pending.length;
+    if (room <= 0) return;
+    st.pending += delta.slice(0, room);
+    if (ctx.now() - st.lastAt >= TOOL_INPUT_FLUSH_MS) flushInputStream(id);
+  };
   const emitInput = (rawToolCallId: string, input: unknown) => {
     const id = toolSpanId(parentSpanId, rawToolCallId);
     if (inputSent.has(id) || endedTools.has(id)) return;
+    flushInputStream(id);
     inputSent.add(id);
-    ctx.emit({ type: "span-input", id, input: spanInputValue(input) });
+    ctx.emit({ type: "span-input", id, input: spanInputValue(input, toolNames.get(id)) });
   };
   const endTool = (toolCallId: string, status: "ok" | "error", detail: unknown) => {
     if (endedTools.has(toolCallId)) return;
+    flushInputStream(toolCallId);
     endedTools.add(toolCallId);
     ctx.emit({ type: "span-end", id: toolCallId, t: ctx.now(), status, detail });
   };
@@ -539,6 +582,14 @@ export async function pipeStepStream(
         ensureToolStarted(part.id, part.toolName);
         return;
       }
+      case "tool-input-delta": {
+        pushInputDelta(part.id, part.delta);
+        return;
+      }
+      case "tool-input-end": {
+        flushInputStream(toolSpanId(parentSpanId, part.id));
+        return;
+      }
       case "tool-call": {
         toolInputs.set(toolSpanId(parentSpanId, part.toolCallId), part.input);
         ensureToolStarted(part.toolCallId, part.toolName);
@@ -551,7 +602,7 @@ export async function pipeStepStream(
         ensureToolStarted(part.toolCallId, part.toolName);
         const input = toolInputs.has(id) ? toolInputs.get(id) : part.input;
         toolResults.push({ toolName: part.toolName, output: part.output });
-        endTool(id, "ok", { input: smallDetail(input, 500), output: smallDetail(part.output) });
+        endTool(id, "ok", toolEndDetail(part.toolName, input, part.output));
         return;
       }
       case "tool-error": {
