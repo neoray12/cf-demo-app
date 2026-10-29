@@ -353,7 +353,7 @@
       },
       "bigDeal": {
         "title": "建立 150 萬商機 · 高風險",
-        "prompt": "在 Salesforce 為 GenePoint 建立一筆新商機「雲朵科技 年度授權」，金額 1,500,000，階段 Prospecting，預計 2026-12-31 結案"
+        "prompt": "在 Salesforce 為 GenePoint 建立一筆新商機「{{name}}」，金額 1,500,000，階段 Prospecting，預計 2026-12-31 結案"
       },
       "sapRelease": {
         "title": "SAP 下達生產訂單 · 高風險",

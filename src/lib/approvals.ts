@@ -55,6 +55,26 @@ export const HITL_EXAMPLES: ReadonlyArray<{ key: string; risk: Risk }> = [
   { key: 'sapRelease', risk: 'high' },
 ];
 
+const DEAL_NAME_PARTS = {
+  'zh-TW': { brands: ['雲朵科技', '星河資訊', '藍海數位', '晨曦軟體', '極光雲端'], products: ['授權', '維護合約', '雲端訂閱', '資安服務', '顧問服務'] },
+  en: { brands: ['Cloudo Tech', 'Galaxy Info', 'Blue Ocean Digital', 'Dawn Software', 'Aurora Cloud'], products: ['license', 'maintenance contract', 'cloud subscription', 'security services', 'consulting'] },
+};
+
+/**
+ * A fresh opportunity name for the "bigDeal" example (each click creates a new
+ * record, so the names should differ): brand + 2026/2027 + annual product. Never
+ * returns `previous`.
+ */
+export function randomDealName(lang: string, previous?: string): string {
+  const { brands, products } = lang.startsWith('zh') ? DEAL_NAME_PARTS['zh-TW'] : DEAL_NAME_PARTS.en;
+  const pick = <T>(xs: readonly T[]) => xs[Math.floor(Math.random() * xs.length)]!;
+  for (;;) {
+    const year = pick([2026, 2027]);
+    const name = lang.startsWith('zh') ? `${pick(brands)} ${year} 年度${pick(products)}` : `${pick(brands)} ${year} annual ${pick(products)}`;
+    if (name !== previous) return name;
+  }
+}
+
 /** An approval as the chat card and the approval page see it (GET /api/approvals/{id}). */
 export interface ApprovalView {
   id: string;

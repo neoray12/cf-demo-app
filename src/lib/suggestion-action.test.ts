@@ -11,6 +11,11 @@ describe('suggestionAction', () => {
     expect(suggestionAction({ mcp: 'saas', experiment: 'sf-agg' }, ['saas'])).toBe('compare');
   });
 
+  it('fills the input for editing when the card asks for it (after the server is connected)', () => {
+    expect(suggestionAction({ mcp: 'saas', edit: true }, ['saas'])).toBe('edit');
+    expect(suggestionAction({ mcp: 'saas', edit: true }, [])).toBe('connect');
+  });
+
   it('just sends everything else', () => {
     expect(suggestionAction({}, [])).toBe('send');
     expect(suggestionAction({ mcp: 'saas' }, ['saas'])).toBe('send');

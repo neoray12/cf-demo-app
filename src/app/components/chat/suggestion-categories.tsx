@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import {
@@ -22,13 +22,15 @@ import {
 } from "lucide-react";
 import { GUARDRAIL_SCENARIOS } from "@/lib/mcp-guardrails";
 import { CODE_MODE_EXAMPLES } from "@/lib/experiment-compare";
-import { HITL_EXAMPLES } from "@/lib/approvals";
+import { HITL_EXAMPLES, randomDealName } from "@/lib/approvals";
 
 export interface SuggestionSendOpts {
   /** MCP server that must be connected; the turn is sent with only this server. */
   mcp?: string;
   /** Code Mode comparison example: send twice (without, then with Code Mode) under this experiment id. */
   experiment?: string;
+  /** Fill the input so the prompt can be changed before it is sent (these options still apply). */
+  edit?: boolean;
 }
 
 interface SuggestionItem {
@@ -39,6 +41,8 @@ interface SuggestionItem {
   href?: string;
   /** Overrides the category's send options for this example. */
   opts?: SuggestionSendOpts;
+  /** Called after the card was used (e.g. to pick a new random name for next time). */
+  afterPick?: () => void;
 }
 
 type CategoryId = "basics" | "sandbox" | "dw" | "codemode" | "browser" | "safety" | "guardrails" | "hitl";
@@ -147,9 +151,14 @@ export function SuggestionCategories({
 }: {
   onSend: (prompt: string, opts: SuggestionSendOpts) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const [openId, setOpenId] = useState<CategoryId | null>(null);
+  // "bigDeal" creates a record every time, so each use gets a new opportunity name
+  // (picked after mount: a random value during render would not match the server HTML).
+  const [dealName, setDealName] = useState("");
+  const nextDealName = () => setDealName((prev) => randomDealName(i18n.language, prev));
+  useEffect(nextDealName, [i18n.language]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const s2 = GUARDRAIL_SCENARIOS.find((s) => s.id === 2);
 
@@ -237,14 +246,16 @@ export function SuggestionCategories({
     },
     {
       // Writes the harness holds for a human: low risk is approved in the chat,
-      // high risk goes to a Cloudflare Workflow that emails the manager.
+      // high risk goes to a Cloudflare Workflow that emails the manager. They are
+      // writes, so the prompt goes into the input to be checked / changed first.
       id: "hitl",
       icon: Hand,
-      opts: { mcp: "saas" },
+      opts: { mcp: "saas", edit: true },
       items: HITL_EXAMPLES.map((e) => ({
         title: t(`chat.hitlSuggestions.${e.key}.title`),
-        desc: t(`chat.hitlSuggestions.${e.key}.prompt`),
+        desc: t(`chat.hitlSuggestions.${e.key}.prompt`, e.key === "bigDeal" ? { name: dealName } : undefined),
         icon: e.risk === "high" ? MailCheck : Hand,
+        ...(e.key === "bigDeal" ? { afterPick: nextDealName } : {}),
       })),
     },
   ];
@@ -286,7 +297,11 @@ export function SuggestionCategories({
               <button
                 key={s.title}
                 type="button"
-                onClick={() => (s.href ? router.push(s.href) : onSend(s.desc, s.opts ?? open.opts))}
+                onClick={() => {
+                  if (s.href) return router.push(s.href);
+                  onSend(s.desc, s.opts ?? open.opts);
+                  s.afterPick?.();
+                }}
                 className={`text-left rounded-2xl border px-4 py-3.5 transition-colors ${style.item}`}
               >
                 <div className={`flex items-center gap-1.5 text-sm font-medium ${style.itemTitle}`}>

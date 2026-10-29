@@ -353,7 +353,7 @@
       },
       "bigDeal": {
         "title": "Create a 1.5M deal · high risk",
-        "prompt": "Create a new Salesforce opportunity \"Cloudo Tech annual license\" for GenePoint, amount 1,500,000, stage Prospecting, close date 2026-12-31"
+        "prompt": "Create a new Salesforce opportunity \"{{name}}\" for GenePoint, amount 1,500,000, stage Prospecting, close date 2026-12-31"
       },
       "sapRelease": {
         "title": "Release an SAP production order · high risk",

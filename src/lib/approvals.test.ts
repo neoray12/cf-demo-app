@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baseToolName, classifyCall, canTransition, isTerminal, appendEvent, decisionRight, HITL_EXAMPLES, decisionLabel, recordDecision, decisionErrorMessage } from './approvals';
+import { baseToolName, classifyCall, canTransition, isTerminal, appendEvent, decisionRight, HITL_EXAMPLES, decisionLabel, recordDecision, decisionErrorMessage, randomDealName } from './approvals';
 import zhTW from '../i18n/zh-TW.json';
 import en from '../i18n/en.json';
 
@@ -205,5 +205,33 @@ describe('decisionErrorMessage', () => {
   it('falls back to the server error, then the status', () => {
     expect(decisionErrorMessage(502, 'workflow unreachable')).toBe('workflow unreachable');
     expect(decisionErrorMessage(500, undefined)).toBe('HTTP 500');
+  });
+});
+
+describe('randomDealName', () => {
+  it('builds a name with a 2026 or 2027 year, in the UI language', () => {
+    for (let i = 0; i < 50; i++) {
+      expect(randomDealName('zh-TW')).toMatch(/^\S+ 202[67] 年度\S+$/);
+      expect(randomDealName('en')).toMatch(/^[A-Z][\w ]+ 202[67] annual [a-z ]+$/);
+    }
+  });
+
+  it('never repeats the previous name and is not always the same', () => {
+    const names = new Set<string>();
+    let prev: string | undefined;
+    for (let i = 0; i < 40; i++) {
+      const name = randomDealName('zh-TW', prev);
+      expect(name).not.toBe(prev);
+      names.add(name);
+      prev = name;
+    }
+    expect(names.size).toBeGreaterThan(5);
+  });
+
+  it('fills the example prompt, which keeps the high-risk amount', () => {
+    const prompt = (zhTW as any).chat.hitlSuggestions.bigDeal.prompt.replace('{{name}}', randomDealName('zh-TW'));
+    expect(prompt).toContain('1,500,000');
+    expect(prompt).not.toContain('{{');
+    expect((en as any).chat.hitlSuggestions.bigDeal.prompt).toContain('{{name}}');
   });
 });

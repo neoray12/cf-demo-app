@@ -1667,6 +1667,8 @@ export function ChatPage() {
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
     setMcpConnectHint(false);
+    // Clearing the box drops a suggestion card's pinned options.
+    if (!e.target.value.trim()) pendingSuggestionRef.current = null;
     e.target.style.height = "auto";
     e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
   };
@@ -1684,6 +1686,7 @@ export function ChatPage() {
     messagesRef.current = [];
     setMessages([]);
     setInput("");
+    pendingSuggestionRef.current = null;
     conversationIdRef.current = crypto.randomUUID();
     setActiveConversationId("");
     textareaRef.current?.focus();
@@ -1733,6 +1736,20 @@ export function ChatPage() {
       setShowMcpPanel(true);
       return;
     }
+    if (action === "edit") {
+      // Fill the input to be changed first; sending it (edited or not) keeps the card's MCP server.
+      pendingSuggestionRef.current = { prompt, opts };
+      setInput(prompt);
+      setTimeout(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = "auto";
+        el.style.height = Math.min(el.scrollHeight, 200) + "px";
+        el.focus();
+        el.setSelectionRange(prompt.length, prompt.length);
+      }, 0);
+      return;
+    }
     pendingSuggestionRef.current = null;
     if (action === "compare") {
       void runComparison(prompt, opts.experiment!, opts.mcp ? [opts.mcp] : undefined);
@@ -1764,6 +1781,10 @@ export function ChatPage() {
   const sendInput = () => {
     if (!input.trim() && !pendingImages.length) return;
     const pending = pendingSuggestionRef.current;
+    if (pending?.opts.edit) {
+      handleSuggestion(input, { ...pending.opts, edit: false });
+      return;
+    }
     if (pending && pending.prompt === input) {
       handleSuggestion(pending.prompt, pending.opts);
       return;
