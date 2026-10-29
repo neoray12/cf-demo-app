@@ -1,0 +1,33 @@
+src/app/components/chat/suggestion-categories.tsx
+  s_35f257df545d16::t_057161f838404b 3,25,32-33,44-45,154,157-161,249-250,253,256,258,300-304
+src/app/pages/chat.tsx
+  s_35f257df545d16::t_b0450f9739914d 1670-1671,1689,1739-1752,1784-1787
+src/i18n/en.json
+  s_35f257df545d16::t_30ccc0d00c8bf4 356
+src/i18n/zh-TW.json
+  s_35f257df545d16::t_003390dc9f16b9 356
+src/lib/approvals.test.ts
+  s_35f257df545d16::t_29e5c2f7542502 2,210-237
+src/lib/approvals.ts
+  s_35f257df545d16::t_b39f1ad6c98b26 58-77
+src/lib/suggestion-action.test.ts
+  s_35f257df545d16::t_8351c848bd082d 14-18
+src/lib/suggestion-action.ts
+  s_35f257df545d16::t_487cc652b58f6e 3,8-9,11,13-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1b0fd68449bfda22560372d43c4e5a72dfab49b2",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
