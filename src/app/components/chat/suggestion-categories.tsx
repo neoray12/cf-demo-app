@@ -194,6 +194,7 @@ export function SuggestionCategories({
       items: [
         { title: t("chat.dwSuggestions.speed.title"), desc: t("chat.dwSuggestions.speed.prompt"), icon: Zap },
         { title: t("chat.dwSuggestions.compare.title"), desc: t("chat.dwSuggestions.compare.prompt"), icon: Zap },
+        { title: t("chat.dwSuggestions.benchmark.title"), desc: t("chat.dwSuggestions.benchmark.prompt"), icon: Zap },
         { title: t("chat.dwSuggestions.blocked.title"), desc: t("chat.dwSuggestions.blocked.prompt"), icon: Zap },
       ],
     },

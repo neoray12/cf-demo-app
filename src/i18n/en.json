@@ -136,6 +136,10 @@
         "title": "Isolate vs Container",
         "prompt": "Calculate 20 factorial once with JavaScript (the executeJs tool) and once with Python (the executeCode tool), then compare the execution times they report"
       },
+      "benchmark": {
+        "title": "JS vs Python Benchmark",
+        "prompt": "Compare Dynamic Worker and Sandbox performance with the same algorithms:\n1. Count the primes between 1 and 10,000,000 with the Sieve of Eratosthenes (plain loops only, no numpy or built-ins)\n2. Compute the 35th Fibonacci number recursively\nRun it once in JavaScript (the executeJs tool) and once in Python (the executeCode tool). In Python, print each part's time in milliseconds with time.perf_counter(); in-code timers are frozen inside Workers, so for JavaScript use the executionMs the tool reports. Finish with a table comparing the prime count, the 35th Fibonacci number and each run's time, and explain the difference."
+      },
       "blocked": {
         "title": "Network Lockdown Demo",
         "prompt": "Run fetch('https://example.com') in JavaScript and tell me what happens"
