@@ -1,0 +1,23 @@
+src/i18n/en.json
+  s_35f257df545d16::t_04f4e83d9aa623 139-142
+src/i18n/zh-TW.json
+  s_35f257df545d16::t_bf249cdcc30bd9 139-142
+src/app/components/chat/suggestion-categories.tsx
+  s_35f257df545d16::t_dd4c04e2872549 197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ea97bc6d1efc263201eaf5f603806377ec6f8266",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
