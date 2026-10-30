@@ -29,7 +29,7 @@ export interface SuggestionSendOpts {
   mcp?: string;
   /** Code Mode comparison example: send twice (without, then with Code Mode) under this experiment id. */
   experiment?: string;
-  /** Fill the input so the prompt can be changed before it is sent (these options still apply). */
+  /** A click fills the input so the prompt can be changed first; sending it passes `false` (these options still apply). */
   edit?: boolean;
 }
 
@@ -251,7 +251,7 @@ export function SuggestionCategories({
       // writes, so the prompt goes into the input to be checked / changed first.
       id: "hitl",
       icon: Hand,
-      opts: { mcp: "saas", edit: true },
+      opts: { mcp: "saas" },
       items: HITL_EXAMPLES.map((e) => ({
         title: t(`chat.hitlSuggestions.${e.key}.title`),
         desc: t(`chat.hitlSuggestions.${e.key}.prompt`, e.key === "bigDeal" ? { name: dealName } : undefined),

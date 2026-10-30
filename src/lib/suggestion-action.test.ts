@@ -5,19 +5,21 @@ describe('suggestionAction', () => {
   it('asks to connect first when the card needs an MCP server that is not connected', () => {
     expect(suggestionAction({ mcp: 'saas', experiment: 'sf-agg' }, [])).toBe('connect');
     expect(suggestionAction({ mcp: 'saas' }, ['cf-docs'])).toBe('connect');
+    expect(suggestionAction({ mcp: 'saas', edit: false }, [])).toBe('connect');
   });
 
-  it('runs the comparison once the server is connected', () => {
-    expect(suggestionAction({ mcp: 'saas', experiment: 'sf-agg' }, ['saas'])).toBe('compare');
+  it('fills the input for editing when a card is clicked', () => {
+    expect(suggestionAction({}, [])).toBe('edit');
+    expect(suggestionAction({ mcp: 'saas' }, ['saas'])).toBe('edit');
+    expect(suggestionAction({ mcp: 'saas', experiment: 'sf-agg' }, ['saas'])).toBe('edit');
   });
 
-  it('fills the input for editing when the card asks for it (after the server is connected)', () => {
-    expect(suggestionAction({ mcp: 'saas', edit: true }, ['saas'])).toBe('edit');
-    expect(suggestionAction({ mcp: 'saas', edit: true }, [])).toBe('connect');
+  it('runs the comparison when the filled-in prompt is sent', () => {
+    expect(suggestionAction({ mcp: 'saas', experiment: 'sf-agg', edit: false }, ['saas'])).toBe('compare');
   });
 
-  it('just sends everything else', () => {
-    expect(suggestionAction({}, [])).toBe('send');
-    expect(suggestionAction({ mcp: 'saas' }, ['saas'])).toBe('send');
+  it('sends everything else once the filled-in prompt is sent', () => {
+    expect(suggestionAction({ edit: false }, [])).toBe('send');
+    expect(suggestionAction({ mcp: 'saas', edit: false }, ['saas'])).toBe('send');
   });
 });

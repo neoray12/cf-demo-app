@@ -110,7 +110,7 @@
 - **Clef 頁面分兩個分頁**（2026-10-30）：預設「Demo」只講一個故事——① 6 個精選情境（`FEATURED_PRESETS`，`src/lib/clef-demo.ts`）② 唯讀顯示素材、State 與白話問題 ③ 每題一個大數字，加上一條門檻滑桿把指定是非題的機率轉成動作（`Preset.demo`：`tagline`、`question`、`threshold`、`pass`、`fail`，雙語，在 `clef-presets.ts`）。模型依情境自動選（有音訊 / 影片用 Clef-omni，其他用 Clef，`demoModel()`）。「自訂與 API（進階）」是原本的完整編輯器，兩個分頁共用同一份 state；Demo 的「比較三個模型」會切到進階並一次跑多個模型。進階分頁的結果是每個模型一張全寬卡片、由上到下排列，卡片內的問題左右兩欄
 - **Clef 範例素材**：`public/clef-samples/`（來源與授權見 `CREDITS.md`；圖片/影片取自 Wikimedia Commons CC BY-SA / CC0，音訊為 macOS 台灣國語 TTS 合成的虛構劇本，詐騙簡訊截圖為自製）。情境與素材清單在 `src/app/pages/clef-presets.ts`（雙語），點情境會自動載入對應素材；音訊/影片情境只跑 Clef-omni。**帶圖片/音訊/影片的請求一律直接打 REST、不經 AI Gateway**——實測 Gateway 對大型 base64 body 會多花 20–35 秒（關 log 仍約 7 秒），Workers AI 本身不到 1.5 秒
 - **Sandbox / Dynamic Worker 穩定性**（2026-10 實測後的修正）：
-  - `max_instances` 曾被 5 個「存活數天到數月、沒有依 `sleepAfter` 休眠」的 container 佔滿，新 session 全部卡住直到逾時。現在 `workers/chat-sandbox` 每次請求會在 KV 記錄最後使用時間，cron 每 5 分鐘把閒置超過 25 分鐘的 sandbox `destroy()`（`reapIdleSandboxes`），並一次性清掉先前遺留的 `LEGACY_SANDBOX_IDS`；`max_instances` 提高到 10
+  - `max_instances` 曾被 5 個「存活數天到數月、沒有依 `sleepAfter` 休眠」的 container 佔滿，新 session 全部卡住直到逾時。現在 `workers/chat-sandbox` 每次請求會在 KV 記錄最後使用時間，cron 每 5 分鐘把閒置超過 25 分鐘的 sandbox `destroy()`（`reapIdleSandboxes`），並一次性清掉先前遺留的 `LEGACY_SANDBOX_IDS`；`max_instances` 提高到 10。2026-10-30 instance type 從 `lite`（1/16 vCPU、256 MiB）改成 `standard-1`（1/2 vCPU、4 GiB）：純 Python 迴圈在 lite 上比本機慢約 22 倍（「JS vs Python 效能對決」範例 Python 跑了 48 秒，逼近 App 的 55 秒逾時）。另外 Worker 給 `runCode` 的 30 秒 `timeout` 實際沒有中斷執行
   - `/api/chat` 一開始就用 `ctx.waitUntil(warmSandbox())` 呼叫 sandbox 的 `/api/warmup` 預先開機，冷啟動與模型思考時間重疊；工具逾時 55s、串流 idle 90s（工具逾時必須小於 idle 視窗）；colo 重擲上限 3→2
   - `executeJs`（`normalizeCode`）改用括號配對判斷程式形狀：以 `function fib(){}` 宣告開頭、後面接 `console.log(...)` 的腳本以前會被當成函式運算式包起來而 SyntaxError（"Unexpected identifier 'console'"），幾乎每個 DW 範例前 1–2 次都失敗
   - 預設模型改為 `claude-haiku-4-5`，2026-10-14 再換成 `claude-haiku-5-5`（Sandbox/DW 範例實測 6–10 秒；GLM 5.3 因推理過程不串流，同樣範例要 12–88 秒且變異大；gpt-oss-120b 約 8–20 秒，是不想用外部 provider 時的替代）
@@ -163,6 +163,7 @@
 - DLP regex 限制：Rust regex、無 lookaround、不能有無上限量詞（`+`/`*` 會回 3305）；word_list 每帳號只能 1 個（已被 SAP 規則使用）
 - 規則啟用約 11 秒、停用約 30 秒生效
 - 首頁建議改為可展開類別（含「MCP 卡控示範」）；聊天訊息下方顯示處理過程（見第 10 節）
+- **範例卡片一律只填入輸入框、不直接送出**（2026-10-30，首頁與 Agents 頁都是）：`suggestionAction()` 在 `edit !== false` 時回 `edit`，送出時 `sendInput` 帶 `edit: false` 再判斷一次，所以卡片的 MCP server、Code Mode 對照（`experiment`）等選項在使用者改過文字後仍然套用；MCP 沒連線時照舊先開 MCP 面板
 
 | 檔案 | 說明 |
 |------|------|

@@ -1776,17 +1776,13 @@ export function ChatPage() {
     }
   };
 
-  // Send button / Enter. A prompt that a suggestion filled in (while its MCP
-  // server wasn't connected yet) is sent with that suggestion's options.
+  // Send button / Enter. A prompt that a suggestion filled in (edited or not) is
+  // sent with that suggestion's options; an MCP server it needs is checked again.
   const sendInput = () => {
     if (!input.trim() && !pendingImages.length) return;
     const pending = pendingSuggestionRef.current;
-    if (pending?.opts.edit) {
+    if (pending) {
       handleSuggestion(input, { ...pending.opts, edit: false });
-      return;
-    }
-    if (pending && pending.prompt === input) {
-      handleSuggestion(pending.prompt, pending.opts);
       return;
     }
     pendingSuggestionRef.current = null;

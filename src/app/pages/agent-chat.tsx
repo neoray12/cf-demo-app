@@ -49,6 +49,7 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
   const [selectedTurn, setSelectedTurn] = useState(0);
 
   const scrollRootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickRef = useRef(true);
 
   // Follow the newest turn in the trace panel.
@@ -83,6 +84,17 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
       storeContent,
     });
     setInput("");
+  };
+
+  // A sample question fills the input (it can be changed before sending) instead of sending it.
+  const fillInput = (text: string) => {
+    setInput(text);
+    setTimeout(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(text.length, text.length);
+    }, 0);
   };
 
   // 重試: same question, same model / workspace / storeContent as the failed turn (a new turn at the bottom).
@@ -195,11 +207,11 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
                       key={k}
                       role="button"
                       tabIndex={0}
-                      onClick={() => submit(t(k))}
+                      onClick={() => fillInput(t(k))}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          submit(t(k));
+                          fillInput(t(k));
                         }
                       }}
                       className="cursor-pointer px-4 py-3 text-sm shadow-none transition-colors hover:bg-muted/60"
@@ -231,6 +243,7 @@ export function AgentChatPage({ agent }: { agent: AgentCatalogEntry }) {
           <div className="mx-auto max-w-3xl">
             <div className="relative rounded-3xl border bg-muted/30 transition-colors focus-within:border-foreground/20">
               <Textarea
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
