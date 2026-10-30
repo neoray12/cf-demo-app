@@ -35,9 +35,9 @@ enabled = true
 [[containers]]
 class_name = "Sandbox"
 image = "./Dockerfile"
-instance_type = "lite"
+instance_type = "standard-1"
 # Was 5 — five long-lived sessions (or zombies) were enough to block every new
-# session. A "lite" instance is 1/16 vCPU / 256 MiB, so headroom is cheap.
+# session. standard-1 (1/2 vCPU / 4 GiB): on "lite" (1/16 vCPU) pure-Python loops ran ~22x slower than a laptop.
 max_instances = 10
 
   [containers.constraints]
