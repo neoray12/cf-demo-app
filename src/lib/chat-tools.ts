@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { classifyMcpError } from '@/lib/mcp-guardrails';
 import { parseMcpServerUrls, connectAndListTools, callMcpTool, portalCodeModeUrl, type McpServerConfig, type McpToolInfo } from '@/lib/mcp-client';
-import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
-import { PORTAL_CATALOG_SEARCH_CODE, formatPortalCatalog, parsePortalCatalog, type PortalCatalogEntry } from '@/lib/portal-catalog';
+import { MCP_TOOL_CACHE_TTL, mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
+import { PORTAL_CATALOG_SEARCH_CODE, codeModeModelOutput, formatPortalCatalog, parsePortalCatalog, prepareCodeModeArgs, type PortalCatalogEntry } from '@/lib/portal-catalog';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview } from '@/lib/chat-sandbox';
 import { normalizeCode } from '@/lib/js-normalize';
 
@@ -358,7 +358,7 @@ function connectionFor(server: McpServerConfig, codeMode: boolean): McpServerCon
 }
 
 /**
- * A connected server's tool list (KV-cached 5 min per session + server + interface).
+ * A connected server's tool list (KV-cached 1 h per session + server + interface).
  * null = not authorized yet, or the server could not be reached.
  */
 export async function listServerTools(
@@ -375,7 +375,7 @@ export async function listServerTools(
   if (accessToken === null) return null;
   const result = await connectAndListTools(connectionFor(server, codeMode), accessToken);
   if (!result.success) return null;
-  await kv.put(cacheKey, JSON.stringify(result.tools), { expirationTtl: 300 });
+  await kv.put(cacheKey, JSON.stringify(result.tools), { expirationTtl: MCP_TOOL_CACHE_TTL });
   return result.tools;
 }
 
@@ -426,11 +426,13 @@ export function mcpToolsToAiTools(
     mcpTools[toolKey] = {
       description: tool.description || `MCP tool: ${tool.name} (from ${server.name})`,
       inputSchema: z.object(zodShape),
+      // The model sees only the script's result; the step log stays in the span for the UI.
+      ...(tool.name === 'portal_codemode_execute' ? { toModelOutput: ({ output }: { output: unknown }) => codeModeModelOutput(output) } : {}),
       execute: safeTool(async (args: Record<string, unknown>) => {
         try {
           console.log(`[Chat API] MCP tool call: ${toolKey}`, args);
           const accessToken = (await serverAccessToken(kv, sessionId, server)) ?? undefined;
-          const result = await callMcpTool(server, tool.name, args, accessToken);
+          const result = await callMcpTool(server, tool.name, prepareCodeModeArgs(tool.name, args), accessToken);
           const textParts = result.content
             .filter((c) => c.type === 'text' && c.text)
             .map((c) => c.text);
@@ -498,13 +500,13 @@ export async function serverCatalogPrompt(
       const result = await callMcpTool(connectionFor(server, true), 'portal_codemode_search', { code: PORTAL_CATALOG_SEARCH_CODE }, accessToken);
       const text = result.content.filter((c) => c.type === 'text' && c.text).map((c) => c.text).join('');
       tools = parsePortalCatalog(text);
-      if (tools.length) await kv.put(cacheKey, JSON.stringify(tools), { expirationTtl: 300 });
+      if (tools.length) await kv.put(cacheKey, JSON.stringify(tools), { expirationTtl: MCP_TOOL_CACHE_TTL });
     } catch (err) {
       console.warn(`[Chat API] Portal catalog fetch failed for ${server.id}:`, (err as Error).message);
       return '';
     }
   }
-  return formatPortalCatalog(server.name, tools);
+  return formatPortalCatalog(server.name, tools, `tool_${server.id}_portal_codemode_execute`);
 }
 
 /**
@@ -517,11 +519,12 @@ export async function buildServerTools(
   server: McpServerConfig,
   opts: { codeMode: boolean },
 ): Promise<{ tools: Record<string, any>; catalogPrompt: string } | null> {
-  const list = await listServerTools(env, sessionId, server, opts.codeMode);
+  const [list, catalogPrompt] = await Promise.all([
+    listServerTools(env, sessionId, server, opts.codeMode),
+    opts.codeMode ? serverCatalogPrompt(env, sessionId, server) : Promise.resolve(''),
+  ]);
   if (!list) return null;
-  const tools = mcpToolsToAiTools(env, sessionId, connectionFor(server, opts.codeMode), list);
-  const catalogPrompt = opts.codeMode ? await serverCatalogPrompt(env, sessionId, server) : '';
-  return { tools, catalogPrompt };
+  return { tools: mcpToolsToAiTools(env, sessionId, connectionFor(server, opts.codeMode), list), catalogPrompt };
 }
 
 /** Everything needed to rebuild the same tool set from any isolate. */

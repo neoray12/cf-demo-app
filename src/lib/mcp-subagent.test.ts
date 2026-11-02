@@ -30,6 +30,7 @@ describe('buildDelegateTool', () => {
     });
     expect(tool.description).toContain('SAP & Salesforce');
     expect(tool.description).toContain('sf_list_accounts, sap_list_customers');
+    expect(tool.description).toContain('不要為了驗證或補原始資料再委派一次');
   });
 
   it('reports a Gateway block from inside the subagent', async () => {
@@ -146,5 +147,31 @@ describe('buildDelegateTool loadTools parent span', () => {
     });
     await tool.execute!({ task: 't' }, { toolCallId: 'call-1', messages: [] } as never);
     expect(parent).toBe('main/call-1');
+  });
+});
+
+describe('buildDelegateTool Code Mode result passthrough', () => {
+  const portal = (v: unknown) => ({ source: 'SAP & Salesforce', result: JSON.stringify(v, null, 2) });
+
+  it('hands the last successful script result to the main agent, so the subagent need not restate it', async () => {
+    const outputs = [portal({ steps: [], error: 'boom' }), portal({ steps: [{ tool: 'a', args: {}, ms: 1 }], result: { top: [{ name: 'A', amount: 10 }] } })];
+    const execute = { description: 'x', execute: async () => outputs.shift() };
+    const run = async (def: SubagentDef<{ task: string }>) => {
+      const tools = def.tools(ctx) as Record<string, { execute: (a: unknown, o: unknown) => Promise<unknown> }>;
+      await tools.tool_saas_portal_codemode_execute!.execute({ code: 'x' }, { toolCallId: 'c1' });
+      await tools.tool_saas_portal_codemode_execute!.execute({ code: 'y' }, { toolCallId: 'c2' });
+      return { text: '已完成。' };
+    };
+    const tool = buildDelegateTool({
+      server: saas!, toolNames: [], ctx, parentSpanId: 'main', codeMode: true, run,
+      loadTools: async () => ({ tools: { tool_saas_portal_codemode_execute: execute }, catalogPrompt: '' }),
+    });
+    const out = await tool.execute!({ task: 't' }, { toolCallId: 't9', messages: [] });
+    expect(out).toMatchObject({ result: '已完成。', data: '{"top":[{"name":"A","amount":10}]}', codeMode: true });
+  });
+
+  it('tells the Code Mode subagent not to restate the script result', () => {
+    expect(subagentDef(saas!, {}, 'CATALOG', true).system).toContain('不要把腳本結果重寫');
+    expect(subagentDef(saas!, {}, 'CATALOG', false).system).not.toContain('不要把腳本結果重寫');
   });
 });

@@ -3,6 +3,7 @@
 // and Portal logs still apply to them. Used by the in-chat approval (low risk)
 // and by the Workflow's execute step (high risk).
 import { callMcpTool, parseMcpServerUrls, portalCodeModeUrl } from './mcp-client';
+import { prepareCodeModeArgs } from './portal-catalog';
 import { getFreshAccessToken } from './mcp-auth';
 import { classifyMcpError } from './mcp-guardrails';
 import { getApproval, transition, type Approval } from './approvals';
@@ -26,7 +27,7 @@ async function callApproved(env: ExecEnv, a: Approval): Promise<ExecOutcome> {
   }
   const conn = a.codeMode ? { ...server, url: portalCodeModeUrl(server.url) } : server;
   try {
-    const res = await callMcpTool(conn, a.toolName, a.args, token);
+    const res = await callMcpTool(conn, a.toolName, prepareCodeModeArgs(a.toolName, a.args), token);
     const text = res.content.filter((c) => c.type === 'text' && c.text).map((c) => c.text).join('\n');
     if (res.isError) return { ok: false, error: text || '工具回傳錯誤' };
     return { ok: true, result: res.structuredContent ?? text };

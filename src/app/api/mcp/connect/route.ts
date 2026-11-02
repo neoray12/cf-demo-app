@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { cookies } from 'next/headers';
 import { parseMcpServerUrls, connectAndListTools } from '@/lib/mcp-client';
-import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
+import { MCP_TOOL_CACHE_TTL, mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 
 export async function POST(request: NextRequest) {
   const { env } = await getCloudflareContext();
@@ -64,11 +64,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Cache tools in KV (TTL: 5 minutes)
+  // Cache tools in KV
   await kv.put(
     mcpToolCacheKey(sessionId, serverId),
     JSON.stringify(result.tools),
-    { expirationTtl: 300 },
+    { expirationTtl: MCP_TOOL_CACHE_TTL },
   );
 
   return Response.json({

@@ -50,6 +50,11 @@ export function mcpOAuthStateKey(state: string): string {
   return `mcp-oauth-state:${state}`;
 }
 
+// Tool lists and the Portal catalog: a miss costs 3–9 s before a subagent's first
+// model call, and the Portal only re-syncs tool descriptions every ~2 h.
+// Disconnecting deletes the tool list.
+export const MCP_TOOL_CACHE_TTL = 3600;
+
 export function mcpToolCacheKey(sessionId: string, serverId: string): string {
   return `mcp-tools:${sessionId}:${serverId}`;
 }

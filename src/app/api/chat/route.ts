@@ -60,6 +60,9 @@ function extractFirewallFromHtml(html: string): { isFirewall: boolean; rayId: st
 }
 
 // Prompts that probably want the Python sandbox / web preview (used to pre-warm it)
+// Output limit for a Code Mode subagent: one script is often 1.3k–3.3k tokens.
+const CODE_MODE_MAX_TOKENS = 8192;
+
 const SANDBOX_HINT = /計算|階乘|費氏|統計|算出|程式|python|pandas|csv|xlsx|圖表|畫圖|網頁|預覽|倒數|html|容器|sandbox|executeCode|calculate|factorial|fibonacci|chart|plot|preview/i;
 
 // Merge consecutive same-role messages (some providers reject them)
@@ -333,9 +336,13 @@ export async function POST(request: NextRequest) {
     agent: { name: 'main-chat', id: 'main-chat-demo' },
     traced: isTracingActive(),
     // Subagents run on the user's model and carry the turn's code_mode in the gateway metadata.
+    // A Code Mode script can outgrow 4096 tokens: it was cut off mid-JSON and
+    // sent as `{}`, wasting a whole model call (2026-11-02).
     languageModel: (functionId) => {
-      const provider = makeProvider(gatewayMetadata(turnCodeMode(policy)), `subagent:${functionId}`);
-      return { model: provider.chat(compatModelId), label: compatModelId, ...(skipMaxTokens ? {} : { maxOutputTokens: maxTokens }) };
+      const codeMode = turnCodeMode(policy);
+      const provider = makeProvider(gatewayMetadata(codeMode), `subagent:${functionId}`);
+      const limit = codeMode ? Math.max(maxTokens, CODE_MODE_MAX_TOKENS) : maxTokens;
+      return { model: provider.chat(compatModelId), label: compatModelId, ...(skipMaxTokens ? {} : { maxOutputTokens: limit }) };
     },
   };
 
@@ -427,6 +434,10 @@ export async function POST(request: NextRequest) {
 
     for (const d of policy.delegated) {
       const entry = servers.find((x) => x.config.id === d.serverId)!;
+      // Start loading the subagent's tools (and the Portal catalog) now, while the
+      // main model decides to delegate: a cold load takes 3–9 s.
+      const load = () => buildServerTools(env as any, sessionId, entry.config, { codeMode: d.codeMode });
+      const preload = load().catch(() => null);
       tools[d.toolName] = buildDelegateTool({
         server: entry.config,
         toolNames: entry.toolNames,
@@ -450,7 +461,7 @@ export async function POST(request: NextRequest) {
             spanId,
             `mcp.tools:${d.serverId}${d.codeMode ? '#codemode' : ''}`,
             { server: d.serverId, codeMode: d.codeMode },
-            () => buildServerTools(env as any, sessionId, entry.config, { codeMode: d.codeMode }),
+            async () => (await preload) ?? load(),
           );
           if (!loaded) throw new Error(`${entry.config.name} 尚未連線或授權`);
           return loaded;

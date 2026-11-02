@@ -1,7 +1,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { cookies } from 'next/headers';
 import { parseMcpServerUrls, connectAndListTools, type McpToolInfo } from '@/lib/mcp-client';
-import { mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
+import { MCP_TOOL_CACHE_TTL, mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 
 export async function GET() {
   const { env } = await getCloudflareContext();
@@ -40,7 +40,7 @@ export async function GET() {
     if (result.success) {
       allTools.push(...result.tools);
       // Cache tools
-      await kv.put(mcpToolCacheKey(sessionId, server.id), JSON.stringify(result.tools), { expirationTtl: 300 });
+      await kv.put(mcpToolCacheKey(sessionId, server.id), JSON.stringify(result.tools), { expirationTtl: MCP_TOOL_CACHE_TTL });
       serverStatuses.push({ id: server.id, name: server.name, connected: true, toolCount: result.tools.length });
     } else {
       serverStatuses.push({ id: server.id, name: server.name, connected: false, toolCount: 0, error: result.error });
