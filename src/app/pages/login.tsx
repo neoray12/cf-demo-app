@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Eye, EyeOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
+import { turnstileSiteKey } from "@/lib/turnstile";
 
 export function LoginPage() {
   const router = useRouter();
@@ -145,7 +146,7 @@ export function LoginPage() {
             <div className="flex justify-center">
               <div
                 className="cf-turnstile"
-                data-sitekey="0x4AAAAAAC2QlDdiFqByHU1Z"
+                data-sitekey={turnstileSiteKey(process.env.NODE_ENV === "development")}
                 data-callback="onTurnstileSuccess"
                 data-expired-callback="onTurnstileExpired"
                 data-error-callback="onTurnstileError"

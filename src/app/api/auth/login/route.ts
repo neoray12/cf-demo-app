@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { turnstileSecret } from '@/lib/turnstile';
 import { authSecret, findLoginUser, parseLoginUsers, signUserCookie, userCookieHeader } from '@/lib/auth';
 
 export async function POST(request: Request) {
@@ -9,7 +10,11 @@ export async function POST(request: Request) {
   };
 
   const { env } = await getCloudflareContext();
-  const secret = (env as any).TURNSTILE_SECRET_KEY as string | undefined;
+  const secret = turnstileSecret(
+    (env as any).TURNSTILE_SECRET_KEY as string | undefined,
+    process.env.NODE_ENV === 'development',
+    new URL(request.url).hostname,
+  );
   if (!secret) {
     return Response.json({ error: 'Server misconfiguration' }, { status: 500 });
   }
