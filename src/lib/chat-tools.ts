@@ -7,10 +7,10 @@ import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview
 import { normalizeCode, splitExecMarker, wrapSandboxJs } from '@/lib/js-normalize';
 
 // Wrap tool execute to catch errors gracefully instead of crashing the stream
-export function safeTool<T>(fn: (args: T) => Promise<unknown>) {
-  return async (args: T) => {
+export function safeTool<T>(fn: (args: T, options?: { toolCallId?: string }) => Promise<unknown>) {
+  return async (args: T, options?: { toolCallId?: string }) => {
     try {
-      return await fn(args);
+      return await fn(args, options);
     } catch (err) {
       console.error('[Chat API] Tool error:', err);
       return { error: `Tool execution failed: ${(err as Error).message || String(err)}` };
@@ -104,14 +104,17 @@ export function buildSearchKnowledgeByImageTool(env: Record<string, unknown>, im
 
 const EXECUTE_JS_TIMEOUT_MS = 10_000;
 
-export function buildExecuteJsTool(env: Record<string, unknown>) {
+/** Marks when a tool's work starts and ends, so the browser can time it (see onExec in buildToolSet). */
+export type ToolExecHook = (toolCallId: string, phase: 'start' | 'end') => void;
+
+export function buildExecuteJsTool(env: Record<string, unknown>, onExec?: ToolExecHook) {
   return {
     description:
       '在 Cloudflare Dynamic Worker（V8 isolate，毫秒級啟動）中執行 JavaScript 程式碼。適用於快速計算、演算法、字串/JSON 處理。程式碼直接寫成一般語句即可（可含函式宣告與 await），不需要自己包成函式；務必用 console.log() 輸出結果。沙箱無檔案系統且網路被封鎖——若使用者想看網路封鎖的效果，請實際執行含 fetch 的程式碼讓錯誤真實呈現，不要只用文字解釋。需要 Python/pandas/畫圖時請改用 executeCode。',
     inputSchema: z.object({
       code: z.string().describe('要執行的 JavaScript 程式碼，用 console.log() 輸出結果，可使用 await'),
     }),
-    execute: safeTool(async ({ code }: { code: string }) => {
+    execute: safeTool(async ({ code }: { code: string }, options) => {
       console.log('[Chat API] executeJs:', code.length, 'chars');
       const loader = env.LOADER as {
         load: (opts: Record<string, unknown>) => { getEntrypoint: () => { fetch: (req: Request) => Promise<Response> } };
@@ -144,9 +147,11 @@ export function buildExecuteJsTool(env: Record<string, unknown>) {
       `;
 
       // Workers clocks do not advance while code computes (Spectre mitigation),
-      // so no timing measured here would cover the work: the browser times the
-      // tool from the tool-call event to the result. Yield once so tool-call
+      // so nothing measured here would cover the work: the browser times the
+      // gap between these start / end events. Yield once so the start event
       // reaches the stream before the isolate runs on this thread.
+      const execId = options?.toolCallId;
+      if (execId) onExec?.(execId, 'start');
       await new Promise((resolve) => setTimeout(resolve, 0));
       const worker = loader.load({
         compatibilityDate: '2026-01-01',
@@ -161,6 +166,7 @@ export function buildExecuteJsTool(env: Record<string, unknown>) {
         .fetch(new Request('https://dynamic-worker.internal/', { signal: AbortSignal.timeout(EXECUTE_JS_TIMEOUT_MS) }));
 
       const data = (await res.json()) as { logs: string[]; result: unknown; error: string | null };
+      if (execId) onExec?.(execId, 'end');
       const stdout = [
         ...data.logs,
         ...(data.result !== null && data.result !== undefined ? [`=> ${typeof data.result === 'object' ? JSON.stringify(data.result) : String(data.result)}`] : []),
@@ -176,7 +182,7 @@ export function buildExecuteJsTool(env: Record<string, unknown>) {
         results: [],
         error: data.error,
         engine: 'dynamic-worker',
-        timing: '在 Workers 內量不到（計算時時鐘不前進）；工具耗時由瀏覽器量測並顯示在工具卡片上，不要用程式內計時或自行估算',
+        timing: '在 Workers 內量不到（計算時時鐘不前進）；耗時由瀏覽器量測，App 會顯示在工具卡片與回答下方的耗時對照表。不要用程式內計時、不要估算或自己列 Dynamic Worker 的耗時',
         sandbox: null,
       };
     }),
@@ -551,7 +557,7 @@ export interface ToolSetConfig {
 
 // `images` stays outside ToolSetConfig on purpose: the config is signed into
 // the Code Mode session token, and base64 images would bloat it.
-export async function buildToolSet(env: Record<string, unknown>, cfg: ToolSetConfig, images: string[] = []) {
+export async function buildToolSet(env: Record<string, unknown>, cfg: ToolSetConfig, images: string[] = [], onExec?: ToolExecHook) {
   const tools: Record<string, any> = { searchKnowledge: buildSearchKnowledgeTool(env) };
   if (images.length > 0) tools.searchKnowledgeByImage = buildSearchKnowledgeByImageTool(env, images);
   let sandboxToolsActive = false;
@@ -568,7 +574,7 @@ export async function buildToolSet(env: Record<string, unknown>, cfg: ToolSetCon
   // Dynamic Worker executeJs — only when the LOADER binding exists (open
   // beta; also absent in local dev if the dev proxy doesn't support it yet)
   if (env.LOADER) {
-    tools.executeJs = buildExecuteJsTool(env);
+    tools.executeJs = buildExecuteJsTool(env, onExec);
     dynamicWorkerActive = true;
   }
 

@@ -36,6 +36,7 @@ import type { ApprovalRef } from "@/lib/mcp-subagent";
 import type { RunTrace, SpanNode } from "@/lib/agents/trace-tree";
 import { MAIN_ROOT_SPAN, summarizeTrace } from "@/lib/trace-summary";
 import { CompareTable } from "../components/chat/compare-table";
+import { CodeTimingTable } from "../components/chat/code-timing-table";
 import { comparisonModel } from "@/lib/experiment-compare";
 import { suggestionAction } from "@/lib/suggestion-action";
 import type { GatewayBlock } from "@/lib/mcp-guardrails";
@@ -968,6 +969,8 @@ function AssistantMessage({
         />
       )}
 
+      {!isStreaming && message.toolCalls && <CodeTimingTable toolCalls={message.toolCalls} />}
+
       {!isStreaming && message.content && !isError && (
         <div className="mt-1 opacity-60 md:opacity-0 md:hover:opacity-100 transition-opacity">
           <MessageActions text={message.content} onRetry={onRetry} showRetry={isLastAssistant && !isLoading} />
@@ -1384,7 +1387,8 @@ export function ChatPage() {
         );
       };
       // Tool round trips timed here: the Worker's clock does not advance while code computes.
-      const toolCalledAt = new Map<string, number>();
+      const toolStartedAt = new Map<string, number>();
+      const toolTimed = new Set<string>();
       const scheduleFlush = () => {
         if (!flushTimer) flushTimer = setTimeout(() => flushUpdate(), 50);
       };
@@ -1404,9 +1408,12 @@ export function ChatPage() {
             try {
               const event = JSON.parse(line);
               turn = applyChatEvent(turn, event, now());
-              if (event.type === "tool-call") toolCalledAt.set(event.toolCallId, now());
-              if (event.type === "tool-result" && toolCalledAt.has(event.toolCallId)) {
-                const clientMs = Math.round(now() - toolCalledAt.get(event.toolCallId)!);
+              // tool-exec start / end bracket the work itself; tool-call → tool-result is the fallback.
+              if (event.type === "tool-call" || (event.type === "tool-exec" && event.phase === "start")) toolStartedAt.set(event.toolCallId, now());
+              const timed = (event.type === "tool-exec" && event.phase === "end") || (event.type === "tool-result" && !toolTimed.has(event.toolCallId));
+              if (timed && toolStartedAt.has(event.toolCallId)) {
+                if (event.type === "tool-exec") toolTimed.add(event.toolCallId);
+                const clientMs = Math.round(now() - toolStartedAt.get(event.toolCallId)!);
                 turn = { ...turn, toolCalls: turn.toolCalls.map((tc) => (tc.id === event.toolCallId ? { ...tc, clientMs } : tc)) };
               }
               switch (event.type) {

@@ -426,7 +426,10 @@ export async function POST(request: NextRequest) {
     });
 
     const toolConfig: ToolSetConfig = { sessionId, sandboxSessionId, edgeColo, uploadedFiles, mcpServerIds: policy.directServers };
-    const built = await buildToolSet(env as any, toolConfig, validImages);
+    // executeJs marks its own start / end on the stream: the browser times that gap.
+    const built = await buildToolSet(env as any, toolConfig, validImages, (toolCallId, phase) => {
+      if (liveController) send(liveController, { type: 'tool-exec', toolCallId, phase });
+    });
     tools = built.tools;
     sandboxToolsActive = built.sandboxToolsActive;
     browserToolsActive = built.browserToolsActive;

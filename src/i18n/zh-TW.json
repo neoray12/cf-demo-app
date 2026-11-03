@@ -134,11 +134,11 @@
       },
       "compare": {
         "title": "isolate vs 容器對決",
-        "prompt": "用 JavaScript 計算 20 的階乘（用 BigInt），分別在 Dynamic Worker（executeJs 工具）和 Sandbox 容器（executeCode 工具，language: \"javascript\"）各執行一次，比較兩邊的執行環境。Sandbox 的耗時在工具結果的 timing 裡；Dynamic Worker 量不到，耗時寫「見工具卡片」"
+        "prompt": "用 JavaScript 計算 20 的階乘（用 BigInt），分別在 Dynamic Worker（executeJs 工具）和 Sandbox 容器（executeCode 工具，language: \"javascript\"）各執行一次，比較兩邊的執行環境。耗時不用自己列，App 會在回答下方附上兩邊的耗時對照表"
       },
       "benchmark": {
         "title": "Dynamic Worker vs Sandbox 效能對決",
-        "prompt": "用同一份 JavaScript 比較 Dynamic Worker 和 Sandbox 容器：\n1. 用埃拉托斯特尼篩法找出 1 到 10,000,000 之間的質數個數（只用迴圈）\n2. 用遞迴計算費氏數列第 35 項\n步驟：先用 executeJs 在 Dynamic Worker 跑一次空程式 console.log('ok') 當基準，再用 executeJs 跑上面的計算，最後用 executeCode（language: \"javascript\"）在 Sandbox 的 Node.js 跑同一份計算。Sandbox 的程式用 performance.now() 印出兩段的毫秒數；Dynamic Worker 的程式不要印任何計時（計算時時鐘不會前進，只會量到 0）。最後用表格比較兩邊的質數個數、第 35 項與耗時：Sandbox 填工具結果 timing 裡的工具耗時、執行時間與其他開銷；Dynamic Worker 量不到，耗時寫「見工具卡片」，不要估算。並說明兩邊都跑在 V8 上時，差距來自哪裡。"
+        "prompt": "用同一份 JavaScript 比較 Dynamic Worker 和 Sandbox 容器：\n1. 用埃拉托斯特尼篩法找出 1 到 10,000,000 之間的質數個數（只用迴圈）\n2. 用遞迴計算費氏數列第 35 項\n步驟：先用 executeJs 在 Dynamic Worker 跑一次空程式 console.log('ok') 當基準，再用 executeJs 跑上面的計算，最後用 executeCode（language: \"javascript\"）在 Sandbox 的 Node.js 跑同一份計算。Sandbox 的程式用 performance.now() 印出兩段的毫秒數；Dynamic Worker 的程式不要印任何計時（計算時時鐘不會前進，只會量到 0）。耗時不用自己整理：App 會在回答下方附上三次執行的耗時對照表（含 Dynamic Worker，由瀏覽器量測）。你的表格只比較兩邊的質數個數與第 35 項，再根據 Sandbox 的 timing 與分段時間，說明兩邊都跑在 V8 上時，差距會來自哪裡。"
       },
       "blocked": {
         "title": "網路封鎖示範",
@@ -598,6 +598,27 @@
       "injected": "補上憑證",
       "blocked": "擋下",
       "tooltip": "沙箱裡的程式對外連線都經過 Worker 的出口政策：白名單外的網址被擋下；呼叫 GitHub API 時 token 在出口才補上，沙箱內看不到 token。"
+    },
+    "codeTiming": {
+      "title": "程式執行耗時對照（取自工具卡片）",
+      "env": "執行環境",
+      "code": "程式",
+      "total": "工具耗時",
+      "exec": "執行",
+      "overhead": "其他開銷",
+      "envs": {
+        "dynamic-worker": "Dynamic Worker",
+        "sandbox-js": "Sandbox · Node.js",
+        "sandbox-python": "Sandbox · Python"
+      },
+      "baseline": "空程式基準",
+      "slower": "Sandbox 比 Dynamic Worker 多花 {{diff}}（約 {{ratio}} 倍）",
+      "faster": "Sandbox 比 Dynamic Worker 少花 {{diff}}（Dynamic Worker 約是 {{ratio}} 倍）",
+      "split": "；其中執行差 {{exec}}、其他開銷差 {{overhead}}",
+      "note": "工具耗時 = agent 從發出工具呼叫到拿到結果。",
+      "noteDw": "Dynamic Worker 由瀏覽器量測（Worker 計算時時鐘不前進），標 ≈ 的執行 / 開銷是扣掉空程式基準的估算。",
+      "noteSandbox": "Sandbox 的工具耗時由伺服器量，執行時間在容器內量（目前只有 JavaScript）。",
+      "missing": "重新載入的對話沒有 Dynamic Worker 的耗時（只在當下由瀏覽器量測）。"
     }
   },
   "crawler": {
