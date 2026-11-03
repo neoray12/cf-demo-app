@@ -1,0 +1,37 @@
+agents.md
+  s_35f257df545d16::t_1711bc7ddf813d 116
+src/app/api/chat/route.ts
+  s_35f257df545d16::t_6e7c438d4e9804 429-432
+src/app/components/chat/code-timing-table.tsx
+  s_35f257df545d16::t_db297d47a711dd 1-70
+src/app/pages/chat.tsx
+  s_35f257df545d16::t_4b857b97b3d497 39,972-973,1390-1391,1411-1416
+src/i18n/en.json
+  s_35f257df545d16::t_5273918163ec57 137,141,601-621
+src/i18n/zh-TW.json
+  s_35f257df545d16::t_2a1fefd3854b1e 137,141,601-621
+src/lib/chat-tools.ts
+  s_35f257df545d16::t_9ddc0c69b7b38f 10-11,13,107-110,117,150-151,153-154,169,185,560,577
+tsconfig.tsbuildinfo
+  s_35f257df545d16::t_5e5bc0b0a631fa 1
+src/lib/code-timing.test.ts
+  s_35f257df545d16::t_52debda47364c5 1-60
+src/lib/code-timing.ts
+  s_35f257df545d16::t_8dcec320071f53 1-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8d37372c3b907b5f43931a082e82cf943d64481f",
+  "prompts": {},
+  "sessions": {
+    "s_35f257df545d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004858d8-109c-48cb-b3d0-dd37f46cac67",
+        "model": "unknown"
+      },
+      "human_author": "neoray12 <neoray12@hotmail.com>"
+    }
+  }
+}
