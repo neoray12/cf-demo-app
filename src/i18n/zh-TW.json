@@ -134,11 +134,11 @@
       },
       "compare": {
         "title": "isolate vs 容器對決",
-        "prompt": "分別用 JavaScript（executeJs 工具）和 Python（executeCode 工具）各執行一次，計算 20 的階乘，並比較兩者回報的執行時間"
+        "prompt": "用 JavaScript 計算 20 的階乘（用 BigInt），分別在 Dynamic Worker（executeJs 工具）和 Sandbox 容器（executeCode 工具，language: \"javascript\"）各執行一次，比較兩邊的執行環境；兩邊的往返時間看工具卡片上的瀏覽器量測"
       },
       "benchmark": {
-        "title": "JS vs Python 效能對決",
-        "prompt": "用同一個演算法比較 Dynamic Worker 和 Sandbox 的效能：\n1. 用埃拉托斯特尼篩法找出 1 到 10,000,000 之間的質數個數（只用迴圈，不要用 numpy 或內建函式）\n2. 用遞迴計算費氏數列第 35 項\n先用 JavaScript（executeJs 工具）跑一次，再用 Python（executeCode 工具）跑一次。Python 用 time.perf_counter() 分別印出兩段的毫秒數；JavaScript 在 Workers 裡程式內計時會被凍結，請以工具回報的 executionMs 為準。最後用表格比較質數個數、第 35 項與各自耗時，並說明差異的原因。"
+        "title": "Dynamic Worker vs Sandbox 效能對決",
+        "prompt": "用同一份 JavaScript 比較 Dynamic Worker 和 Sandbox 容器：\n1. 用埃拉托斯特尼篩法找出 1 到 10,000,000 之間的質數個數（只用迴圈）\n2. 用遞迴計算費氏數列第 35 項\n先用 executeJs 在 Dynamic Worker 跑一次，再用 executeCode（language: \"javascript\"）在 Sandbox 的 Node.js 跑同一份程式。Sandbox 裡用 performance.now() 分別印出兩段的毫秒數；Dynamic Worker 計算時時鐘不會前進（Spectre 防護），程式內量不到，不要估算，兩邊的往返時間看工具卡片上的瀏覽器量測。最後用表格比較兩邊的質數個數、第 35 項與 Sandbox 的分段耗時，並說明兩邊都跑在 V8 上時，差距會來自哪裡。"
       },
       "blocked": {
         "title": "網路封鎖示範",
@@ -193,7 +193,8 @@
       "sourceCodemode": "Code Mode（Dynamic Worker）",
       "codeModeTooltip": "Code Mode：模型改寫一段 JS 一次呼叫多個工具，取代多輪 tool calls（省 token、更快）",
       "codeModeBadgeTooltip": "此腳本在 Dynamic Worker 中執行，工具函式透過 RPC 回到主 Worker",
-      "executionTime": "執行 {{ms}} ms",
+      "roundTrip": "往返 {{ms}} ms（瀏覽器量測）",
+      "roundTripTooltip": "瀏覽器量到的時間：從工具開始執行到結果回到瀏覽器，含網路傳輸。Workers 為了防範 Spectre 攻擊，程式計算時時鐘不會前進，伺服器端量不到這段時間。",
       "dynamicWorkerTooltip": "在毫秒級啟動的 V8 isolate 中執行，非容器",
       "noNetwork": "無網路存取",
       "noNetworkTooltip": "globalOutbound: null — 沙箱內的程式碼無法對外連線",

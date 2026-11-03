@@ -70,3 +70,20 @@ export function normalizeCode(raw: string): string {
   // or return its own value.
   return code;
 }
+
+/**
+ * Code for executeCode with language "javascript". The Sandbox's Node executor
+ * runs every call in one vm context per session — running the same script
+ * again throws "Identifier 't0' has already been declared" — and that context
+ * has no `performance`. Run the script in its own async scope with
+ * `performance` from perf_hooks, and print a value it returns.
+ */
+export function wrapSandboxJs(code: string): string {
+  return (
+    '(async () => {\n' +
+    "const performance = globalThis.performance ?? require('perf_hooks').performance;\n" +
+    `const __result = await (async () => {\n${normalizeCode(code)}\n})();\n` +
+    "if (__result !== undefined) console.log(typeof __result === 'object' ? JSON.stringify(__result) : String(__result));\n" +
+    '})()'
+  );
+}

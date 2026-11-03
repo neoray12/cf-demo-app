@@ -325,8 +325,20 @@ interface CodeExecutionResult {
   sandbox?: SandboxTelemetry | null;
   edgeColo?: string | null;
   engine?: string;
-  executionMs?: number;
   egress?: EgressEvent[];
+}
+
+function RoundTripBadge({ ms }: { ms?: number }) {
+  const { t } = useTranslation();
+  if (ms === undefined) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-muted text-muted-foreground tabular-nums"
+      title={t("chat.tool.roundTripTooltip")}
+    >
+      {t("chat.tool.roundTrip", { ms: ms.toLocaleString() })}
+    </span>
+  );
 }
 
 function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
@@ -407,6 +419,11 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           )}
         </div>
       )}
+      {expanded && !isCalling && toolCall.name === "executeCode" && toolCall.clientMs !== undefined && (
+        <div className="mt-1.5 ml-3 flex items-center gap-1.5 flex-wrap">
+          <RoundTripBadge ms={toolCall.clientMs} />
+        </div>
+      )}
       {expanded && !isCalling && result.sandbox && (
         <>
           <SandboxInfoBar sandbox={result.sandbox} />
@@ -434,11 +451,7 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
             <Zap className="size-3" />
             Dynamic Worker · V8 isolate
           </span>
-          {typeof result.executionMs === "number" && (
-            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-muted text-muted-foreground">
-              {t("chat.tool.executionTime", { ms: result.executionMs })}
-            </span>
-          )}
+          <RoundTripBadge ms={toolCall.clientMs} />
           <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-muted text-muted-foreground" title={t("chat.tool.noNetworkTooltip")}>
             🔒 {t("chat.tool.noNetwork")}
           </span>
@@ -1346,6 +1359,8 @@ export function ChatPage() {
           prev.map((m) => m.id === assistantMsgId ? { ...m, content, reasoning, toolCalls, parts, routedModel, notices, timeline, trace } : m)
         );
       };
+      // Tool round trips timed here: the Worker's clock does not advance while code computes.
+      const toolCalledAt = new Map<string, number>();
       const scheduleFlush = () => {
         if (!flushTimer) flushTimer = setTimeout(() => flushUpdate(), 50);
       };
@@ -1365,6 +1380,11 @@ export function ChatPage() {
             try {
               const event = JSON.parse(line);
               turn = applyChatEvent(turn, event, now());
+              if (event.type === "tool-call") toolCalledAt.set(event.toolCallId, now());
+              if (event.type === "tool-result" && toolCalledAt.has(event.toolCallId)) {
+                const clientMs = Math.round(now() - toolCalledAt.get(event.toolCallId)!);
+                turn = { ...turn, toolCalls: turn.toolCalls.map((tc) => (tc.id === event.toolCallId ? { ...tc, clientMs } : tc)) };
+              }
               switch (event.type) {
                 case "text-delta":
                   // Deltas with a spanId are a subagent's progress, not the answer.

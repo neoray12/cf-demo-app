@@ -13,6 +13,11 @@ export interface ToolCallInfo {
   result?: unknown;
   status: 'calling' | 'done' | 'error';
   error?: string;
+  /**
+   * Browser-measured time from the tool-call event to the result (live turns
+   * only). Server clocks cannot time CPU-bound work in Workers.
+   */
+  clientMs?: number;
 }
 
 export type MessagePart =

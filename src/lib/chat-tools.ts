@@ -4,7 +4,7 @@ import { parseMcpServerUrls, connectAndListTools, callMcpTool, portalCodeModeUrl
 import { MCP_TOOL_CACHE_TTL, mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 import { PORTAL_CATALOG_SEARCH_CODE, codeModeModelOutput, formatPortalCatalog, parsePortalCatalog, prepareCodeModeArgs, type PortalCatalogEntry } from '@/lib/portal-catalog';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview } from '@/lib/chat-sandbox';
-import { normalizeCode } from '@/lib/js-normalize';
+import { normalizeCode, wrapSandboxJs } from '@/lib/js-normalize';
 
 // Wrap tool execute to catch errors gracefully instead of crashing the stream
 export function safeTool<T>(fn: (args: T) => Promise<unknown>) {
@@ -143,7 +143,11 @@ export function buildExecuteJsTool(env: Record<string, unknown>) {
         };
       `;
 
-      const started = Date.now();
+      // Workers clocks do not advance while code computes (Spectre mitigation),
+      // so no timing measured here would cover the work: the browser times the
+      // tool from the tool-call event to the result. Yield once so tool-call
+      // reaches the stream before the isolate runs on this thread.
+      await new Promise((resolve) => setTimeout(resolve, 0));
       const worker = loader.load({
         compatibilityDate: '2026-01-01',
         mainModule: 'main.js',
@@ -155,7 +159,6 @@ export function buildExecuteJsTool(env: Record<string, unknown>) {
       const res = await worker
         .getEntrypoint()
         .fetch(new Request('https://dynamic-worker.internal/', { signal: AbortSignal.timeout(EXECUTE_JS_TIMEOUT_MS) }));
-      const executionMs = Date.now() - started;
 
       const data = (await res.json()) as { logs: string[]; result: unknown; error: string | null };
       const stdout = [
@@ -173,7 +176,6 @@ export function buildExecuteJsTool(env: Record<string, unknown>) {
         results: [],
         error: data.error,
         engine: 'dynamic-worker',
-        executionMs,
         sandbox: null,
       };
     }),
@@ -297,16 +299,18 @@ export function buildExecuteCodeTool(
     : '';
   return {
     description:
-      '在安全的沙箱環境中執行 Python 程式碼並回傳真實輸出。適用於數學計算、統計、日期運算、字串與資料處理等需要精確結果的問題。沙箱已安裝 pandas、openpyxl、matplotlib，可用於讀取 CSV/XLSX 並繪圖。程式碼必須用 print() 輸出文字結果；若用 matplotlib 畫圖，呼叫 plt.show() 讓圖表被擷取回傳。' +
+      '在安全的沙箱環境（Cloudflare Sandbox 容器）中執行 Python 程式碼並回傳真實輸出。適用於數學計算、統計、日期運算、字串與資料處理等需要精確結果的問題。沙箱已安裝 pandas、openpyxl、matplotlib，可用於讀取 CSV/XLSX 並繪圖。程式碼必須用 print() 輸出文字結果；若用 matplotlib 畫圖，呼叫 plt.show() 讓圖表被擷取回傳。' +
+      '要在容器裡跑 JavaScript（Node.js，例如和 executeJs 比較同一份程式）時設 language: "javascript"，用 console.log() 輸出；容器的時鐘是真的，可用 performance.now() 計時。' +
       filesNote,
     inputSchema: z.object({
-      code: z.string().describe('要執行的 Python 程式碼，必須用 print() 輸出最終結果'),
+      code: z.string().describe('要執行的程式碼（Python 用 print()、JavaScript 用 console.log() 輸出最終結果）'),
+      language: z.enum(['python', 'javascript']).optional().describe('預設 python；javascript 在容器的 Node.js 執行'),
     }),
-    execute: safeTool(async ({ code }: { code: string }) => {
-      console.log('[Chat API] executeCode:', code.length, 'chars');
-      const result = await sandboxExecuteCode(env as any, sessionId, code);
+    execute: safeTool(async ({ code, language = 'python' }: { code: string; language?: 'python' | 'javascript' }) => {
+      console.log('[Chat API] executeCode:', language, code.length, 'chars');
+      const result = await sandboxExecuteCode(env as any, sessionId, language === 'javascript' ? wrapSandboxJs(code) : code, language);
       // Echo the code back so the frontend result panel is self-contained
-      return { code, ...result, edgeColo };
+      return { code, language, ...result, edgeColo };
     }),
   };
 }
