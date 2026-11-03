@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeCode, wrapSandboxJs } from './js-normalize';
+import { normalizeCode, splitExecMarker, wrapSandboxJs } from './js-normalize';
 import vm from 'node:vm';
 
 describe('normalizeCode', () => {
@@ -28,7 +28,7 @@ describe('wrapSandboxJs', () => {
     const ctx = vm.createContext({ console: { log: (...a: unknown[]) => logs.push(a.join(' ')) }, require, setTimeout });
     await vm.runInContext(wrapSandboxJs(code), ctx);
     await vm.runInContext(wrapSandboxJs(code), ctx);
-    return logs;
+    return logs.filter((l) => !l.startsWith('__CF_EXEC_MS__='));
   }
 
   it('runs the same top-level declarations twice in one context', async () => {
@@ -41,5 +41,25 @@ describe('wrapSandboxJs', () => {
 
   it('prints a returned value', async () => {
     expect(await runTwice('(async () => { return { a: 1 } })();')).toEqual(['{"a":1}', '{"a":1}']);
+  });
+});
+
+describe('script timing marker', () => {
+  async function run(code: string) {
+    const logs: string[] = [];
+    const ctx = vm.createContext({ console: { log: (...a: unknown[]) => logs.push(a.join(' ')) }, require, setTimeout });
+    await vm.runInContext(wrapSandboxJs(code), ctx).catch(() => {});
+    return logs.join('\n');
+  }
+
+  it('prints how long the script ran, even when it throws', async () => {
+    const ok = splitExecMarker(await run('await new Promise((r) => setTimeout(r, 30)); console.log("done");'));
+    expect(ok.stdout).toBe('done');
+    expect(ok.execMs).toBeGreaterThanOrEqual(25);
+    expect(splitExecMarker(await run('throw new Error("x")')).execMs).toBeTypeOf('number');
+  });
+
+  it('leaves output without a marker alone', () => {
+    expect(splitExecMarker('a\nb')).toEqual({ stdout: 'a\nb' });
   });
 });

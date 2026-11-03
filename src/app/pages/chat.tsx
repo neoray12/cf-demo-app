@@ -325,20 +325,44 @@ interface CodeExecutionResult {
   sandbox?: SandboxTelemetry | null;
   edgeColo?: string | null;
   engine?: string;
+  /** executeCode: measured server-side (the sandbox call is I/O). executeJs: a note for the model. */
+  timing?: { totalMs: number; execMs?: number; overheadMs?: number } | string;
   egress?: EgressEvent[];
 }
 
-function RoundTripBadge({ ms }: { ms?: number }) {
-  const { t } = useTranslation();
-  if (ms === undefined) return null;
+function TimingBadge({ label, title }: { label: string; title: string }) {
   return (
-    <span
-      className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-muted text-muted-foreground tabular-nums"
-      title={t("chat.tool.roundTripTooltip")}
-    >
-      {t("chat.tool.roundTrip", { ms: ms.toLocaleString() })}
+    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-muted text-muted-foreground tabular-nums" title={title}>
+      {label}
     </span>
   );
+}
+
+/**
+ * How long the agent waited for the tool. A Sandbox call is I/O, so the server
+ * measures it and the script's own run time splits it. A Dynamic Worker runs on
+ * the Worker's thread, whose clock stands still while it computes, so the
+ * browser times it (tool-call → tool-result on the same stream).
+ */
+function ToolTiming({ toolCall, result }: { toolCall: ToolCallInfo; result: CodeExecutionResult }) {
+  const { t } = useTranslation();
+  const ms = (n: number) => n.toLocaleString();
+  const timing = typeof result.timing === "object" ? result.timing : null;
+  if (timing) {
+    return (
+      <>
+        <TimingBadge label={t("chat.tool.toolTime", { ms: ms(timing.totalMs) })} title={t("chat.tool.sandboxTotalTooltip")} />
+        {timing.execMs !== undefined && (
+          <TimingBadge label={t("chat.tool.execTime", { ms: ms(timing.execMs) })} title={t("chat.tool.execTimeTooltip")} />
+        )}
+        {timing.overheadMs !== undefined && (
+          <TimingBadge label={t("chat.tool.overhead", { ms: ms(timing.overheadMs) })} title={t("chat.tool.overheadTooltip")} />
+        )}
+      </>
+    );
+  }
+  if (toolCall.clientMs === undefined) return null;
+  return <TimingBadge label={t("chat.tool.toolTime", { ms: ms(toolCall.clientMs) })} title={t("chat.tool.toolTimeTooltip")} />;
 }
 
 function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
@@ -419,9 +443,9 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
           )}
         </div>
       )}
-      {expanded && !isCalling && toolCall.name === "executeCode" && toolCall.clientMs !== undefined && (
+      {expanded && !isCalling && toolCall.name === "executeCode" && (typeof result.timing === "object" || toolCall.clientMs !== undefined) && (
         <div className="mt-1.5 ml-3 flex items-center gap-1.5 flex-wrap">
-          <RoundTripBadge ms={toolCall.clientMs} />
+          <ToolTiming toolCall={toolCall} result={result} />
         </div>
       )}
       {expanded && !isCalling && result.sandbox && (
@@ -451,7 +475,7 @@ function CodeExecutionDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
             <Zap className="size-3" />
             Dynamic Worker · V8 isolate
           </span>
-          <RoundTripBadge ms={toolCall.clientMs} />
+          <ToolTiming toolCall={toolCall} result={result} />
           <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-muted text-muted-foreground" title={t("chat.tool.noNetworkTooltip")}>
             🔒 {t("chat.tool.noNetwork")}
           </span>

@@ -4,7 +4,7 @@ import { parseMcpServerUrls, connectAndListTools, callMcpTool, portalCodeModeUrl
 import { MCP_TOOL_CACHE_TTL, mcpTokenKey, mcpToolCacheKey } from '@/lib/mcp-auth';
 import { PORTAL_CATALOG_SEARCH_CODE, codeModeModelOutput, formatPortalCatalog, parsePortalCatalog, prepareCodeModeArgs, type PortalCatalogEntry } from '@/lib/portal-catalog';
 import { chatSandboxConfigured, executeCode as sandboxExecuteCode, createPreview as sandboxCreatePreview } from '@/lib/chat-sandbox';
-import { normalizeCode, wrapSandboxJs } from '@/lib/js-normalize';
+import { normalizeCode, splitExecMarker, wrapSandboxJs } from '@/lib/js-normalize';
 
 // Wrap tool execute to catch errors gracefully instead of crashing the stream
 export function safeTool<T>(fn: (args: T) => Promise<unknown>) {
@@ -176,6 +176,7 @@ export function buildExecuteJsTool(env: Record<string, unknown>) {
         results: [],
         error: data.error,
         engine: 'dynamic-worker',
+        timing: '在 Workers 內量不到（計算時時鐘不前進）；工具耗時由瀏覽器量測並顯示在工具卡片上，不要用程式內計時或自行估算',
         sandbox: null,
       };
     }),
@@ -308,9 +309,17 @@ export function buildExecuteCodeTool(
     }),
     execute: safeTool(async ({ code, language = 'python' }: { code: string; language?: 'python' | 'javascript' }) => {
       console.log('[Chat API] executeCode:', language, code.length, 'chars');
-      const result = await sandboxExecuteCode(env as any, sessionId, language === 'javascript' ? wrapSandboxJs(code) : code, language);
+      // Calling the sandbox is I/O, so this clock is real: the whole wait as the agent sees it.
+      const started = Date.now();
+      const raw = await sandboxExecuteCode(env as any, sessionId, language === 'javascript' ? wrapSandboxJs(code) : code, language);
+      const totalMs = Date.now() - started;
+      const { stdout, execMs } = language === 'javascript' ? splitExecMarker(raw.stdout) : { stdout: raw.stdout, execMs: undefined };
+      const timing = {
+        totalMs,
+        ...(execMs !== undefined ? { execMs: Math.round(execMs), overheadMs: Math.max(0, totalMs - Math.round(execMs)) } : {}),
+      };
       // Echo the code back so the frontend result panel is self-contained
-      return { code, language, ...result, edgeColo };
+      return { code, language, ...raw, stdout, timing, edgeColo };
     }),
   };
 }

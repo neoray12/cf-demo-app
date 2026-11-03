@@ -71,19 +71,36 @@ export function normalizeCode(raw: string): string {
   return code;
 }
 
+const EXEC_MARKER = '__CF_EXEC_MS__=';
+
 /**
  * Code for executeCode with language "javascript". The Sandbox's Node executor
  * runs every call in one vm context per session — running the same script
  * again throws "Identifier 't0' has already been declared" — and that context
  * has no `performance`. Run the script in its own async scope with
- * `performance` from perf_hooks, and print a value it returns.
+ * `performance` from perf_hooks, print a value it returns, and print how long
+ * the script itself ran as a marker line (see splitExecMarker).
  */
 export function wrapSandboxJs(code: string): string {
   return (
     '(async () => {\n' +
     "const performance = globalThis.performance ?? require('perf_hooks').performance;\n" +
+    'const __t0 = performance.now();\n' +
+    'try {\n' +
     `const __result = await (async () => {\n${normalizeCode(code)}\n})();\n` +
     "if (__result !== undefined) console.log(typeof __result === 'object' ? JSON.stringify(__result) : String(__result));\n" +
+    `} finally {\nconsole.log('${EXEC_MARKER}' + (performance.now() - __t0).toFixed(2));\n}\n` +
     '})()'
   );
+}
+
+/** Takes the timing line wrapSandboxJs prints out of stdout. */
+export function splitExecMarker(stdout: string): { stdout: string; execMs?: number } {
+  let execMs: number | undefined;
+  const lines = stdout.split('\n').filter((line) => {
+    if (!line.startsWith(EXEC_MARKER)) return true;
+    execMs = Number(line.slice(EXEC_MARKER.length));
+    return false;
+  });
+  return execMs === undefined ? { stdout } : { stdout: lines.join('\n').replace(/\n+$/, ''), execMs };
 }
